@@ -1,0 +1,27 @@
+[project]
+name = "atp-gateway"
+version = "0.1.0"
+description = "Agent Trust Plane: FastAPI trust gateway (authorize, execute, traces, replay)"
+requires-python = ">=3.12"
+dependencies = [
+  "atp-core",
+  "atp-identity",
+  "atp-policy",
+  "atp-audit",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.34",
+  "pydantic-settings>=2.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atp_gateway"]
+
+[tool.uv.sources]
+atp-audit = { workspace = true }
+atp-core = { workspace = true }
+atp-identity = { workspace = true }
+atp-policy = { workspace = true }

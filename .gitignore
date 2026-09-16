@@ -1,0 +1,36 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+
+# data
+*.db
+*.db-journal
+*.sqlite
+data/
+eval-reports/
+
+# node
+node_modules/
+apps/dashboard/.next/
+apps/dashboard/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# env
+.env
+.env.local
+
+# os / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

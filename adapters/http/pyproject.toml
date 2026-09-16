@@ -1,0 +1,19 @@
+[project]
+name = "atp-adapter-http"
+version = "0.1.0"
+description = "Agent Trust Plane: HTTP client SDK for agents"
+requires-python = ">=3.12"
+dependencies = [
+  "atp-core",
+  "httpx>=0.28",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atp_adapter_http"]
+
+[tool.uv.sources]
+atp-core = { workspace = true }

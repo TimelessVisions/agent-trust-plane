@@ -1,0 +1,115 @@
+[project]
+name = "agent-trust-plane"
+version = "0.1.0"
+description = "A control boundary between agent reasoning and real-world execution."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "atp-core",
+  "atp-identity",
+  "atp-policy",
+  "atp-audit",
+  "atp-gateway",
+  "atp-evals",
+  "atp-adapter-http",
+  "atp-adapter-mcp",
+  "finance-agent",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "httpx>=0.28",
+  "ruff>=0.9",
+  "mypy>=1.14",
+]
+
+[tool.uv.workspace]
+members = [
+  "packages/*",
+  "services/gateway",
+  "adapters/*",
+  "examples/finance-agent",
+]
+
+[tool.uv.sources]
+atp-core = { workspace = true }
+atp-identity = { workspace = true }
+atp-policy = { workspace = true }
+atp-audit = { workspace = true }
+atp-gateway = { workspace = true }
+atp-evals = { workspace = true }
+atp-adapter-http = { workspace = true }
+atp-adapter-mcp = { workspace = true }
+finance-agent = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = [
+  "packages/core/tests",
+  "packages/identity/tests",
+  "packages/policy/tests",
+  "packages/audit/tests",
+  "packages/evals/tests",
+  "services/gateway/tests",
+  "adapters/http/tests",
+  "adapters/mcp/tests",
+  "examples/finance-agent/tests",
+]
+addopts = "-q --strict-markers --import-mode=importlib"
+pythonpath = [
+  "packages/core/tests",
+  "packages/identity/tests",
+  "packages/policy/tests",
+  "packages/audit/tests",
+  "packages/evals/tests",
+  "services/gateway/tests",
+  "adapters/http/tests",
+  "adapters/mcp/tests",
+  "examples/finance-agent/tests",
+]
+filterwarnings = ["error::DeprecationWarning:atp_.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["apps", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "W", "SIM", "RUF"]
+ignore = ["RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["atp_core", "atp_identity", "atp_policy", "atp_audit", "atp_evals", "atp_gateway", "atp_adapter_http", "atp_adapter_mcp", "finance_agent"]
+known-local-folder = ["identity_fixtures", "policy_fixtures", "gateway_fixtures", "evals_fixtures", "agent_fixtures"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B018"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+mypy_path = [
+  "packages/core/src",
+  "packages/identity/src",
+  "packages/policy/src",
+  "packages/audit/src",
+  "packages/evals/src",
+  "services/gateway/src",
+  "adapters/http/src",
+  "adapters/mcp/src",
+  "examples/finance-agent/src",
+]
+files = [
+  "packages/core/src",
+  "packages/identity/src",
+  "packages/policy/src",
+  "packages/audit/src",
+  "packages/evals/src",
+  "services/gateway/src",
+  "adapters/http/src",
+  "adapters/mcp/src",
+  "examples/finance-agent/src",
+]
