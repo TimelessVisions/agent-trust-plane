@@ -52,7 +52,7 @@ blocked execution attempt — is in one hash-chained trace.
 
 Eight adversarial evals run against the real API: injection, privilege
 escalation, excessive delegation, compromised child agent, modified action
-after authorization, grant replay. 183 tests, strict typing, a dashboard
+after authorization, grant replay. 191 tests, strict typing, a dashboard
 that reads only from the trace store.
 
 **What it does not do yet** — because build-in-public means saying this

@@ -178,6 +178,10 @@ what the replay story demonstrates.
 - **delegation re-checked at execute** — revocation between the two calls
   blocks.
 
+Selecting a non-default policy set on `/authorize` (which EVAL-006 does to
+demonstrate the baseline failure) requires an `X-ATP-Operator-Key` header.
+An agent cannot choose which policies judge it.
+
 Why symmetric HMAC and not asymmetric signatures: the authorizer and executor
 are one process in the MVP. The token is versioned (`atp-grant/1`) so
 Ed25519 with KMS-held keys can replace it without changing callers. Full
@@ -287,7 +291,7 @@ the suite in-process inside the gateway and persists the report.
 ## Tests and checks
 
 ```bash
-uv run pytest                 # 183 tests across all packages
+uv run pytest                 # 191 tests across all packages
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                   # strict, all src trees
 cd apps/dashboard && npm run typecheck && npm run build

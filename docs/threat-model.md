@@ -73,6 +73,10 @@ Each row names the mechanism and the test or eval that exercises it.
 | **Resource mismatch** | Agent scoped to `vendor:*` targets `payroll:*`. | Resource-scope policy over the intersected scope. | `test_resource_mismatch` |
 | **Malformed or smuggled arguments** | `override_limit: true`, non-numeric amounts. | Payment argument schema with `extra="forbid"`; every payment policy denies on invalid arguments. | `test_unexpected_argument_rejected` |
 | **Naive audit tampering** | Edit or delete a stored trace event. | Per-trace hash chain; `GET /traces/{id}` recomputes and reports `integrity.valid=false` with the first bad sequence number. | `test_tampering_is_detected`, `TestTraceIntegrity` |
+| **Agent selects a weaker policy set** | `/authorize?policy_set_version=payments-v1` from an agent. | Policy-set override requires the operator key (`X-ATP-Operator-Key`, constant-time compare); agents never hold it. | `TestPolicySelection` |
+| **Sub-cent padding** | `amount: "1000.004"` rounds to the limit. | `Money` rejects more than two decimal places instead of rounding. | `test_sub_cent_padding_cannot_slip_under_the_limit` |
+| **Trace bloat / oversized payloads** | Multi-megabyte `arguments`. | 16 KiB cap on canonical `arguments`; string length caps on every other field. | `test_oversized_arguments_are_rejected` |
+| **Provenance spoofing** | Agent writes events as `actor: "gateway"` or writes gateway-only event types. | Reserved actor and reserved event types are rejected on the agent-writable endpoint. | `test_agent_cannot_write_events_as_the_gateway`, `test_agent_can_record_provenance_but_not_gateway_events` |
 | **Replay used to execute** | Use `/replay` as a back door to run an action. | Replay re-evaluates only; it never mints grants or touches tools. | `test_replay_under_hardened_policy_flips_a_missed_attack` (ledger unchanged) |
 
 ---

@@ -195,7 +195,7 @@ interfaces. Nothing in policy or identity knows which one is in use.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/authorize` | Decide; mint a grant on ALLOW |
+| POST | `/authorize` | Decide; mint a grant on ALLOW. `?policy_set_version=` requires `X-ATP-Operator-Key` |
 | POST | `/execute` | Verify grant, consume it, run the tool |
 | GET | `/traces` | Recent traces |
 | GET | `/traces/{id}` | Full trace with integrity report, envelope, decision, chain |

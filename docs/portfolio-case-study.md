@@ -53,7 +53,7 @@ AUDIT + TRACE
 
 Nine Python packages in a `uv` workspace (core, identity, policy, audit,
 evals, gateway, two adapters, a demo agent), a FastAPI gateway with SQLite,
-and a Next.js dashboard. 183 tests, strict mypy, ruff, CI.
+and a Next.js dashboard. 191 tests, strict mypy, ruff, CI.
 
 Three design decisions carry most of the weight:
 
@@ -175,6 +175,12 @@ real HTTP API and pass:
   deterministic "naive agent" that always follows injected instructions is a
   more honest fixture for a control plane: it isolates the question the
   project actually answers.
+
+- **Red-teaming your own API finds design bugs, not just code bugs.** The
+  first version let the *caller* choose which policy set to evaluate under,
+  because the replay demo needed it. That is an agent choosing its own
+  judge. It became an operator-only capability behind a separate key, and
+  the eval that needs it now runs as operator tooling.
 
 - **Write the second table of the threat model first.** Listing what is not
   handled — agent authentication above all — kept the README honest and
