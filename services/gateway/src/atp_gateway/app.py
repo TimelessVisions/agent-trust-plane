@@ -25,7 +25,7 @@ def _status_for(exc: ATPError) -> int:
         return 404
     if isinstance(exc, DelegationError):
         return 422
-    if isinstance(exc, GrantError):
+    if isinstance(exc, GrantError) or exc.reason_code is ReasonCode.POLICY_SET_OVERRIDE_FORBIDDEN:
         return 403
     return 409
 

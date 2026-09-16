@@ -33,10 +33,12 @@ SCENARIOS: dict[str, Invoice] = {
 
 def _make_client(gateway: str | None) -> TrustPlaneClient:
     if gateway:
-        return TrustPlaneClient(gateway)
+        return TrustPlaneClient(gateway, operator_key=os.environ.get("ATP_OPERATOR_KEY"))
     from atp_gateway import GatewaySettings, create_app
 
-    return TrustPlaneClient.for_app(create_app(GatewaySettings(database_path=":memory:")))
+    app = create_app(GatewaySettings(database_path=":memory:"))
+    # In-process runs are operator-side tooling, so the operator key is available.
+    return TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key)
 
 
 def _make_brain(kind: str) -> AgentBrain:

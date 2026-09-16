@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from atp_gateway import Runtime
+
 from gateway_fixtures import ATTACKER_ACCOUNT, DOC_AGENT, payment_envelope, seed_chain
 
 
@@ -150,7 +152,9 @@ class TestReplay:
         assert body["replayed_decision"]["reason_code"] == original["reason_code"]
         assert body["replayed_decision"]["replay_of"] == original["decision_id"]
 
-    def test_replay_under_hardened_policy_flips_a_missed_attack(self, client: TestClient) -> None:
+    def test_replay_under_hardened_policy_flips_a_missed_attack(
+        self, client: TestClient, runtime: Runtime
+    ) -> None:
         """FAILURE -> POLICY CHANGE -> REPLAY -> PROVE IMPROVEMENT.
 
         Under payments-v1 an under-limit payment redirected to an attacker's
@@ -158,7 +162,11 @@ class TestReplay:
         """
         grants = seed_chain(client)
         env = payment_envelope(grants["ap"], amount="640.00", destination=ATTACKER_ACCOUNT)
-        auth = client.post("/authorize?policy_set_version=payments-v1", json=env).json()
+        auth = client.post(
+            "/authorize?policy_set_version=payments-v1",
+            json=env,
+            headers={"X-ATP-Operator-Key": runtime.operator_key},
+        ).json()
         assert auth["decision"]["outcome"] == "ALLOW"
         assert auth["decision"]["policy_set_version"] == "payments-v1"
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,14 +21,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="atp-evals")
     parser.add_argument("--gateway", help="Gateway URL. Omit to run an in-process gateway.")
     parser.add_argument("--report", help="Write the JSON report to this path.")
+    parser.add_argument(
+        "--operator-key",
+        default=os.environ.get("ATP_OPERATOR_KEY"),
+        help="Operator key of the remote gateway (EVAL-006 selects a policy set). "
+        "Defaults to $ATP_OPERATOR_KEY.",
+    )
     args = parser.parse_args()
 
     if args.gateway:
-        client = TrustPlaneClient(args.gateway)
+        client = TrustPlaneClient(args.gateway, operator_key=args.operator_key)
     else:
         from atp_gateway import GatewaySettings, create_app
 
-        client = TrustPlaneClient.for_app(create_app(GatewaySettings(database_path=":memory:")))
+        app = create_app(GatewaySettings(database_path=":memory:"))
+        client = TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key)
 
     with client:
         report = run_suite(client)

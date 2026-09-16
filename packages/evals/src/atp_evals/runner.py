@@ -77,7 +77,7 @@ def run_suite_in_process(runtime: Runtime) -> EvalReport:
     from atp_gateway import create_app
 
     app = create_app(runtime.settings, runtime=runtime)
-    with TrustPlaneClient.for_app(app) as client:
+    with TrustPlaneClient.for_app(app, operator_key=runtime.operator_key) as client:
         return run_suite(client)
 
 

@@ -16,6 +16,11 @@ class GatewaySettings(BaseSettings):
         default="",
         description="HMAC key for execution grants. Empty = ephemeral key generated at startup.",
     )
+    operator_key: str = Field(
+        default="",
+        description="Shared secret for operator-only actions (policy set override on "
+        "/authorize). Empty = ephemeral key generated at startup.",
+    )
     grant_ttl_seconds: int = Field(default=120, ge=5, le=3600)
     database_path: str = Field(default="./data/atp.db", description="SQLite path or ':memory:'.")
     cors_origins: str = Field(default="http://localhost:3000")
@@ -29,6 +34,12 @@ class GatewaySettings(BaseSettings):
             "Execution grants will not survive a restart."
         )
         return secrets.token_bytes(32)
+
+    def operator_key_value(self) -> str:
+        if self.operator_key:
+            return self.operator_key
+        log.warning("ATP_OPERATOR_KEY is not set; using an ephemeral operator key.")
+        return secrets.token_urlsafe(32)
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

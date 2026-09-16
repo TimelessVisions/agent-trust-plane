@@ -136,9 +136,11 @@ class TrustPlane:
     ) -> TraceEvent:
         if event_type not in AGENT_WRITABLE_EVENTS:
             raise ATPError(
-                ReasonCode.EXECUTION_FAILED,
+                ReasonCode.EVENT_TYPE_RESERVED,
                 f"event type '{event_type.value}' can only be written by the gateway",
             )
+        if actor.strip().lower() == GATEWAY_ACTOR:
+            raise ATPError(ReasonCode.EVENT_ACTOR_RESERVED, f"actor '{GATEWAY_ACTOR}' is reserved")
         return self.traces.append(trace_id, event_type, actor, payload)
 
     # ------------------------------------------------------------- authorize

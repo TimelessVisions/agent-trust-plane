@@ -18,14 +18,15 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from atp_core.canonical import canonical_hash
+from atp_core.canonical import canonical_hash, canonical_json
 from atp_core.ids import new_id, new_trace_id
 from atp_core.principals import PrincipalRef
 from atp_core.timeutil import utcnow
 
 _IDENT = r"^[A-Za-z0-9._:-]+$"
+MAX_ARGUMENTS_BYTES = 16 * 1024
 
 
 class ContentTrust(StrEnum):
@@ -108,6 +109,14 @@ class ActionEnvelope(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
     provenance: Provenance = Field(default_factory=Provenance)
+
+    @field_validator("arguments")
+    @classmethod
+    def _bounded_arguments(cls, value: dict[str, Any]) -> dict[str, Any]:
+        size = len(canonical_json(value))
+        if size > MAX_ARGUMENTS_BYTES:
+            raise ValueError(f"arguments exceed {MAX_ARGUMENTS_BYTES} bytes ({size})")
+        return value
 
     def action_fields(self) -> dict[str, Any]:
         """The fields that define *what will happen*. Hashed into execution grants."""

@@ -13,7 +13,7 @@ from atp_gateway import GatewaySettings, create_app
 @pytest.fixture
 def client() -> Iterator[TrustPlaneClient]:
     app = create_app(GatewaySettings(database_path=":memory:"))
-    with TrustPlaneClient.for_app(app) as c:
+    with TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key) as c:
         yield c
 
 

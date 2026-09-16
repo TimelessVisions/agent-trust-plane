@@ -85,22 +85,31 @@ class _SyncASGITransport(httpx.BaseTransport):
 
 
 class TrustPlaneClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8000", *, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:8000",
+        *,
+        timeout: float = 10.0,
+        operator_key: str | None = None,
+    ) -> None:
         self._http = httpx.Client(base_url=base_url, timeout=timeout)
+        self._operator_key = operator_key
 
     @classmethod
-    def for_app(cls, app: Any) -> TrustPlaneClient:
+    def for_app(cls, app: Any, *, operator_key: str | None = None) -> TrustPlaneClient:
         """In-process client over an ASGI app (no sockets, real routing)."""
         client = cls.__new__(cls)
         client._http = httpx.Client(
             transport=_SyncASGITransport(app), base_url="http://trust-plane"
         )
+        client._operator_key = operator_key
         return client
 
     @classmethod
-    def from_http(cls, http: httpx.Client) -> TrustPlaneClient:
+    def from_http(cls, http: httpx.Client, *, operator_key: str | None = None) -> TrustPlaneClient:
         client = cls.__new__(cls)
         client._http = http
+        client._operator_key = operator_key
         return client
 
     def close(self) -> None:
@@ -132,8 +141,17 @@ class TrustPlaneClient:
         self, envelope: ActionEnvelope, *, policy_set_version: str | None = None
     ) -> AuthorizeResponse:
         params = {"policy_set_version": policy_set_version} if policy_set_version else None
+        headers = (
+            {"X-ATP-Operator-Key": self._operator_key}
+            if policy_set_version and self._operator_key
+            else None
+        )
         data = self._request(
-            "POST", "/authorize", json=envelope.model_dump(mode="json"), params=params
+            "POST",
+            "/authorize",
+            json=envelope.model_dump(mode="json"),
+            params=params,
+            headers=headers,
         )
         return AuthorizeResponse.model_validate(data)
 

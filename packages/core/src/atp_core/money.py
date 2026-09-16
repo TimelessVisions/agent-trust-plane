@@ -9,7 +9,7 @@ _TWO_PLACES = Decimal("0.01")
 
 
 class Money(BaseModel):
-    """An amount in a single ISO-4217 currency, always quantised to 2 places.
+    """An amount in a single ISO-4217 currency, carried with exactly 2 decimal places.
 
     Amounts are Decimals internally and strings on the wire so no float ever
     touches a monetary comparison.
@@ -35,6 +35,9 @@ class Money(BaseModel):
             raise ValueError("monetary amount must be finite")
         if dec < 0:
             raise ValueError("monetary amount must be non-negative")
+        # Reject, never round: "1000.004" must not become 1000.00 and slip under a limit.
+        if dec != dec.quantize(_TWO_PLACES):
+            raise ValueError("monetary amount must have at most 2 decimal places")
         return dec.quantize(_TWO_PLACES)
 
     @field_serializer("amount")

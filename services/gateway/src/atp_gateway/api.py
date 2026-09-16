@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
+import hmac
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
 
 from atp_audit import TraceSummary
-from atp_core import ActionEnvelope
+from atp_core import ActionEnvelope, ATPError, ReasonCode
 from atp_gateway.schemas import (
     ExecuteRequest,
     HealthView,
@@ -45,10 +46,27 @@ def authorize(
     envelope: ActionEnvelope,
     request: Request,
     policy_set_version: str | None = Query(default=None),
+    x_atp_operator_key: str | None = Header(default=None),
 ) -> AuthorizationResult:
     """Decide whether the proposed action may execute. Returns a signed,
-    single-use execution grant only on ALLOW."""
+    single-use execution grant only on ALLOW.
+
+    Selecting a non-default policy set is an operator capability, never an
+    agent capability: it requires the ``X-ATP-Operator-Key`` header.
+    """
+    if policy_set_version is not None:
+        _require_operator(request, x_atp_operator_key)
     return _tp(request).authorize(envelope, policy_set_version=policy_set_version)
+
+
+def _require_operator(request: Request, presented: str | None) -> None:
+    expected = _rt(request).operator_key
+    if presented is None or not hmac.compare_digest(presented.encode(), expected.encode()):
+        raise ATPError(
+            ReasonCode.POLICY_SET_OVERRIDE_FORBIDDEN,
+            "choosing a policy set requires the operator key; agents cannot select "
+            "which policies apply to them",
+        )
 
 
 @router.post("/execute", response_model=ExecutionResult, tags=["control"])

@@ -47,6 +47,7 @@ class Runtime:
         vendors: InMemoryVendorDirectory,
         settings: GatewaySettings,
         conn: sqlite3.Connection | None,
+        operator_key: str,
     ) -> None:
         self.trust_plane = trust_plane
         self.ledger = ledger
@@ -54,6 +55,7 @@ class Runtime:
         self.vendors = vendors
         self.settings = settings
         self.conn = conn
+        self.operator_key = operator_key
 
     def close(self) -> None:
         if self.conn is not None:
@@ -113,4 +115,5 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         vendors=vendors,
         settings=settings,
         conn=conn,
+        operator_key=settings.operator_key_value(),
     )

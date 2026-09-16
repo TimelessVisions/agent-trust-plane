@@ -39,6 +39,10 @@ class TestMoney:
     def test_float_is_normalised_not_approximated(self) -> None:
         assert Money(amount=12500.0, currency="USD").amount == Decimal("12500.00")
 
+    def test_rejects_more_than_two_decimal_places(self) -> None:
+        with pytest.raises(ValidationError):
+            Money(amount="1000.004", currency="USD")
+
     def test_rejects_negative(self) -> None:
         with pytest.raises(ValidationError):
             Money(amount=-1, currency="USD")

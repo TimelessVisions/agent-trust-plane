@@ -289,3 +289,67 @@ class TestTraceIntegrity:
         trace = client.get(f"/traces/{env['trace_id']}").json()
         assert trace["integrity"]["valid"] is False
         assert trace["integrity"]["first_bad_seq"] == events[idx].seq
+
+
+class TestPolicySelection:
+    """An agent must not be able to pick which policy set judges it."""
+
+    def test_agent_cannot_select_weaker_policy_set(self, client: TestClient) -> None:
+        grants = seed_chain(client)
+        env = payment_envelope(grants["ap"], amount="640.00", destination=ATTACKER_ACCOUNT)
+        r = client.post("/authorize?policy_set_version=payments-v1", json=env)
+        assert r.status_code == 403
+        assert r.json()["reason_code"] == "POLICY_SET_OVERRIDE_FORBIDDEN"
+        assert _ledger(client) == []
+
+    def test_wrong_operator_key_is_rejected(self, client: TestClient) -> None:
+        grants = seed_chain(client)
+        env = payment_envelope(grants["ap"], amount="640.00", destination=ATTACKER_ACCOUNT)
+        r = client.post(
+            "/authorize?policy_set_version=payments-v1",
+            json=env,
+            headers={"X-ATP-Operator-Key": "guess"},
+        )
+        assert r.status_code == 403
+
+    def test_operator_key_permits_override(self, client: TestClient, runtime: Runtime) -> None:
+        grants = seed_chain(client)
+        env = payment_envelope(grants["ap"], amount="640.00", destination=ATTACKER_ACCOUNT)
+        r = client.post(
+            "/authorize?policy_set_version=payments-v1",
+            json=env,
+            headers={"X-ATP-Operator-Key": runtime.operator_key},
+        )
+        assert r.status_code == 200
+        assert r.json()["decision"]["policy_set_version"] == "payments-v1"
+
+    def test_default_policy_set_needs_no_key(self, client: TestClient) -> None:
+        grants = seed_chain(client)
+        env = payment_envelope(grants["ap"], amount="640.00", destination=ATTACKER_ACCOUNT)
+        r = client.post("/authorize", json=env)
+        assert r.status_code == 200
+        assert r.json()["decision"]["outcome"] == "DENY"
+
+
+class TestInputHardening:
+    def test_sub_cent_padding_cannot_slip_under_the_limit(self, client: TestClient) -> None:
+        grants = seed_chain(client)
+        env = payment_envelope(grants["ap"], amount="1000.004")
+        auth = _authorize(client, env)
+        assert auth["decision"]["outcome"] == "DENY"
+        assert auth["decision"]["reason_code"] == "PAYMENT_ARGUMENTS_INVALID"
+
+    def test_oversized_arguments_are_rejected(self, client: TestClient) -> None:
+        grants = seed_chain(client)
+        env = payment_envelope(grants["ap"])
+        env["arguments"]["memo"] = "x" * 20_000
+        r = client.post("/authorize", json=env)
+        assert r.status_code == 422
+
+    def test_agent_cannot_write_events_as_the_gateway(self, client: TestClient) -> None:
+        r = client.post(
+            "/traces/dddddddddddd/events",
+            json={"event_type": "task_received", "actor": "gateway", "payload": {}},
+        )
+        assert r.status_code == 409
+        assert r.json()["reason_code"] == "EVENT_ACTOR_RESERVED"
