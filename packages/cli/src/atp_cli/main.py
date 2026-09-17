@@ -160,7 +160,12 @@ def _cmd_test(args: argparse.Namespace) -> int:
 
 
 def _add_case(
-    trace: dict[str, Any], *, suite_path: Path, name: str | None, gateway: str | None
+    trace: dict[str, Any],
+    *,
+    suite_path: Path,
+    name: str | None,
+    gateway: str | None,
+    policy_file: str | None = None,
 ) -> int:
     from atp_evals.regression import (
         TraceConversionError,
@@ -176,6 +181,17 @@ def _add_case(
         suite = merge_into_suite(existing, delegations, case)
     except (TraceConversionError, ValueError) as exc:
         raise UsageError(f"trace could not be converted: {exc}") from exc
+    if policy_file and suite.policies is None:
+        rel = os.path.relpath(policy_file, suite_path.resolve().parent).replace("\\", "/")
+        suite = suite.model_copy(update={"policies": rel})
+    recorded_under = case.source.policy_set if case.source else None
+    if recorded_under and suite.policy_set != recorded_under:
+        if len(suite.cases) == 1:
+            suite = suite.model_copy(update={"policy_set": recorded_under})
+        else:
+            _err(
+                f"note: case recorded under {recorded_under}; the suite runs under {suite.policy_set}"
+            )
     dump_suite(suite, suite_path)
     print(
         f"ADDED {case.name}\n"
@@ -196,7 +212,13 @@ def _cmd_regression_add(args: argparse.Namespace) -> int:
         trace = _trace_dict(runtime, args.trace)
     finally:
         runtime.close()
-    return _add_case(trace, suite_path=Path(args.suite), name=args.name, gateway=None)
+    return _add_case(
+        trace,
+        suite_path=Path(args.suite),
+        name=args.name,
+        gateway=None,
+        policy_file=_policy_file(args),
+    )
 
 
 def _cmd_record(args: argparse.Namespace) -> int:
@@ -517,6 +539,7 @@ def _cmd_mcp_init(args: argparse.Namespace) -> int:
         url=args.url,
         command=args.upstream_command,
         casefold=args.casefold,
+        home_dir=args.home,
     )
 
 
@@ -568,6 +591,7 @@ def build_parser() -> argparse.ArgumentParser:
     mi.add_argument("--name", help="short server name (default: derived from the command)")
     mi.add_argument("--url", help="Streamable HTTP upstream instead of a command")
     mi.add_argument("--casefold", action=argparse.BooleanOptionalAction, default=None)
+    _home_arg(mi)
     mi.add_argument("upstream_command", nargs="*", help="upstream command after `--`")
     mi.set_defaults(func=_cmd_mcp_init)
     mw = msub.add_parser(

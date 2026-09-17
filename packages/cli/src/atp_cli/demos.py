@@ -302,3 +302,101 @@ def demo_mcp(out_dir: Path | None = None) -> int:
         "an agent that launches the notes server itself bypasses the proxy (see docs/mcp-proxy.md)"
     )
     return 0
+
+
+# ---------------------------------------------------------------- Demo D
+def demo_wrap(out_dir: Path | None = None) -> int:
+    """The loop in one run: wrap a real MCP server, see an allow and a deny
+    over the wire, explain the deny, pin it as a regression test, run it."""
+    import shlex
+    import subprocess
+
+    from atp_cli.mcp_cmds import init_config
+
+    print("DEMO D - atp mcp wrap: from an MCP server to a regression test")
+    print("upstream: notes MCP server (this repo)   gateway: in-process from .atp/   no LLM")
+    root = out_dir or Path(tempfile.mkdtemp(prefix="atp-wrap-demo-"))
+    root.mkdir(parents=True, exist_ok=True)
+    notes = root / "notes"
+    notes.mkdir(exist_ok=True)
+    home = root / ".atp"
+    config = root / "atp-mcp.yaml"
+    command = [sys.executable, "-m", "notes_mcp_server"]
+
+    _section("1. atp mcp init -- python -m notes_mcp_server")
+    if config.exists():
+        config.unlink()
+    rc = init_config(out=config, name="notes", url=None, command=command)
+    if rc != 0:
+        return rc
+    data: dict[str, Any] = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["upstream"]["env"] = {"NOTES_DIR": str(notes)}
+    config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    caps = data["authority"]["capabilities"]
+    print(f"  delegated capabilities: {caps}   (notes:destroy is not delegated)")
+
+    _section("2. atp mcp wrap --config atp-mcp.yaml   (client -> proxy+gateway -> notes)")
+    import anyio
+    from mcp import ClientSession, StdioServerParameters, types
+    from mcp.client.stdio import get_default_environment, stdio_client
+
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "atp_cli.main", "mcp", "wrap", "--config", str(config), "--home", str(home)],
+        env={**get_default_environment(), "ATP_HOME": str(home)},
+    )
+
+    def text(r: types.CallToolResult) -> str:
+        return "".join(c.text for c in r.content if isinstance(c, types.TextContent))
+
+    async def body() -> dict[str, Any]:
+        async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
+            await s.initialize()
+            tools = sorted(t.name for t in (await s.list_tools()).tools)
+            write = await s.call_tool("write_note", {"id": "todo", "text": "buy milk"})
+            delete = await s.call_tool("delete_note", {"id": "todo"})
+            return {"tools": tools, "write": write, "delete": delete}
+
+    out = anyio.run(body)
+    print(f"  tools/list: {', '.join(out['tools'])}")
+    print(f"  write_note  -> ALLOW   upstream said {text(out['write'])!r}")
+    denial = out["delete"].structured_content
+    print(
+        f"  delete_note -> DENY    {denial['reason_code']}   trace {denial['trace_id']}   "
+        f"note still exists: {(notes / 'todo.txt').exists()}"
+    )
+    trace_id = denial["trace_id"]
+
+    def atp(*argv: str) -> int:
+        cmd = [sys.executable, "-m", "atp_cli.main", *argv]
+        print(f"$ atp {shlex.join(argv)}")
+        proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, encoding="utf-8")
+        for line in (proc.stdout or "").rstrip().splitlines():
+            print(f"  {line}")
+        if proc.returncode not in (0, 1):
+            print(f"  (stderr) {proc.stderr.strip()[:500]}")
+        return proc.returncode
+
+    _section("3. why was it denied, and what would need to change")
+    atp("policy", "explain", trace_id, "--home", str(home))
+    _section("4. pin it as a regression test and run it")
+    suite = root / "atp-regression.yaml"
+    if suite.exists():
+        suite.unlink()
+    atp(
+        "regression",
+        "add",
+        trace_id,
+        "--suite",
+        str(suite),
+        "--home",
+        str(home),
+        "--name",
+        "delete stays denied",
+    )
+    rc = atp("test", str(suite), "--home", str(home))
+    print()
+    print(f"files: {config}, {suite}, {home}")
+    print("limits: stdio served; one upstream; a client that launches the notes server itself")
+    print("bypasses the proxy (docs/security/enforcing-the-boundary.md)")
+    return rc

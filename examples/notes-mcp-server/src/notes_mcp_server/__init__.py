@@ -40,7 +40,7 @@ def build_server(root: Path | None = None) -> MCPServer:
     @server.tool(
         name="list_notes",
         description="List the ids of all notes.",
-        annotations=ToolAnnotations(readOnlyHint=True),
+        annotations=ToolAnnotations(read_only_hint=True),
     )
     def list_notes() -> list[str]:
         return sorted(p.stem for p in root.glob("*.txt"))
@@ -48,7 +48,7 @@ def build_server(root: Path | None = None) -> MCPServer:
     @server.tool(
         name="read_note",
         description="Return the text of a note.",
-        annotations=ToolAnnotations(readOnlyHint=True),
+        annotations=ToolAnnotations(read_only_hint=True),
     )
     def read_note(id: str) -> str:
         p = _path(root, id)
@@ -65,7 +65,7 @@ def build_server(root: Path | None = None) -> MCPServer:
     @server.tool(
         name="delete_note",
         description="Delete a note permanently.",
-        annotations=ToolAnnotations(destructiveHint=True),
+        annotations=ToolAnnotations(destructive_hint=True),
     )
     def delete_note(id: str) -> str:
         p = _path(root, id)

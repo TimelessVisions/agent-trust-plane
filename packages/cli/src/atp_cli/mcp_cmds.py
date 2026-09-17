@@ -74,6 +74,7 @@ def init_config(
     command: list[str],
     cwd: str | None = None,
     casefold: bool | None = None,
+    home_dir: str | None = None,
 ) -> int:
     if out.exists():
         _err(f"{out} exists; not overwriting (delete it or pass --config another path)")
@@ -93,7 +94,12 @@ def init_config(
     proposal = propose_config(
         server_name, upstream, tools, scope_dirs=_scope_dirs(command), casefold=casefold
     )
-    dump_config(proposal.config, out, header=render_header(proposal, url or shlex.join(command)))
+    home = AtpHome(home_dir).ensure()
+    version = f"{server_name}-v1"
+    if home.ensure_policy_file(version, f"{server_name} via atp mcp wrap"):
+        _err(f"wrote {home.policy_path}: declared policy set {version!r} (no rules yet)")
+    config = proposal.config.model_copy(update={"policy_set": version})
+    dump_config(config, out, header=render_header(proposal, url or shlex.join(command)))
     _err(f"wrote {out}: {len(tools)} tool(s) mapped under tool 'mcp.{server_name}'")
     for note in proposal.notes:
         _err(f"note: {note}")
@@ -128,7 +134,7 @@ def wrap(
         if not (url or command):
             _err(f"{config_path} not found and no upstream given; try: atp mcp wrap -- <command>")
             return 2
-        rc = init_config(out=config_path, name=name, url=url, command=command)
+        rc = init_config(out=config_path, name=name, url=url, command=command, home_dir=home_dir)
         if rc != 0:
             return rc
     try:

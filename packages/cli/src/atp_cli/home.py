@@ -63,8 +63,39 @@ class AtpHome:
                 os.chmod(self.keys_path, stat.S_IRUSR | stat.S_IWUSR)
         gitignore = self.path / ".gitignore"
         if not gitignore.exists():
-            gitignore.write_text("*\n", encoding="utf-8")
+            gitignore.write_text(
+                "# secrets and local state; policies.yaml is meant to be committed\n"
+                "keys.env\natp.db\natp.db-*\n",
+                encoding="utf-8",
+            )
         return self
+
+    def ensure_policy_file(self, version: str, description: str = "") -> bool:
+        """Write a starter declared policy set if the home has none. Returns
+        True when a file was written."""
+        if self.policy_path.exists():
+            return False
+        text = f"""\
+# Declared policy sets for this project (loaded next to the built-in payments sets).
+# Every set always includes the kernel policies: delegation valid, capability held,
+# resource in scope. Rules add argument-level limits on top. See docs/policies.md.
+version: 1
+policy_sets:
+  - version: {version}
+    description: {description or version}
+    rules: []
+    # examples (uncomment and adapt):
+    #  - id: short-notes
+    #    applies_to: {{tool: mcp.notes, action: write_note}}
+    #    kind: argument_max_length
+    #    argument: text
+    #    max_length: 2000
+    #  - id: never-delete
+    #    applies_to: {{tool: mcp.notes, action: delete_note}}
+    #    kind: deny
+"""
+        self.policy_path.write_text(text, encoding="utf-8")
+        return True
 
     def keys(self) -> dict[str, str]:
         out: dict[str, str] = {}

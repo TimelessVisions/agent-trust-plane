@@ -83,6 +83,8 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path
             str(config),
             "--name",
             "notes",
+            "--home",
+            str(home),
             "--",
             sys.executable,
             "-m",
@@ -121,8 +123,11 @@ def test_wrap_loop_enforce(workspace: dict[str, Path], capsys: pytest.CaptureFix
     assert (notes / "todo.txt").exists(), "denied call must not reach the upstream"
     trace_id = denial["trace_id"]
 
-    # local store: keys generated, gitignored, and the decisions are there
-    assert (home / "keys.env").exists() and (home / ".gitignore").exists()
+    # local store: keys generated and gitignored, policy file committable, decisions there
+    assert (home / "keys.env").exists() and (home / "policies.yaml").exists()
+    ignored = (home / ".gitignore").read_text(encoding="utf-8")
+    assert "keys.env" in ignored
+    assert not any(line.strip() == "policies.yaml" for line in ignored.splitlines())
     assert _run("trace", "list", "--home", str(home)) == 0
     out = capsys.readouterr().out
     assert trace_id in out and "DENY" in out and "ALLOW" in out
@@ -155,7 +160,8 @@ def test_wrap_loop_enforce(workspace: dict[str, Path], capsys: pytest.CaptureFix
     assert "ADDED delete stays denied" in out and "DENY / CAPABILITY_NOT_GRANTED" in out
     assert _run("test", str(suite), "--quiet", "--home", str(home)) == 0
     text = suite.read_text(encoding="utf-8")
-    assert "notes-agent" in text and "grt_" not in text.split("cases:")[0].split("grants:")[0]
+    assert "notes-agent" in text and "policy_set: notes-v1" in text
+    assert "policies: ../home/policies.yaml" in text or "policies: " in text
 
     # impact between built-in sets: nothing about this case changes
     assert (
