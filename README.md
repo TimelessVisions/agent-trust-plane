@@ -315,11 +315,11 @@ uv run python -m finance_agent --scenario injection
 uv run python -m atp_evals
 
 # Persistent gateway + dashboard
-uv run python -m atp_gateway keygen > .env      # keys are REQUIRED; .env is gitignored
-uv run python -m atp_gateway                    # http://127.0.0.1:8000 (OpenAPI at /docs)
+uv run python -m atp_gateway keygen --write .env   # keys are REQUIRED; .env is gitignored
+uv run python -m atp_gateway                       # http://127.0.0.1:8000 (OpenAPI at /docs)
 
 # in another shell
-export ATP_OPERATOR_KEY=<value from .env>       # PowerShell: $env:ATP_OPERATOR_KEY="..."
+export ATP_OPERATOR_KEY=<value from .env>          # PowerShell: $env:ATP_OPERATOR_KEY="..."
 uv run python -m atp_evals --gateway http://127.0.0.1:8000
 uv run python -m finance_agent --scenario injection --gateway http://127.0.0.1:8000
 cd apps/dashboard && npm install && npm run dev  # http://localhost:3000, paste the operator key
