@@ -3,7 +3,8 @@
 Environment: Windows 11 10.0.26200, Python 3.14.6 (uv-managed), uv 0.9,
 Node 24.18 / npm, MCP Python SDK 2.2.0. All commands run from the
 repository root at the release-candidate tree; results copied from the
-terminal. Linux/macOS: not run in this pass (no remote for CI yet).
+terminal. Linux and Windows CI results are recorded in the GitHub Actions
+section at the end; macOS is not in the matrix and was not run.
 
 | # | Command | Result |
 |---|---|---|
@@ -33,8 +34,27 @@ terminal. Linux/macOS: not run in this pass (no remote for CI yet).
 | 24 | fresh clone, cold cache, README followed literally | `docs/first-user-test-v2.md`: 37 s to first allow/deny; 65 s to a passing regression test; one finding (destructive tools denied by default) folded into the README |
 | 25 | `scripts/record_demo.py` | transcript + SVG regenerated from a real run |
 
-Not verified (stated in `docs/integrations/compatibility.md`): Linux/macOS,
-Python 3.12/3.13 on a remote runner, any IDE MCP client, PyPI publication.
+## GitHub Actions (after publication)
 
-Publication steps (repository creation, push, GitHub release, PyPI) were
-**not** performed; they require the maintainer's explicit approval.
+The repository was published to https://github.com/TimelessVisions/agent-trust-plane
+on 2026-09-17 (commit `16d937c`, tag `v0.3.0`). The first CI run on that
+commit failed in one step on all three OS legs: `atp demo wrap --out
+eval-reports/wrap-demo` resolved a *relative* `--out` twice (its `atp`
+subprocesses run with `cwd=out`), which local runs with an absolute temp
+directory never exercised. Everything before that step (lint, mypy, the
+full test suite, evals, doctor, demos A–C) had passed on all legs. The fix
+and a regression test landed as commit `a4ac997` on `main`.
+
+GitHub Actions run: https://github.com/TimelessVisions/agent-trust-plane/actions/runs/35234834560 (commit `a4ac997`)
+
+| Job | Result |
+|---|---|
+| backend (ubuntu-latest, Python 3.12) | PASS |
+| backend (ubuntu-latest, Python 3.13) | PASS |
+| backend (windows-latest, Python 3.13) | PASS |
+| package (wheel build, isolated `uvx` run, pip-audit, SBOM) | PASS |
+| dashboard (typecheck, production build) | PASS |
+
+Still not verified: macOS; any IDE MCP client; PyPI publication (nothing
+has been published to PyPI). The `v0.3.0` tag still points at `16d937c`,
+i.e. before the demo fix; only `main` carries the fix.

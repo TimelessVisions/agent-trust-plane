@@ -13,14 +13,14 @@ needs them. Rejected ideas and why: [docs/research/rejected-ideas.md](docs/resea
 
 ## NEXT
 
-- **Publish**: GitHub repository, tagged release, PyPI `agent-trust-plane` (needs maintainer approval; nothing is public yet)
+- **Publish**: the GitHub repository is public (2026-09-17); a GitHub Release and PyPI `agent-trust-plane` still need maintainer approval
 - **Streamable HTTP served by the proxy** with bearer/OAuth client auth (today: stdio only on the served side)
 - **Idempotency key injection** as a per-mapping option (`docs/security/idempotency.md`)
 - **Identity providers from settings**: SPIFFE/mTLS and OIDC client-credential providers behind the existing `IdentityProvider` protocol
 - **Trace export hook**: a `TraceStore` wrapper that streams events to a sink (WORM bucket, log service); signed trace heads for the `atp serve` deployment
 - **OpenTelemetry export** of decisions as `execute_tool` spans once the GenAI conventions leave *Development*
 - **Chaos tests**: proxy killed mid-call, partition to a remote gateway, second SQLite writer
-- Linux/macOS verification of the wrap flow in CI (the workflow targets ubuntu; it has not run on a remote yet)
+- macOS verification (Linux and Windows are green in CI as of 2026-09-17; macOS is not in the matrix)
 
 ## LATER
 

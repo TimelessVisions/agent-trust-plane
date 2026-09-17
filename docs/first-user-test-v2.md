@@ -65,7 +65,9 @@ Time to first useful result (an ALLOW and a DENY on a real MCP server):
 
 ## Not covered
 
-Linux/macOS (no machine in this pass); an IDE client (Claude Desktop,
+macOS (no machine in this pass; Linux is covered by the ubuntu-latest CI
+legs in [run 35234834560](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/35234834560), which run `atp demo wrap` but not this
+scripted first-user flow); an IDE client (Claude Desktop,
 Cursor) launching `atp mcp wrap` — the script used the MCP Python SDK's
 `stdio_client`, which is what those clients do, but that is inference and
 the compatibility matrix marks them *not verified*.

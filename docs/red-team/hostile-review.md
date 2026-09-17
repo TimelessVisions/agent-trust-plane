@@ -38,9 +38,9 @@ by the only responses that count: code, tests, evidence, and admissions.*
    first call costs 160–200 ms** and everything is single-threaded on one
    Windows laptop.
 
-9. **Zero users, zero Linux runs, zero clients verified.** The
-   compatibility matrix is mostly NOT VERIFIED. The CI has never executed
-   on a remote.
+9. **Zero users, zero clients verified.** The compatibility matrix is
+   mostly NOT VERIFIED; CI ran on a remote for the first time on the day
+   of publication and failed a step in its first run.
 
 10. **The generated config trusts server annotations.** A malicious server
     marks `rm -rf` read-only and the generator hands it `read`.
@@ -114,8 +114,10 @@ event loop and fixed it to 14 ms; that is what benchmarks are for. No
 
 **9. Zero users.** True, stated on the README's first screen, in the
 compatibility matrix, and in the pre-mortem. The matrix marks VERIFIED only
-what was run; that is the point of it. Linux is the first item after
-publication because the CI workflow cannot run before there is a remote.
+what was run; that is the point of it. After publication, CI ran on
+ubuntu-latest (Python 3.12, 3.13) and windows-latest (3.13), failed one step
+on its first run (a relative `--out` bug), and passed on the fix; macOS and
+IDE clients remain unverified.
 
 **10. Annotations.** The generator uses them to *propose* capability names
 in a file a human reviews; destructive tools are never delegated by the
