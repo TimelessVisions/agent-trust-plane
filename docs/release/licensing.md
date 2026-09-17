@@ -6,13 +6,11 @@
   https://opensource.org/license/mit; the body was compared word for word
   (whitespace-normalised) against that page on 2026-09-17 and matches. The
   only project-specific line is the copyright line.
-- Copyright holder: the sole author in the Git history, recorded as
-  `George <george@agentcommercegateway.com>` (28 commits, 2026-09-16 to
-  2026-09-17; a second address `georgegarkavyi@gmail.com` appears on some
-  commits for the same author name). No other contributors, no
-  `Co-Authored-By` trailers naming another person, no CLA. The repository
-  does not record a full legal name; the maintainer should confirm the
-  line before publication.
+- Copyright holder: `George Gakravyi`, as confirmed by the maintainer on
+  2026-09-17. The Git history has a single author ("George",
+  `george@agentcommercegateway.com` and `georgegarkavyi@gmail.com`; 28+
+  commits, 2026-09-16 onward), no other contributors, no `Co-Authored-By`
+  trailers naming another person, no CLA.
 - Metadata: root `pyproject.toml` uses the PEP 639 form `license = "MIT"`
   with `license-files = ["LICENSE"]` and an `authors` entry; every
   workspace member `pyproject.toml` declares `license = "MIT"`; the
@@ -68,6 +66,5 @@ requirements would need to be revisited.
 
 ## What cannot be verified from this machine
 
-- Full legal name of the copyright holder (see above).
 - Licenses of platform-specific wheels not resolved on Windows (uvloop,
   httpx2-jsfetch); re-run `pip-licenses` on Linux before a PyPI release.
