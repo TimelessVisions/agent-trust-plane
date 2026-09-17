@@ -3,6 +3,7 @@ name = "atp-evals"
 version = "0.3.0"
 description = "Agent Trust Plane: adversarial evaluation harness"
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = [
   "atp-core",
   "atp-gateway",
@@ -12,7 +13,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

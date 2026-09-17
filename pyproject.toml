@@ -4,7 +4,9 @@ version = "0.3.0"
 description = "A control boundary between agent reasoning and real-world execution."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "George", email = "george@agentcommercegateway.com" }]
 dependencies = [
   "pydantic>=2.10",
   "pydantic-settings>=2.7",
@@ -19,7 +21,7 @@ dependencies = [
 atp = "atp_cli.main:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

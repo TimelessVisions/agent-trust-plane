@@ -101,4 +101,4 @@ Evidence for what *is* handled: 439 tests including property-based tests (delega
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md), [DEVELOPMENT.md](DEVELOPMENT.md) (module map, invariants not to break, how to add a policy or adapter), [ROADMAP.md](ROADMAP.md), [docs/good-first-issues.md](docs/good-first-issues.md), [SECURITY.md](SECURITY.md) for reporting a vulnerability, [CHANGELOG.md](CHANGELOG.md). MIT licensed. No telemetry.
+[CONTRIBUTING.md](CONTRIBUTING.md), [DEVELOPMENT.md](DEVELOPMENT.md) (module map, invariants not to break, how to add a policy or adapter), [ROADMAP.md](ROADMAP.md), [docs/good-first-issues.md](docs/good-first-issues.md), [SECURITY.md](SECURITY.md) for reporting a vulnerability, [CHANGELOG.md](CHANGELOG.md). [MIT licensed](LICENSE) (dependency and copyright record: [docs/release/licensing.md](docs/release/licensing.md)). No telemetry.
