@@ -423,7 +423,8 @@ def to_markdown(env: dict[str, Any], rows: list[dict[str, Any]], n: int) -> str:
         cold = f"{r['cold_ms']:.2f}" if r.get("cold_ms") is not None else "-"
         lines.append(
             f"| {r['name']} | {r['n']} | {r['mean_ms']:.2f} | {r['p50_ms']:.2f} | "
-            f"{r['p95_ms']:.2f} | {r['p99_ms']:.2f} | {r['min_ms']:.2f} | {r['max_ms']:.2f} | {cold} |"
+            f"{r['p95_ms']:.2f} | {r['p99_ms']:.2f} | {r['min_ms']:.2f} | {r['max_ms']:.2f} | "
+            f"{cold} |"
         )
     by = {r["name"].split(".")[0]: r for r in rows}
     if "D" in by and "E" in by and "F" in by:

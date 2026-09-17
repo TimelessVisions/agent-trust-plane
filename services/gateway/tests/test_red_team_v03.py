@@ -129,7 +129,9 @@ class TestUntrustedFiles:
         # and the strict model rejects the shape long before anything runs.
         bomb = "a: &a [x, x, x, x, x, x, x, x, x, x]\n"
         for i in range(1, 8):
-            bomb += f"{'b' * i}: &{'b' * i} [*{'b' * (i - 1) if i > 1 else 'a'}, *{'b' * (i - 1) if i > 1 else 'a'}]\n"
+            prev = "b" * (i - 1) if i > 1 else "a"
+            name = "b" * i
+            bomb += f"{name}: &{name} [*{prev}, *{prev}]\n"
         bomb += "version: 1\npolicy_sets: []\n"
         p = tmp_path / "bomb.yaml"
         p.write_text(bomb, encoding="utf-8")
@@ -143,7 +145,7 @@ class TestUntrustedFiles:
     ) -> None:
         data = {**SUITE, "policies": "../../../../../../etc/hostname"}
         p = _write(tmp_path, "s.yaml", data)
-        with pytest.raises(ValueError, match="not found|expected a mapping|input limit"):
+        with pytest.raises(ValueError, match=r"not found|expected a mapping|input limit"):
             suite = load_suite(p)
             from atp_evals.regression import run_suite
 

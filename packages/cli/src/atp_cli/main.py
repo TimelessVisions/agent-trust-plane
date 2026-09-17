@@ -190,7 +190,8 @@ def _add_case(
             suite = suite.model_copy(update={"policy_set": recorded_under})
         else:
             _err(
-                f"note: case recorded under {recorded_under}; the suite runs under {suite.policy_set}"
+                f"note: case recorded under {recorded_under}; the suite runs under "
+                f"{suite.policy_set}"
             )
     dump_suite(suite, suite_path)
     print(

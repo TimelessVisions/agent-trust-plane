@@ -198,7 +198,7 @@ def test_wrap_loop_enforce(workspace: dict[str, Path], capsys: pytest.CaptureFix
 def test_wrap_loop_shadow(workspace: dict[str, Path], capsys: pytest.CaptureFixture[str]) -> None:
     notes, home, config = workspace["notes"], workspace["home"], workspace["config"]
     (notes / "todo.txt").write_text("x", encoding="utf-8")
-    listed, delete = anyio.run(_drive, config, home, "shadow", [("delete_note", {"id": "todo"})])
+    _listed, delete = anyio.run(_drive, config, home, "shadow", [("delete_note", {"id": "todo"})])
     # shadow: the call is forwarded (the note is gone) but recorded as WOULD_DENY
     assert not delete.is_error
     assert not (notes / "todo.txt").exists()

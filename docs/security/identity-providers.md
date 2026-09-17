@@ -11,6 +11,7 @@ shows a second implementation driving the same binding).
 ```python
 class IdentityProvider(Protocol):
     name: str
+
     def authenticate(self, headers: Mapping[str, str], *, now: datetime) -> AuthenticatedAgent: ...
     def is_live(self, credential_id: str, *, now: datetime) -> bool: ...
 ```

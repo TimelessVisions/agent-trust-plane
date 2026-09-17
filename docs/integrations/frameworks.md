@@ -50,13 +50,21 @@ from atp_core import ActionEnvelope
 
 client = TrustPlaneClient("http://127.0.0.1:8000", agent_token=TOKEN)
 
+
 @tool_input_guardrail
 async def atp_guard(data):
     args = json.loads(data.context.tool_arguments or "{}")
-    env = ActionEnvelope(principal=HUMAN, agent=AGENT, delegation_grant_id=GRANT,
-                         capability="fs:write", tool="fs", action=data.context.tool_name,
-                         resource=f"path:{args['path']}", arguments=args)
-    result = client.authorize(env)          # decision + trace; no grant is consumed here
+    env = ActionEnvelope(
+        principal=HUMAN,
+        agent=AGENT,
+        delegation_grant_id=GRANT,
+        capability="fs:write",
+        tool="fs",
+        action=data.context.tool_name,
+        resource=f"path:{args['path']}",
+        arguments=args,
+    )
+    result = client.authorize(env)  # decision + trace; no grant is consumed here
     if result.execution_grant is None:
         return ToolGuardrailFunctionOutput.reject_content(result.decision.explanation)
     return ToolGuardrailFunctionOutput.allow()

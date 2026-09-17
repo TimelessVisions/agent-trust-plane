@@ -214,7 +214,7 @@ class GrantLifecycle(RuleBasedStateMachine):
         """Use a real token with a modified action: must never execute."""
         if not self.pending:
             return
-        env, token, gid = self.pending[index % len(self.pending)]
+        env, token, _gid = self.pending[index % len(self.pending)]
         tampered = env.model_copy(update={"arguments": {"amount": amount, "currency": "USD"}})
         if tampered.action_hash == env.action_hash:
             return
