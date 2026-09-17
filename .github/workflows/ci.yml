@@ -5,15 +5,31 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python: ["3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python: "3.13"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      # Third-party actions are pinned to commit SHAs (tag shown for humans).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
       - run: uv python install ${{ matrix.python }}
@@ -24,25 +40,57 @@ jobs:
       - run: uv run pytest -p no:warnings
       - name: adversarial evals (in-process gateway)
         run: uv run python -m atp_evals --report eval-reports/ci.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: eval-report-py${{ matrix.python }}
+          name: eval-report-${{ matrix.os }}-py${{ matrix.python }}
           path: eval-reports/ci.json
       - name: doctor
         run: uv run atp doctor --port 1
-      - name: demos (A injection, B regression, C mcp)
+      - name: demos (A injection, B regression, C mcp, D wrap)
+        shell: bash
         run: |
           uv run atp demo injection
           uv run atp demo regression --out eval-reports/demo-regression.yaml
           uv run atp demo mcp
+          uv run atp demo wrap --out eval-reports/wrap-demo
       - name: security regression suite (sample)
+        shell: bash
         run: |
           uv run atp test examples/regression-suite/accounts-payable.yaml --junit eval-reports/regression.xml --json eval-reports/regression.json
           if uv run atp test examples/regression-suite/accounts-payable.yaml --policy-set payments-v1 --quiet; then echo "expected v1 to fail" && exit 1; fi
-      - uses: actions/upload-artifact@v4
+          uv run atp policy impact --from payments-v1 --to payments-v2 --suite examples/regression-suite/accounts-payable.yaml
+      - name: links
+        run: uv run python scripts/check_links.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: regression-report-py${{ matrix.python }}
+          name: regression-report-${{ matrix.os }}-py${{ matrix.python }}
           path: eval-reports/regression.*
+
+  package:
+    # Build the single distribution and prove it installs and runs in isolation.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - run: uv build
+      - name: install the wheel in an isolated environment and run the loop
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          uvx --isolated --from "$WHEEL" atp doctor --port 1
+          uvx --isolated --from "$WHEEL" atp demo wrap --out /tmp/wrap-demo
+          uvx --isolated --from "$WHEEL" atp test examples/regression-suite/accounts-payable.yaml --quiet
+      - name: dependency audit (advisories in the locked set)
+        run: |
+          uv export --format requirements-txt --no-hashes --no-emit-project --no-dev -o /tmp/req.txt
+          uvx pip-audit -r /tmp/req.txt --strict
+      - name: SBOM (CycloneDX)
+        run: uv run python scripts/sbom.py --out dist/sbom.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
 
   dashboard:
     runs-on: ubuntu-latest
@@ -50,8 +98,10 @@ jobs:
       run:
         working-directory: apps/dashboard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm

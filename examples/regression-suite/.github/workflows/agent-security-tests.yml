@@ -7,23 +7,34 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   regression:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - run: uv python install 3.12
-      # Install the CLI. Until a PyPI release exists, install from the repo
-      # (pin a commit or tag you have reviewed).
-      - run: uv tool install "git+https://github.com/<owner>/agent-trust-plane@<tag>#subdirectory=packages/cli"
+      # Install the CLI. Until a PyPI release exists, install from the repo at
+      # a commit or tag you have reviewed (single distribution, root of the repo).
+      - run: uv tool install "git+https://github.com/<owner>/agent-trust-plane@<tag>"
       - name: run security regression suites
         run: |
           set -e
           for f in security/*.yaml; do
             atp test "$f" --junit "results-$(basename "$f" .yaml).xml" --json "results-$(basename "$f" .yaml).json"
           done
-      - uses: actions/upload-artifact@v4
+      - name: refuse policy changes that widen authority on recorded actions
+        if: github.event_name == 'pull_request'
+        run: |
+          # Compare the policy set the suite pins against the one the PR proposes;
+          # adjust the versions to your naming. Exit 1 on any DENY -> ALLOW.
+          atp policy impact --from fs-v1 --to fs-v2 --suite security/main.yaml --fail-on-widen
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: agent-security-results
