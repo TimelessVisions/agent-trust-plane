@@ -1,6 +1,6 @@
 [project]
 name = "notes-mcp-server"
-version = "0.2.0"
+version = "0.3.0"
 description = "Agent Trust Plane: harmless example MCP server (notes in a sandbox directory)"
 requires-python = ">=3.12"
 dependencies = [

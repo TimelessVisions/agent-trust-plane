@@ -35,3 +35,6 @@ Thumbs.db
 .idea/
 .vscode/
 .pytest-tmp/
+
+# local ATP home (keys + evidence store)
+.atp/

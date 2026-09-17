@@ -25,7 +25,7 @@ members = [
 
 [[package]]
 name = "agent-trust-plane"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -189,7 +189,7 @@ wheels = [
 
 [[package]]
 name = "atp-adapter-http"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "adapters/http" }
 dependencies = [
     { name = "atp-core" },
@@ -204,7 +204,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-adapter-mcp"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "adapters/mcp" }
 dependencies = [
     { name = "atp-adapter-http" },
@@ -223,7 +223,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-audit"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/audit" }
 dependencies = [
     { name = "atp-core" },
@@ -234,7 +234,7 @@ requires-dist = [{ name = "atp-core", editable = "packages/core" }]
 
 [[package]]
 name = "atp-cli"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "atp-adapter-http" },
@@ -261,7 +261,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-core"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "pydantic" },
@@ -272,7 +272,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.10" }]
 
 [[package]]
 name = "atp-evals"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/evals" }
 dependencies = [
     { name = "atp-core" },
@@ -293,7 +293,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-gateway"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "services/gateway" }
 dependencies = [
     { name = "atp-adapter-http" },
@@ -320,7 +320,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-identity"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/identity" }
 dependencies = [
     { name = "atp-core" },
@@ -331,7 +331,7 @@ requires-dist = [{ name = "atp-core", editable = "packages/core" }]
 
 [[package]]
 name = "atp-policy"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "packages/policy" }
 dependencies = [
     { name = "atp-core" },
@@ -632,7 +632,7 @@ wheels = [
 
 [[package]]
 name = "finance-agent"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "examples/finance-agent" }
 dependencies = [
     { name = "atp-adapter-http" },
@@ -1080,7 +1080,7 @@ wheels = [
 
 [[package]]
 name = "notes-mcp-server"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "examples/notes-mcp-server" }
 dependencies = [
     { name = "mcp" },

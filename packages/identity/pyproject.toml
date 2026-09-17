@@ -1,6 +1,6 @@
 [project]
 name = "atp-identity"
-version = "0.2.0"
+version = "0.3.0"
 description = "Agent Trust Plane: principals, delegation grants, chain resolution"
 requires-python = ">=3.12"
 dependencies = [

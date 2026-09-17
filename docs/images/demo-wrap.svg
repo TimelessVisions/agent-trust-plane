@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="500" viewBox="0 0 960 500" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+<rect width="960" height="500" rx="8" fill="#0d1117"/>
+<text x="16" y="16" fill="#8b949e" font-size="11">uv run atp demo wrap  (rendered from docs/demo/wrap-transcript.txt; real output, no animation)</text>
+<text x="16" y="34" fill="#79c0ff" xml:space="preserve">DEMO D - atp mcp wrap: from an MCP server to a regression test</text>
+<text x="16" y="52" fill="#c9d1d9" xml:space="preserve">upstream: notes MCP server (this repo)   gateway: in-process from .atp/   no LLM</text>
+<text x="16" y="70" fill="#79c0ff" xml:space="preserve">1. atp mcp init -- python -m notes_mcp_server</text>
+<text x="16" y="88" fill="#c9d1d9" xml:space="preserve">  delegated capabilities: [&#x27;notes:read&#x27;, &#x27;notes:write&#x27;]   (notes:destroy is not delegated)</text>
+<text x="16" y="106" fill="#79c0ff" xml:space="preserve">2. atp mcp wrap --config atp-mcp.yaml   (client -&gt; proxy+gateway -&gt; notes)</text>
+<text x="16" y="124" fill="#c9d1d9" xml:space="preserve">  tools/list: delete_note, list_notes, read_note, write_note</text>
+<text x="16" y="142" fill="#3fb950" xml:space="preserve">  write_note  -&gt; ALLOW   upstream said &#x27;wrote todo (8 chars)&#x27;</text>
+<text x="16" y="160" fill="#ff7b72" xml:space="preserve">  delete_note -&gt; DENY    CAPABILITY_NOT_GRANTED   trace 457328bdd4ef   note still exists: True</text>
+<text x="16" y="178" fill="#79c0ff" xml:space="preserve">3. why was it denied, and what would need to change</text>
+<text x="16" y="196" fill="#7ee787" xml:space="preserve">$ atp policy explain 457328bdd4ef</text>
+<text x="16" y="214" fill="#ff7b72" xml:space="preserve">  DENY  CAPABILITY_NOT_GRANTED</text>
+<text x="16" y="232" fill="#c9d1d9" xml:space="preserve">  who:          notes-agent (agent)</text>
+<text x="16" y="250" fill="#c9d1d9" xml:space="preserve">  authority:    local-user (human)</text>
+<text x="16" y="268" fill="#c9d1d9" xml:space="preserve">  action:       mcp.notes.delete_note  capability=notes:destroy</text>
+<text x="16" y="286" fill="#c9d1d9" xml:space="preserve">  decided by:   capability.required.v1</text>
+<text x="16" y="304" fill="#ff7b72" xml:space="preserve">    [FAIL] capability             requested=notes:destroy                limit=[notes:read, notes:write]   &lt;- capabili</text>
+<text x="16" y="322" fill="#c9d1d9" xml:space="preserve">  what would need to change:</text>
+<text x="16" y="340" fill="#c9d1d9" xml:space="preserve">    - delegate capability &#x27;notes:destroy&#x27; to notes-agent on grant grt_df64f18e80bf457b83da1a145d8c1b80 (currently held</text>
+<text x="16" y="358" fill="#79c0ff" xml:space="preserve">4. pin it as a regression test and run it</text>
+<text x="16" y="376" fill="#7ee787" xml:space="preserve">$ atp regression add 457328bdd4ef --suite atp-regression.yaml --name &#x27;delete stays denied&#x27;</text>
+<text x="16" y="394" fill="#c9d1d9" xml:space="preserve">  ADDED delete stays denied</text>
+<text x="16" y="412" fill="#ff7b72" xml:space="preserve">    expected: DENY / CAPABILITY_NOT_GRANTED by capability.required.v1</text>
+<text x="16" y="430" fill="#7ee787" xml:space="preserve">$ atp test &#x27;&lt;tmp&gt;/atp-regression.yaml&#x27;</text>
+<text x="16" y="448" fill="#3fb950" xml:space="preserve">  [PASS] delete stays denied</text>
+<text x="16" y="466" fill="#3fb950" xml:space="preserve">  1/1 passed under notes-v1</text>
+</svg>

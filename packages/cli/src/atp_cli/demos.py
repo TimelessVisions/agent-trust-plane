@@ -326,7 +326,7 @@ def demo_wrap(out_dir: Path | None = None) -> int:
     _section("1. atp mcp init -- python -m notes_mcp_server")
     if config.exists():
         config.unlink()
-    rc = init_config(out=config, name="notes", url=None, command=command)
+    rc = init_config(out=config, name="notes", url=None, command=command, home_dir=str(home))
     if rc != 0:
         return rc
     data: dict[str, Any] = yaml.safe_load(config.read_text(encoding="utf-8"))
@@ -357,7 +357,11 @@ def demo_wrap(out_dir: Path | None = None) -> int:
             delete = await s.call_tool("delete_note", {"id": "todo"})
             return {"tools": tools, "write": write, "delete": delete}
 
-    out = anyio.run(body)
+    try:
+        out = anyio.run(body)
+    except Exception as exc:  # the wrap subprocess reports its own reason on stderr
+        print(f"  the wrapped server did not start ({type(exc).__name__}); see stderr above")
+        return 2
     print(f"  tools/list: {', '.join(out['tools'])}")
     print(f"  write_note  -> ALLOW   upstream said {text(out['write'])!r}")
     denial = out["delete"].structured_content

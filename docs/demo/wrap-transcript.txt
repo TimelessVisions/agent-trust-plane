@@ -1,0 +1,69 @@
+# recorded 2026-09-17T11:12:45+00:00 on Windows 11, Python 3.14.6; real output of `uv run atp demo wrap`, temp paths replaced by <tmp>
+
+DEMO D - atp mcp wrap: from an MCP server to a regression test
+upstream: notes MCP server (this repo)   gateway: in-process from .atp/   no LLM
+
+1. atp mcp init -- python -m notes_mcp_server
+---------------------------------------------
+  delegated capabilities: ['notes:read', 'notes:write']   (notes:destroy is not delegated)
+
+2. atp mcp wrap --config atp-mcp.yaml   (client -> proxy+gateway -> notes)
+--------------------------------------------------------------------------
+  tools/list: delete_note, list_notes, read_note, write_note
+  write_note  -> ALLOW   upstream said 'wrote todo (8 chars)'
+  delete_note -> DENY    CAPABILITY_NOT_GRANTED   trace 457328bdd4ef   note still exists: True
+
+3. why was it denied, and what would need to change
+---------------------------------------------------
+$ atp policy explain 457328bdd4ef --home '<tmp>/.atp'
+  ==============================================================================
+  DENY  CAPABILITY_NOT_GRANTED
+  ==============================================================================
+  trace:        457328bdd4ef
+  who:          notes-agent (agent)
+  authority:    local-user (human)
+                local-user -> local-user [grt_b297faa226e348229916575546889eb7]
+                local-user -> notes-agent [grt_df64f18e80bf457b83da1a145d8c1b80]
+  action:       mcp.notes.delete_note  capability=notes:destroy
+  resource:     id:todo
+  policy set:   notes-v1  mode=enforce
+  decided by:   capability.required.v1
+  message:      capability 'notes:destroy' is not held by agent:notes-agent; held: ['notes:read', 'notes:write']
+  
+  constraints checked:
+    [ok  ] chain_expires_at       requested=2026-09-17T11:12:40.274709+00:00 limit=2026-09-17T23:12:37.893391+00:00   <- delegation.valid.v1
+    [FAIL] capability             requested=notes:destroy                limit=[notes:read, notes:write]   <- capability.required.v1
+    [ok  ] resource_scope         requested=id:todo                      limit=[*]   <- resource.scope.v1
+  
+  passed: delegation.valid.v1, resource.scope.v1
+  failed: capability.required.v1
+  
+  what would need to change:
+    - delegate capability 'notes:destroy' to notes-agent on grant grt_df64f18e80bf457b83da1a145d8c1b80 (currently held: [notes:read, notes:write]), or have the agent request a held capability
+
+4. pin it as a regression test and run it
+-----------------------------------------
+$ atp regression add 457328bdd4ef --suite '<tmp>/atp-regression.yaml' --home '<tmp>/.atp' --name 'delete stays denied'
+  ADDED delete stays denied
+    expected: DENY / CAPABILITY_NOT_GRANTED by capability.required.v1
+    policy:   notes-v1
+    suite:    <tmp>/atp-regression.yaml (1 case(s))
+    run:      atp test <tmp>/atp-regression.yaml
+  the expectation is the decision the gateway made; review it before committing
+$ atp test '<tmp>/atp-regression.yaml' --home '<tmp>/.atp'
+  ==============================================================================
+  AGENT TRUST PLANE  regression suite: recorded regression cases
+  policy set: notes-v1   run: reg_9330329db0f94f0592cd567035eec356
+  ==============================================================================
+  [PASS] delete stays denied
+         expected DENY CAPABILITY_NOT_GRANTED by capability.required.v1
+         observed DENY CAPABILITY_NOT_GRANTED by capability.required.v1
+         DENY CAPABILITY_NOT_GRANTED by capability.required.v1 under notes-v1
+         trace 588f2ec778d0 (ephemeral gateway; decision only, nothing executed)
+  
+  ------------------------------------------------------------------------------
+  1/1 passed under notes-v1
+
+files: <tmp>/atp-mcp.yaml, <tmp>/atp-regression.yaml, <tmp>/.atp
+limits: stdio served; one upstream; a client that launches the notes server itself
+bypasses the proxy (docs/security/enforcing-the-boundary.md)
