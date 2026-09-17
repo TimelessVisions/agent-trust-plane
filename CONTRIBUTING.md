@@ -18,14 +18,20 @@ cd apps/dashboard && npm install         # optional, dashboard only
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                              # strict, every src tree
-uv run pytest                            # ~330 tests; gateway tests run on memory + SQLite
+uv run pytest -p no:warnings             # ~470 tests incl. property tests and MCP e2e
 uv run python -m atp_evals               # 8 adversarial evals must stay 8/8
 uv run atp test examples/regression-suite/accounts-payable.yaml
+uv run atp demo wrap
+uv run python scripts/check_links.py
 cd apps/dashboard && npm run typecheck && npm run build
 ```
 
 `scripts/check.sh` / `scripts/check.ps1` run all of the above. CI runs the
-same set on Python 3.12 and 3.13.
+same set on Python 3.12 and 3.13 (ubuntu) and 3.13 (windows), builds the
+wheel, installs it with `uvx`, audits dependencies and writes an SBOM.
+
+Read `DEVELOPMENT.md` for the module map, the invariants, and how to add a
+rule kind, a policy, an adapter or an identity provider.
 
 ## Ground rules
 
@@ -49,12 +55,16 @@ same set on Python 3.12 and 3.13.
 See `docs/good-first-issues.md` for scoped items. Larger areas, roughly in
 order of value:
 
-1. Proof-of-possession agent credentials (mTLS or DPoP) replacing bearer tokens.
-2. A generic argument-constraint policy so limits can be expressed for
-   arbitrary MCP tools without Python.
-3. Streamable HTTP transport for the proxy.
+1. A second `IdentityProvider` (SPIFFE/mTLS or OIDC client credentials) behind
+   the existing protocol, selectable from settings.
+2. Streamable HTTP *served* by the proxy, with client auth.
+3. A `TraceStore` wrapper that streams events to an external sink.
 4. Interceptor/ext_authz adapters for Docker MCP Gateway and agentgateway.
 5. Postgres store implementations behind the existing interfaces.
+6. Chaos tests for the proxy (killed mid-call) and a second SQLite writer.
+
+Contributions are reviewed within a week where possible; issues without a
+reproduction may be closed with a request for one.
 
 ## Pull requests
 

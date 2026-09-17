@@ -1,23 +1,33 @@
 # Good first issues (candidates)
 
-Scoped, testable, and each improves something a developer would notice.
-File them as issues once the repository is public.
+Scoped, testable, each visible to a developer using the tool. File them as
+issues once the repository is public; each names the files to touch.
 
-1. **`atp test --diff <other-policy-set>`** — run a suite under two policy
-   sets and print only the decisions that differ. (`packages/evals/regression`)
-2. **`expires_at` support in suites** — allow absolute expiry so "expired
-   delegation" cases can be pinned. (`format.py`, `runner.py`)
-3. **`atp mcp-init --from-upstream`** — launch the upstream once, list its
-   tools, and emit a mapping skeleton with every tool commented out.
-4. **Dashboard: filter traces by agent id** — the trace list grows quickly
-   after evals. (`apps/dashboard/components/TraceList.tsx`)
-5. **JSON Schema for `atp-mcp.yaml` and suite files** — generated from the
-   pydantic models, published under `docs/schemas/`, referenced from the docs.
-6. **`atp doctor --json`** for CI consumption.
-7. **Custom 422 handler** that strips the echoed `input` from validation
-   errors (security-review O9).
-8. **Windows PowerShell version of `scripts/demo.sh`.**
-9. **Proxy: `--dry-run` flag** that authorizes but never forwards, printing
-   decisions — useful for mapping a new upstream.
-10. **A second example upstream** (e.g. a read-only SQLite query server) to
-    show a `resource_template` built from two arguments.
+1. **`TraceStore` export wrapper** — a store that forwards every `append` to a
+   sink (start with a JSONL file), so events can be shipped to WORM storage.
+   `packages/audit/src/atp_audit/store.py`; test with the existing tamper
+   tests. (docs: `docs/security/trace-integrity.md`)
+2. **`atp doctor --json`** for CI consumption. `packages/cli/src/atp_cli/doctor.py`.
+3. **JSON Schemas for `atp-mcp.yaml`, `policies.yaml` and suites** generated
+   from the pydantic models into `docs/schemas/`, with a test that they are
+   up to date. (`model_json_schema()`)
+4. **Absolute `expires_at` in suites** so "expired delegation" cases can be
+   pinned. `packages/evals/src/atp_evals/regression/format.py`, `runner.py`.
+5. **Custom 422 handler** that strips the echoed `input` from validation
+   errors (security review O9). `services/gateway/src/atp_gateway/app.py`.
+6. **Idempotency-key injection option on `ToolMapping`** (`idempotency_argument:
+   name` → the proxy adds `grant_id` under that name before forwarding, and
+   the hash covers it). `adapters/mcp/src/atp_adapter_mcp/`, e2e test.
+7. **Second example upstream**: a read-only SQLite query server whose resource
+   is built from two arguments (`db:{database}/{table}`). `examples/`.
+8. **Windows path fixture for the filesystem server test** (case folding,
+   drive letters) in `adapters/mcp/tests/test_proxy_third_party.py`.
+9. **`atp policy coverage --json` consumers**: a tiny script that fails CI when
+   a newly recorded action has an unguarded argument. `examples/`.
+10. **Mutation strategy for list arguments** (append/remove an element) in
+    `packages/evals/src/atp_evals/analysis.py`, with tests.
+11. **OpenTelemetry exporter (optional extra)** emitting one `execute_tool`
+    span per decision from a `TraceStore` wrapper; conventions are in
+    Development status, so mark it experimental.
+12. **Streamable HTTP served by the proxy** behind a bearer token — larger;
+    start with a design note in `docs/integrations/`.

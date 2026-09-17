@@ -1,129 +1,102 @@
 # Agent Trust Plane
 
-**Put a real authorization decision between your agent and its tools, keep the evidence, and turn every blocked action into a regression test.**
+**Put a real authorization boundary between your AI agent and its tools, and turn every dangerous action into a regression test so it cannot silently come back.**
 
-![Before/after: the same recorded action, allowed under payments-v1, denied under payments-v2](docs/images/before-after.png)
+![Real transcript of `atp demo wrap`: a write is allowed, a delete is denied before it reaches the server, the denial is explained, pinned as a regression test, and the test passes](docs/images/demo-wrap.svg)
 
-*Real screenshot of the operator dashboard: a recorded $640 payment redirected to an unknown account was allowed by the baseline policy set (and settled to the local ledger), then replayed under the hardened set and denied. Nothing on this page is mocked.*
+```bash
+uv run atp demo wrap                        # a real MCP server, wrapped; one ALLOW, one DENY, one regression test
+uv run atp mcp init -- <your mcp server>    # then: atp mcp wrap   (Streamable HTTP upstreams: --url)
+uv run atp regression add <trace> && uv run atp test atp-regression.yaml
+```
 
-> **Status: experimental open-source MVP (v0.2.0).** Every claim here is backed by a test or an eval in this repository; what it does not do is in [docs/security/threat-model.md](docs/security/threat-model.md) and [docs/security/security-review.md](docs/security/security-review.md). Not independently audited. Not production software.
+> **Status: experimental, v0.3.0, no users yet, not independently audited.** Every claim below is backed by a test in this repository or says otherwise. What it does *not* protect is in [docs/security/threat-model.md](docs/security/threat-model.md).
 
-## What it actually does
+## Why this exists
 
-Agent Trust Plane is a decision-and-evidence layer, not an MCP gateway. It:
+Agents act on tool calls, and the tool call is where prompt injection turns into damage: pay this account, delete that file, move this repo. Gateways in front of MCP servers authenticate the caller and allow tools by *name*; most cannot decide on the *arguments* (amount, path, destination) and none replay a recorded decision or keep it fixed in CI ([research, with citations](docs/research/competitive-code-review.md)). ATP does that part and only that part: it is a decision-and-evidence layer, not a gateway ([why-atp.md](docs/why-atp.md)).
 
-- **authenticates agents** (per-agent credentials) and resolves what each one may do from a **delegation chain rooted at a human** — a child can only narrow its parent's authority; monetary limits, capabilities and resource scopes are intersected down the chain;
-- **decides every consequential tool call** with versioned, deterministic policies that look at the *arguments* (amount, destination, resource), not just the tool name;
-- **binds the decision to execution** with a signed, single-use, audience-bound grant over the exact action hash;
-- **records a hash-chained trace** of what was proposed, what influenced it, what was decided and what ran;
-- **replays** any recorded decision under a different policy version and **pins** it as a YAML regression test that runs in CI with no side effects;
-- **intercepts real MCP tool calls** via a stdio proxy in front of an existing MCP server.
+## How it works
 
-It does not run your MCP servers, isolate containers, manage OAuth, or filter content. Those are solved by [other projects](docs/research/competitive-landscape.md); this sits beside or behind them.
+```
+agent / MCP client ──stdio──▶ atp mcp wrap ──▶ upstream MCP server (stdio or Streamable HTTP)
+                                   │
+                    authenticate the agent; resolve HUMAN → agent delegation (capabilities,
+                    resource scope, limits — a child can only narrow)
+                    build an ActionEnvelope from the call (paths normalised, args bounded)
+                    decide: kernel policies + your declared policy set   →  ALLOW / DENY / WOULD_DENY
+                    ALLOW  → single-use grant over the exact action hash → forward → record outcome
+                    DENY   → refuse (enforce)  |  forward and record WOULD_DENY (shadow)
+                    everything on a hash-chained trace in .atp/
+```
 
-## Five-minute quickstart
+Then, offline: `atp trace list` · `atp policy explain TRACE` · `atp regression add TRACE` · `atp test` · `atp policy impact --from A --to B` · `atp mutate TRACE` · `atp evidence export TRACE`.
 
-Prerequisites: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/). No API keys, no Docker, no database setup.
+## Quickstart (measured: [docs/first-user-test-v2.md](docs/first-user-test-v2.md))
+
+Prerequisites: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/). No API keys, no Docker, no database setup, no secrets to copy.
 
 ```bash
 git clone <this repository> && cd agent-trust-plane
-uv sync                      # setup: installs every workspace package
-uv run atp demo mcp          # demo: a real MCP server behind the proxy, over the wire
+uv run atp demo wrap          # syncs the workspace on first run; ~1 minute cold
 ```
 
-PowerShell on Windows is identical (`uv sync`, then `uv run atp demo mcp`).
+The same commands work in PowerShell. `uv run atp doctor` explains anything missing. Other demos: `atp demo injection` (an injected invoice tries to pay $12,500 on a $1,000 delegation), `atp demo regression` (a permitted payment reveals a policy hole; replay under the fix flips it), `atp demo mcp` (the proxy against a remote-style gateway) — [docs/demos.md](docs/demos.md).
 
-Measured on 2026-09-17 from a fresh clone with a cold package cache (Windows 11, Python 3.14): clone 0.5 s, `uv sync` 27 s, first `atp` run 8 s, `atp demo mcp` 11 s — **51 s to the first useful result**. Run `uv run atp doctor` if anything is missing; it says what to fix.
-
-Other demos: `uv run atp demo injection` (Demo A) and `uv run atp demo regression` (Demo B). Reproduction steps for all three: [docs/demos.md](docs/demos.md).
-
-## A blocked action
-
-Demo A: the accounts-payable agent's invoice contains an injected instruction. The (deterministic, simulated) agent follows it and proposes the payment. Its delegated limit is $1,000.
-
-```
-DECISION: DENY
-
-Reason:              PAYMENT_EXCEEDS_DELEGATED_AUTHORITY
-Agent:               accounts-payable-agent
-Requested:           USD 12500.00 -> acct-offshore-9931
-Authorized maximum:  USD 1,000.00
-Policy:              payments.vendor.max_amount.v1
-Trace:               603edbdc7160
-Execution:           blocked (GRANT_MISSING)
-```
-
-The trace shows the untrusted content (with its hash), the proposal, the resolved chain, all eight policy results, the withheld grant and the blocked execution attempt. The ledger has no row.
-
-## Integrate it
-
-**With an MCP server (Demo C).** Point your MCP client at the proxy instead of the server:
+## Wrap your own MCP server
 
 ```bash
-uv run atp keygen --write .env && uv run atp serve            # persistent gateway (127.0.0.1:8000)
-uv run atp mcp-init                                           # writes atp-mcp.yaml
-ATP_AGENT_TOKEN=atpa_... uv run atp mcp-proxy --config atp-mcp.yaml
+uv run atp mcp init --name fs -- npx -y @modelcontextprotocol/server-filesystem /abs/sandbox
+#   reads tools/list; proposes capabilities from the server's annotations (unverified: review them);
+#   writes atp-mcp.yaml and .atp/policies.yaml (declared set fs-v1)
+uv run atp mcp wrap --mode shadow      # observe first: denials are recorded as WOULD_DENY and forwarded
+uv run atp mcp wrap                    # enforce
 ```
 
-Map the tools you want to allow to capabilities and resources; everything else is denied and hidden from `tools/list`:
+Point your MCP client at the wrap command instead of the server ([config example](docs/integrations/frameworks.md)). Verified upstreams: this repo's notes server (stdio and Streamable HTTP, every CI run) and the reference `@modelcontextprotocol/server-filesystem` (opt-in test, run 2026-09-17). Everything else is listed as *not verified* in [docs/integrations/compatibility.md](docs/integrations/compatibility.md).
+
+Scope paths, not just tool names: `resource_scope: ["path:/abs/sandbox/*"]` with `..`, separators and (optionally) case normalised before matching. Argument limits go in [`.atp/policies.yaml`](docs/policies/policies.md):
 
 ```yaml
-tools:
-  - mcp_tool: write_note
-    tool: mcp.notes
-    action: write_note
-    capability: notes:write
-    resource_template: "note:{id}"     # argument-derived: delegate note:* or a single note
-    resource_arguments: [id]
+rules:
+  - id: no-large-writes
+    applies_to: {tool: mcp.fs, action: write_file}
+    kind: argument_max_length
+    argument: content
+    max_length: 20000
 ```
 
-Verified against this repo's notes server on every CI run and against the reference `@modelcontextprotocol/server-filesystem` (opt-in test). Supported: MCP Python SDK 2.x, stdio transport, `tools/list` + `tools/call`, one upstream per proxy. Not yet: SSE/Streamable HTTP, prompts/resources, multiple upstreams. Full scope, and the bypass it cannot prevent (an agent reaching the upstream directly), in [docs/integrations/mcp-proxy.md](docs/integrations/mcp-proxy.md).
-
-**From your own code.** Build an `ActionEnvelope`, call `/authorize`, then `/execute` with the grant — see `adapters/http` (`TrustPlaneClient`) and `examples/finance-agent`.
-
-## Run security regression tests
+## Security regression tests
 
 ```bash
-uv run atp test examples/regression-suite/accounts-payable.yaml                          # 8/8 pass, exit 0
-uv run atp test examples/regression-suite/accounts-payable.yaml --policy-set payments-v1 # 2 changed, exit 1
-uv run atp record --trace <id> --suite security/ap.yaml --name "injected 12500"          # trace -> case
+uv run atp trace list                                   # what was ALLOWed / DENIED / WOULD_DENY
+uv run atp policy explain 457328bdd4ef                  # which constraint failed, and what would need to change
+uv run atp regression add 457328bdd4ef --name "delete stays denied"
+uv run atp test atp-regression.yaml                     # exit 1 if the decision ever changes; --junit/--json for CI
+uv run atp policy impact --from fs-v1 --to fs-v2        # which recorded actions flip; DENY -> ALLOW first
+uv run atp mutate 457328bdd4ef                          # perturb the recorded action; authorize only, never execute
 ```
 
-A suite declares principals, a delegation graph and cases with expected `outcome` / `reason_code` / `matched_policy`. Runs use an ephemeral in-process gateway and call only `/authorize` — nothing executes. Output is human-readable, JSON and JUnit XML. The GitHub Actions example needs no secrets: [examples/regression-suite/.github/workflows/agent-security-tests.yml](examples/regression-suite/.github/workflows/agent-security-tests.yml). Guide: [docs/regression/regression-testing.md](docs/regression/regression-testing.md).
+A suite is YAML: principals, a delegation graph, cases with the expected outcome / reason / policy. Runs use an ephemeral in-process gateway and call only `/authorize` — a spy on `execute` sees zero calls. CI example without secrets: [examples/regression-suite](examples/regression-suite/) and a copy-in [composite action](examples/github-action/). Guide: [docs/regression/regression-testing.md](docs/regression/regression-testing.md).
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    A[Agent / MCP client] -->|envelope + credential| G[Gateway]
-    A -.->|stdio| P[atp mcp-proxy]
-    P -->|authorize · execute · outcome| G
-    P -.->|stdio, only after release| U[Upstream MCP server]
-    G --> I[Identity + delegation<br/>chain intersected]
-    G --> E[Policy engine<br/>versioned, argument-aware]
-    G --> T[(Hash-chained trace)]
-    T --> R[Replay · atp record · atp test]
-```
+Protocol-neutral kernel (`atp_core` envelope/decision, `atp_identity` credentials + delegation chains, `atp_policy` engine + declared sets, `atp_audit` hash chain, `atp_gateway` service/grants/API) with adapters on the edge (`atp_adapter_mcp` proxy, `atp_adapter_http` client) and the `atp` CLI. One distribution, `agent-trust-plane`, installs everything (`uvx --from <wheel-or-git-url> atp …`). The kernel imports nothing from MCP — a test enforces it. Details: [docs/architecture/architecture.md](docs/architecture/architecture.md), [first principles](docs/architecture/first-principles.md), [ADRs](docs/adr/).
 
-Packages: `atp-core` (envelope, decision, reason codes), `atp-identity` (credentials, grants, chain resolution), `atp-policy`, `atp-audit`, `atp-gateway` (FastAPI, SQLite), `atp-adapter-http`, `atp-adapter-mcp` (proxy), `atp-evals` (adversarial evals + regression suites), `atp-cli`, `finance-agent` and `notes-mcp-server` (examples), `apps/dashboard` (Next.js). Details: [docs/architecture/architecture.md](docs/architecture/architecture.md); decisions: [docs/adr/](docs/adr/).
+Overhead ([docs/benchmarks.md](docs/benchmarks.md), single machine, sequential): policy engine 0.26 ms; `atp mcp wrap` adds ~11 ms p50 to an MCP tool call with durable SQLite evidence; the HTTP-gateway proxy path adds ~21 ms.
 
-Overhead, measured ([docs/benchmarks.md](docs/benchmarks.md)): policy evaluation 0.3 ms; authorize + execute over loopback ~11 ms p50; ~21 ms p50 added to an MCP tool call end to end. Single machine, sequential, no concurrency.
+## Security model and limitations
 
-## Security limitations
+Guarantees, assumptions, deployment requirements, non-guarantees and known gaps are separated in [docs/security/threat-model.md](docs/security/threat-model.md); attempted attacks and results in [docs/red-team/architecture-attacks.md](docs/red-team/architecture-attacks.md); the self-review with severities in [docs/security/security-review.md](docs/security/security-review.md). Headlines:
 
-Full lists: [docs/security/threat-model.md](docs/security/threat-model.md), [docs/security/security-review.md](docs/security/security-review.md), [docs/security/deployment.md](docs/security/deployment.md). Headlines:
+- **Only the mediated path is protected.** An agent that can reach the tool without the proxy is not stopped — a test shows it on purpose. Whether that can happen is a deployment property: [docs/security/enforcing-the-boundary.md](docs/security/enforcing-the-boundary.md).
+- **The operator (and `.atp/keys.env`) is omnipotent**; agent credentials are bearer tokens with expiry and revocation, no proof of possession.
+- **Single-use grants prove one release, not exactly-once external effects**: [docs/security/idempotency.md](docs/security/idempotency.md).
+- The hash chain catches edits by non-writers; a DB writer can recompute it: [docs/security/trace-integrity.md](docs/security/trace-integrity.md).
+- Declared policies are limit/equality rules; use OPA/Cedar for more ([why-not-just-opa.md](docs/policies/why-not-just-opa.md)). Prompt injection is bounded, not detected.
 
-- **The operator key is omnipotent** — it issues every agent credential and stands in for every human.
-- **Agent credentials are bearer tokens** — a stolen token is the agent until it expires or is revoked.
-- **Tools must be reachable only through the gateway/proxy.** An agent that can launch the upstream itself is not protected; a test shows this on purpose.
-- The gateway process and its SQLite file are the trust anchor; the audit chain catches naive edits, not an insider who recomputes it; grants are HMAC (symmetric).
-- `REQUIRE_APPROVAL` has no approval workflow; no rate limits; one gateway instance.
-- Payments settle to a local SQLite ledger; the optional Claude-powered agent is not exercised by any test.
-
-Eight adversarial evals (`uv run python -m atp_evals`) and 300+ tests — including impersonation, grant theft, concurrent execution and revocation races — are the evidence for what *is* handled.
+Evidence for what *is* handled: 470+ tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and where help is welcome; [SECURITY.md](SECURITY.md) to report a vulnerability; [CHANGELOG.md](CHANGELOG.md). MIT licensed.
-
-More in [docs/](docs/): competitive landscape, product-wedge ADR, deployment requirements, case study, and the commercial "Agent Security Regression Pack".
+[CONTRIBUTING.md](CONTRIBUTING.md), [DEVELOPMENT.md](DEVELOPMENT.md) (module map, invariants not to break, how to add a policy or adapter), [ROADMAP.md](ROADMAP.md), [docs/good-first-issues.md](docs/good-first-issues.md), [SECURITY.md](SECURITY.md) for reporting a vulnerability, [CHANGELOG.md](CHANGELOG.md). MIT licensed. No telemetry.

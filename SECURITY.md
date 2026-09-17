@@ -1,7 +1,8 @@
 # Security policy
 
-Agent Trust Plane is an experimental MVP. It has had a documented self-review
-(`docs/security/security-review.md`) and no independent audit. Do not deploy it in
+Agent Trust Plane is experimental (v0.3.0). It has had a documented
+self-review (`docs/security/security-review.md`), a red-team pass
+(`docs/red-team/architecture-attacks.md`) and no independent audit. Do not deploy it in
 front of real money or production systems without reading
 `docs/security/threat-model.md` and `docs/security/deployment.md`.
 
@@ -30,12 +31,16 @@ within 30 days for anything that undermines a property listed in
 
 Anything that lets an action execute without the intended authorization:
 identity or credential bypass, delegation widening, grant forgery or reuse,
-policy bypass, trace forgery that survives integrity checks, secret leakage
-in responses/traces/logs, and MCP proxy bypasses *through* the proxy.
+policy bypass (including a declared policy file that weakens a kernel
+policy), trace or evidence-bundle forgery that survives verification, secret
+leakage in responses/traces/logs/bundles, path-scope escapes through the
+proxy, shadow/enforce confusion, and any way for an offline analysis
+(`atp test`, `policy impact`, `mutate`) to execute a tool.
 
 ## Out of scope (documented limitations)
 
 Reaching an upstream tool without going through the gateway or proxy;
-compromise of the gateway host, its database file, the operator key, or an
-agent's bearer token; denial of service; anything listed under "Findings
-left open" in `docs/security/security-review.md`.
+compromise of the gateway host, its database file, `.atp/keys.env`, the
+operator key, or an agent's bearer token; symlinks inside a scoped
+directory; denial of service; anything listed under "Findings left open" in
+`docs/security/security-review.md`.

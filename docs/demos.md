@@ -1,8 +1,26 @@
 # Demos — exact reproduction
 
-All three run with `uv sync` done, no API keys, no Docker, no services. Each
-uses the deterministic `SimulatedAgent` (Demo A/B) or a real MCP client
-session (Demo C); money only ever moves in a local SQLite table.
+All four run with `uv sync` done (or via `uv run`, which syncs), no API keys,
+no Docker, no services. A/B use the deterministic `SimulatedAgent`; C/D drive
+a real MCP client session over stdio; money only ever moves in a local
+SQLite table.
+
+## Demo D — wrap (the loop in one command; the README transcript)
+
+```bash
+uv run atp demo wrap                 # temp dir; --out DIR to keep the files
+```
+
+What happens: `atp mcp init` discovers the notes server's four tools (two
+annotated read-only, one destructive) and writes `atp-mcp.yaml` plus
+`.atp/policies.yaml`; `atp mcp wrap` starts in a subprocess (proxy + gateway
+in one process, upstream as its child); the demo's MCP client calls
+`write_note` (ALLOW, executed) and `delete_note` (DENY
+`CAPABILITY_NOT_GRANTED`: `notes:destroy` is proposed but not delegated —
+the note still exists); then `atp policy explain`, `atp regression add` and
+`atp test` run as real subprocesses against the same `.atp/`. Exit code is
+the test's (0). The transcript in `docs/demo/wrap-transcript.txt` is a
+recording of this run (`scripts/record_demo.py`).
 
 ## Demo A — injection (blocked before execution)
 
