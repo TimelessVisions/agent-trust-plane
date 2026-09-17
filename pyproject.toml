@@ -1,6 +1,6 @@
 [project]
 name = "agent-trust-plane"
-version = "0.3.1"
+version = "0.3.2"
 description = "Authorization boundary and security regression testing for AI agent tool calls (MCP): decide on arguments against delegated authority, bind decisions to single-use grants, replay, and pin denials as CI tests. Experimental."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -101,6 +101,12 @@ dev = [
   "types-PyYAML>=6.0",
   "hypothesis>=6.100",
 ]
+
+[tool.uv]
+# Pin the build backend so a wheel built anywhere (CI, a maintainer's
+# machine) from the same tag is byte-identical: the backend version is
+# written into the wheel's WHEEL file.
+build-constraint-dependencies = ["hatchling==1.32.0"]
 
 [tool.uv.workspace]
 members = [

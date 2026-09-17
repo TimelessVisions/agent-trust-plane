@@ -1,6 +1,6 @@
 [project]
 name = "finance-agent"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent Trust Plane: accounts-payable demo agent"
 requires-python = ">=3.12"
 license = "MIT"

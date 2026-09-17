@@ -1,6 +1,6 @@
 # Security policy
 
-Agent Trust Plane is experimental (v0.3.1). It has had a documented
+Agent Trust Plane is experimental (v0.3.2). It has had a documented
 self-review (`docs/security/security-review.md`), a red-team pass
 (`docs/red-team/architecture-attacks.md`) and no independent audit. Do not deploy it in
 front of real money or production systems without reading

@@ -56,6 +56,11 @@ rather than the locked 3.19. Dev-only tools (pytest, ruff, mypy,
 hypothesis, pip-audit) are not distributed. macOS was not resolved
 separately; its wheel set is the Linux set (uvloop included).
 
+v0.3.2 (2026-09-17): the Linux resolution was repeated from the 0.3.2
+`pyproject.toml`; the 40 pinned third-party distributions are identical
+(name-normalised) to the set above, so the license result stands
+unchanged.
+
 ## Dashboard (`apps/dashboard`, not packaged, `private: true`)
 
 `license-checker --production`: MIT 11, Apache-2.0 3, ISC 2, BSD-3-Clause

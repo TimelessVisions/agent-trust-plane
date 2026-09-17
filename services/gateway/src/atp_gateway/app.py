@@ -71,7 +71,7 @@ def create_app(settings: GatewaySettings | None = None, runtime: Runtime | None 
 
     app = FastAPI(
         title="Agent Trust Plane Gateway",
-        version="0.3.1",
+        version="0.3.2",
         description=(
             "Models propose actions. Independent infrastructure decides whether they execute."
         ),

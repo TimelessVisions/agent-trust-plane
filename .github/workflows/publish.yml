@@ -6,9 +6,18 @@
 # is exactly the version in pyproject.toml and in the built wheel, so a tag /
 # package mismatch fails before anything is uploaded.
 #
-# Publishing needs a PyPI Trusted Publisher configured for this repository,
-# this workflow file name (publish.yml) and the `pypi` environment; see
-# docs/release/pypi-publishing.md. There is no PyPI token anywhere.
+# Hardening notes (see docs/release/pypi-publishing.md):
+# - the tag name is never interpolated into a shell; it goes through `env`
+#   and must match ^v[0-9]+\.[0-9]+\.[0-9]+$ before anything else happens;
+# - for release events the checked-out commit must be the commit the release
+#   was published against (github.sha), so a tag moved in between is refused;
+# - releases marked "pre-release" are refused (a vX.Y.Z tag is a final version);
+# - the build backend is pinned (tool.uv.build-constraint-dependencies), so
+#   the wheel bytes match a local build from the same tag;
+# - the publish job re-verifies the sha256 of the artifacts it downloads
+#   against the digests recorded by the build job before uploading;
+# - `id-token: write` exists only on the publish job; there is no PyPI token
+#   anywhere; publishing needs the `pypi` environment (required reviewers).
 name: publish
 
 on:
@@ -31,68 +40,102 @@ jobs:
   build:
     name: build from the tag and validate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+      sha256: ${{ steps.digest.outputs.sha256 }}
     steps:
-      - name: resolve the tag
+      - name: resolve and validate the tag (never interpolated into a shell)
         id: tag
         shell: bash
+        env:
+          RAW_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          IS_DRAFT: ${{ github.event.release.draft }}
         run: |
-          TAG="${{ github.event.release.tag_name || inputs.tag }}"
-          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "refusing: '$TAG' is not a v<major>.<minor>.<patch> tag"; exit 1;; esac
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+          if [[ ! "$RAW_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "refusing: tag is not v<major>.<minor>.<patch>"; exit 1
+          fi
+          if [ "$IS_PRERELEASE" = "true" ] || [ "$IS_DRAFT" = "true" ]; then
+            echo "refusing: a release marked pre-release/draft is not published to PyPI"; exit 1
+          fi
+          echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: refs/tags/${{ steps.tag.outputs.tag }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - name: the checked-out commit must be the released commit
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          echo "tag: $TAG  HEAD: $HEAD_SHA  event: $EVENT_NAME  github.sha: $EVENT_SHA"
+          if [ "$EVENT_NAME" = "release" ] && [ "$HEAD_SHA" != "$EVENT_SHA" ]; then
+            echo "refusing: the tag no longer points at the commit the release was published against"; exit 1
+          fi
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - run: uv python install 3.12
       - name: tag must equal the package version
         id: check
         shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          VERSION=$(uv run --no-project python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          echo "pyproject version: $VERSION  tag: ${{ steps.tag.outputs.tag }}"
-          [ "v$VERSION" = "${{ steps.tag.outputs.tag }}" ] || { echo "refusing: tag and package version differ"; exit 1; }
+          VERSION=$(uv run --no-project --python 3.12 python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "pyproject version: $VERSION  tag: $TAG"
+          [ "v$VERSION" = "$TAG" ] || { echo "refusing: tag and package version differ"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      - name: build sdist and wheel from the tagged source
-        run: uv build
+      - name: build sdist and wheel from the tagged source (pinned build backend)
+        run: uv build --python 3.12
       - name: built artifacts must carry the same version and MIT metadata
         shell: bash
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
         run: |
           ls -l dist
-          uv run --no-project --with twine twine check dist/*
-          uv run --no-project python - <<'EOF'
-          import glob, zipfile, sys
-          v = "${{ steps.check.outputs.version }}"
-          whl = glob.glob(f"dist/agent_trust_plane-{v}-py3-none-any.whl"); sdist = glob.glob(f"dist/agent_trust_plane-{v}.tar.gz")
-          assert whl and sdist, ("artifact names do not match the version", glob.glob("dist/*"))
-          meta = zipfile.ZipFile(whl[0]).read(f"agent_trust_plane-{v}.dist-info/METADATA").decode()
-          assert f"\nVersion: {v}\n" in meta, "wheel Version differs"
-          assert "\nLicense-Expression: MIT\n" in meta, "wheel license metadata is not MIT"
-          names = zipfile.ZipFile(whl[0]).namelist()
-          bad = [n for n in names if any(x in n.lower() for x in (".env", "keys.env", ".db", "/.atp/", "/tests/", "__pycache__"))]
-          assert not bad, f"unintended files in wheel: {bad}"
-          print("ok:", whl[0], sdist[0])
-          EOF
-      - name: the wheel installs and runs in isolation
+          uv run --no-project --python 3.12 --with "twine==7.0.0" twine check --strict dist/*
+          uv run --no-project --python 3.12 python scripts/check_dist.py --version "$VERSION" dist
+      - name: the wheel installs and runs in isolation under both executable names
         shell: bash
         run: |
           WHEEL=$(ls dist/*.whl)
+          uvx --isolated --from "$WHEEL" agent-trust-plane --help > /dev/null
           uvx --isolated --from "$WHEEL" atp doctor --port 1
-          uvx --isolated --from "$WHEEL" atp demo injection > /dev/null
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          uvx --isolated --from "$WHEEL" agent-trust-plane demo injection > /dev/null
+      - name: record artifact digests
+        id: digest
+        shell: bash
+        run: |
+          cd dist && sha256sum agent_trust_plane-* | tee SHA256SUMS
+          {
+            echo "sha256<<EOF"
+            cat SHA256SUMS
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist-${{ steps.check.outputs.version }}
-          path: dist/
+          path: |
+            dist/agent_trust_plane-*.whl
+            dist/agent_trust_plane-*.tar.gz
           if-no-files-found: error
 
   publish:
     name: upload to PyPI (Trusted Publishing)
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # The `pypi` environment is where required reviewers / branch-tag rules
     # are configured on GitHub, and it is the environment name registered
-    # with the PyPI Trusted Publisher.
+    # with the PyPI Trusted Publisher. Create it BEFORE the first release:
+    # a workflow that references a missing environment auto-creates it
+    # without any protection rules.
     environment:
       name: pypi
       url: https://pypi.org/project/agent-trust-plane/${{ needs.build.outputs.version }}/
@@ -100,10 +143,21 @@ jobs:
       contents: read
       id-token: write # the only extra permission: mints the OIDC token for PyPI
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist-${{ needs.build.outputs.version }}
           path: dist/
+      - name: artifacts must match the digests recorded by the build job
+        shell: bash
+        env:
+          EXPECTED: ${{ needs.build.outputs.sha256 }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cd dist
+          ls -l
+          [ "$(ls | wc -l)" -eq 2 ] || { echo "refusing: expected exactly one wheel and one sdist"; exit 1; }
+          printf '%s\n' "$EXPECTED" | sha256sum -c --strict -
+          ls "agent_trust_plane-$VERSION-py3-none-any.whl" "agent_trust_plane-$VERSION.tar.gz" > /dev/null
       - name: publish (PEP 740 attestations are generated by the action by default)
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
@@ -114,12 +168,16 @@ jobs:
     name: post-publication smoke test from PyPI
     needs: [build, publish]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - name: uvx agent-trust-plane==<version> --help (retries while the index propagates)
         shell: bash
+        env:
+          V: ${{ needs.build.outputs.version }}
         run: |
-          V="${{ needs.build.outputs.version }}"
           for i in 1 2 3 4 5 6; do
             if uvx --isolated --no-cache "agent-trust-plane==$V" --help; then exit 0; fi
             echo "not yet available on PyPI, retry $i"; sleep 30

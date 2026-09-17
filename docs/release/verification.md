@@ -81,3 +81,34 @@ Conclusion: **NO-GO for publishing v0.3.1 to PyPI** (presentation defects
 that cannot be fixed without new artifacts); **GO-ready path** is v0.3.2 from
 `main` after the metadata/README changes and the Trusted Publisher are in
 place — see `pypi-publishing.md`.
+
+## v0.3.2 release preparation (2026-09-17, Windows 11, local; no upload performed)
+
+Built from a clean export of the tracked tree (250 files) with the pinned
+backend (`hatchling==1.32.0`, `uv build --python 3.12`), twice:
+
+| Check | Result |
+|---|---|
+| Artifacts | `agent_trust_plane-0.3.2-py3-none-any.whl` sha256 `a21dc5b6a8d99a3212e46c0aa3df90b7fc8378b464ac2c379ea33a69c997da47`; `agent_trust_plane-0.3.2.tar.gz` sha256 `dcc67354adf417b073d57d8a8ab0d3cc59343eed97d5215e060fba8cd7e7c4dd`; two independent builds byte-identical |
+| Metadata (wheel `METADATA` and sdist `PKG-INFO`) | Metadata-Version 2.5; Name `agent-trust-plane`; Version 0.3.2; License-Expression MIT; License-File LICENSE (copyright line `Copyright (c) 2026 George Gakravyi`); Requires-Python >=3.12; 6 Project-URL, 8 Keywords, 15 Classifier; 7 public `Requires-Dist`; console scripts `atp` and `agent-trust-plane` both → `atp_cli.main:main` |
+| `twine check --strict` (twine 7.0.0) | PASSED for wheel and sdist |
+| `scripts/check_dist.py --version 0.3.2` | OK (98 wheel / 111 sdist entries; 11 packages + `py.typed`; no forbidden names; no secret/local-path patterns; no non-index dependency; no relative link in the long description) |
+| README targets as rendered on PyPI | every link is an absolute GitHub URL; all 31 repository targets exist on `main` and the sampled ones (hero SVG on raw.githubusercontent.com, threat model, demos, first-user test, why-atp, competitive research, contributing, security, changelog, ADR and regression-suite directories) return HTTP 200 |
+| Content scan (independent regex over every file in both artifacts) | only hits: the author's name/email in LICENSE, pyproject and metadata (intentional) |
+| Clean install matrix (fresh venvs, cold uv cache, empty cwd, no `ATP_*`, repo not on `sys.path`) | Python **3.12.10, 3.13.14, 3.14.6**: install, `agent-trust-plane --help`, `atp --help`, `atp doctor`, `atp demo injection`, `atp demo regression`, `atp demo mcp`, `atp demo wrap --out relative/path` all exit 0; `importlib.metadata.version` = 0.3.2. Repository-only test `atp test examples/regression-suite/accounts-payable.yaml` (run from the checkout with each venv's `atp`) exit 0 |
+| `uvx --isolated --from <wheel>` | `agent-trust-plane --help`, `agent-trust-plane doctor`, `agent-trust-plane demo mcp`, `atp --help` all OK. Note: with the uv cache under a very long path the notes server subprocess failed with a Windows MAX_PATH error (`jsonschema_specifications/…/format-annotation`), which is an environment limit, not a package defect; with a short cache path everything passes |
+| `pipx run --spec <wheel>` (pipx via `uvx pipx`) | `agent-trust-plane doctor`, `atp --help` OK |
+| Linux dependency resolution (x86_64 Linux / Python 3.12) | 40 pins, byte-identical (name-normalised) to the set license-reviewed for v0.3.1 on 2026-09-17; no dependency change |
+| `pip-audit` on those pins (`--no-deps --disable-pip`, 2026-09-17) | No known vulnerabilities found; `uvloop 0.22.1` at api.osv.dev: none. "No known advisories", not a security guarantee |
+| Repository gate (`scripts/check.sh` steps) | ruff: All checks passed; ruff format: 190 files already formatted; mypy strict: no issues in 76 files; pytest: 439 passed, 1 skipped (opt-in third-party MCP server test); with `ATP_E2E_NPX=1`: that test passes too; evals 8/8; doctor; demos A–D; sample suite; link checker 72 files / 0 broken; dashboard typecheck and production build OK |
+| Secret scan of tracked files (`detect-secrets`) | one hit: the SHA-256 of the empty string in `packages/core/tests/test_core_models.py` (well-known constant; tests are not shipped) |
+| Workflow lint (`actionlint`) | `publish.yml`, `ci.yml`: no findings |
+| Action pins (GitHub API) | checkout `11d5960a…` = v4.4.0; setup-uv `d4b2f3b6…` = v5.4.2; upload-artifact `ea165f8d…` = v4.6.2; download-artifact `d3f86a10…` = v4.3.0; pypa/gh-action-pypi-publish `dc37677b…` = v1.14.2 (latest release as of 2026-09-17) |
+
+`publish.yml` review findings fixed before tagging: the tag was
+interpolated into a shell before validation and the `case` glob accepted
+`v1.2.3;echo pwned` (now `env` + anchored regex); no released-commit
+check (now `HEAD == github.sha` for release events); no artifact digest
+re-verification in the publish job (now `sha256sum -c --strict`); build
+backend unpinned (now pinned); pre-releases not refused; `twine`
+unpinned; no job timeouts.

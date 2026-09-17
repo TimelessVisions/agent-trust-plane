@@ -6,17 +6,51 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
-### Changed (PyPI readiness; will ship as 0.3.2)
-- Package metadata: descriptive summary, keywords, accurate classifiers,
-  project URLs (Homepage, Repository, Issues, Documentation, Changelog,
-  Security); second console script `agent-trust-plane` so
-  `uvx agent-trust-plane …` works once published.
-- README links and the hero image are absolute GitHub URLs so the PyPI page
-  renders them.
-- `.github/workflows/publish.yml`: PyPI Trusted Publishing workflow
-  (release-triggered, tag == version check, isolated install test, OIDC,
-  attestations); `docs/release/pypi-publishing.md` runbook;
-  `docs/release/licensing.md` Linux dependency-license result.
+## [0.3.2] - 2026-09-17
+
+PyPI / distribution-readiness patch release. No product features; the
+authorization kernel, policies, CLI commands and wire formats are unchanged
+from 0.3.1. Not yet published to PyPI at the time of tagging.
+
+### Packaging
+- PyPI-safe README: every documentation link and the hero image are
+  absolute GitHub URLs, so the long description renders on pypi.org (which
+  does not resolve repository-relative paths).
+- Package metadata: descriptive summary, keywords, accurate classifiers
+  (Alpha, Python 3.12–3.14, Windows/Linux, Typing :: Typed) and project
+  URLs (Homepage, Repository, Issues, Documentation, Changelog, Security).
+- Second console entry point `agent-trust-plane` (same CLI as `atp`) so
+  `uvx agent-trust-plane …` works after publication (`uvx` runs the
+  executable named after the package).
+- Build backend pinned (`hatchling==1.32.0` via
+  `tool.uv.build-constraint-dependencies`) so a wheel built from the same
+  tag anywhere is byte-identical.
+
+### Release engineering
+- `.github/workflows/publish.yml`: PyPI Trusted Publishing workflow using
+  GitHub OIDC (no PyPI token anywhere). Runs only on a published GitHub
+  Release or manual dispatch with a tag; never on push or pull request.
+- Gates before upload: strict `v<major>.<minor>.<patch>` tag validation
+  (the tag is never interpolated into a shell), pre-release/draft refusal,
+  released-commit == checked-out commit, tag == `pyproject` version ==
+  wheel version, `twine check --strict`, `scripts/check_dist.py`
+  (metadata, contents, secrets, private-dependency and relative-link
+  scan), isolated `uvx` smoke test under both executable names, and a
+  sha256 re-verification of the artifacts in the publish job.
+- `scripts/check_dist.py` also runs in the `package` CI job on every push,
+  so the publish gate is exercised before it is ever used for real.
+- `docs/release/pypi-publishing.md`: publishing runbook (pending
+  Trusted Publisher, `pypi` environment, release procedure, rollback).
+
+### Verification
+- Linux dependency-license resolution reviewed (`docs/release/licensing.md`):
+  all resolved distributions carry permissive licenses; `uvloop` (Linux-only)
+  is MIT.
+- Dependency vulnerability audit (pip-audit against the PyPI advisory
+  database): no known advisories in the tested resolution. This is
+  "no known advisories", not a security guarantee.
+- Existing cross-platform CI (ubuntu 3.12/3.13, windows 3.13, package,
+  dashboard) remains green.
 
 ## [0.3.1] - 2026-09-17
 

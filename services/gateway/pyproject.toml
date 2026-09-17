@@ -1,6 +1,6 @@
 [project]
 name = "atp-gateway"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent Trust Plane: FastAPI trust gateway (authorize, execute, traces, replay)"
 requires-python = ">=3.12"
 license = "MIT"

@@ -1,6 +1,6 @@
 [project]
 name = "atp-policy"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent Trust Plane: structured policies and the decision engine"
 requires-python = ">=3.12"
 license = "MIT"

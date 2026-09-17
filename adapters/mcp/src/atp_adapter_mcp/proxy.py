@@ -52,7 +52,7 @@ from atp_core import ActionEnvelope, Provenance, canonical_json, new_trace_id
 log = logging.getLogger("atp.mcp-proxy")
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._:-]")
-PROXY_VERSION = "0.3.1"
+PROXY_VERSION = "0.3.2"
 
 
 def _safe_action(name: str) -> str:

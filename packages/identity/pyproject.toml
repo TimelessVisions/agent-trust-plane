@@ -1,6 +1,6 @@
 [project]
 name = "atp-identity"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent Trust Plane: principals, delegation grants, chain resolution"
 requires-python = ">=3.12"
 license = "MIT"

@@ -33,7 +33,8 @@ built from a tag that includes them.
 - A GitHub Actions **environment** named `pypi` on the repository
   (Settings → Environments → New environment), with required reviewers
   (the maintainer) and, optionally, a deployment branch/tag rule limited
-  to tags `v*`.
+  to tags `v*`. Create it before the first Release (see below).
+- A tag ruleset protecting `v*` tags from update and deletion (see below).
 
 ## Trusted Publishing setup (OIDC, no long-lived token) — manual, maintainer only
 
@@ -67,15 +68,28 @@ or `pull_request`.
 
 Jobs:
 
-1. `build` — checks out `refs/tags/<tag>`; refuses unless the tag is
-   `v<major>.<minor>.<patch>`; refuses unless `v` + `pyproject.toml`
-   version == tag; `uv build`; `twine check`; asserts the wheel's
-   `Version` and `License-Expression: MIT`; asserts no `.env`, `keys.env`,
-   `.db`, `.atp/`, tests or caches in the wheel; installs the wheel in an
-   isolated `uvx` environment and runs `atp doctor` and `atp demo
-   injection`; uploads `dist/` as a workflow artifact.
+1. `build` — validates the tag name against `^v[0-9]+\.[0-9]+\.[0-9]+$`
+   (the tag reaches the shell only through `env`, never by `${{ }}`
+   interpolation); refuses releases marked pre-release or draft; checks
+   out `refs/tags/<tag>` and, for release events, refuses unless the
+   checked-out commit is the commit the release was published against
+   (`github.sha`); refuses unless `v` + `pyproject.toml` version == tag;
+   `uv build` with the pinned build backend; `twine check --strict`;
+   `scripts/check_dist.py` (exactly one wheel and one sdist named for the
+   version; Name/Version/License-Expression MIT/License-File/
+   Requires-Python/Project-URL/Keywords/Classifier present; the eleven
+   intended packages and nothing else; `py.typed` everywhere; no `.env`,
+   `keys.env`, `.db`, `.atp/`, tests, caches, git metadata; no
+   secret-shaped strings or local paths; no non-index `Requires-Dist`; no
+   relative links in the long description); installs the wheel in an
+   isolated `uvx` environment and runs `agent-trust-plane --help`,
+   `atp doctor` and `agent-trust-plane demo injection`; records
+   `sha256sum` of the artifacts as a job output; uploads them as a
+   workflow artifact.
 2. `publish` — environment `pypi`; permissions `contents: read`,
-   `id-token: write` (the only elevated permission, job-scoped);
+   `id-token: write` (the only elevated permission, job-scoped); downloads
+   the artifact, refuses unless it holds exactly the two files with the
+   digests the build job recorded, then
    `pypa/gh-action-pypi-publish` pinned to the commit of v1.14.2
    (`dc37677b…`). With Trusted Publishing the action generates and uploads
    PEP 740 digital attestations by default (`attestations: true`), signed
@@ -85,29 +99,46 @@ Jobs:
    --help` from PyPI, with retries while the index propagates.
 
 All third-party actions are pinned to commit SHAs; the workflow has
-`permissions: contents: read` at the top level.
+`permissions: contents: read` at the top level and on every job. Every
+job has a timeout. `scripts/check_dist.py` also runs in the `package` job
+of the ordinary CI workflow on every push, so the gate is exercised long
+before a release.
+
+Two GitHub-side settings matter for the gates to mean anything:
+
+- Create the `pypi` environment **before** publishing the first Release.
+  A workflow that references an environment that does not exist creates
+  it automatically with no protection rules, i.e. no required reviewer.
+- Add a tag ruleset (Settings → Rules → Rulesets → New tag ruleset,
+  target `v*`) that blocks updating and deleting tags. Without it anyone
+  with write access can move a `vX.Y.Z` tag; the workflow's
+  released-commit check catches a move between publish and checkout, not
+  a move before the Release is created.
 
 ## Release procedure (for v0.3.2 and later)
 
 1. On `main`: bump the version in the root `pyproject.toml`, every
-   workspace `pyproject.toml`, `apps/dashboard/package.json`,
-   `atp_gateway/app.py`, `atp_adapter_mcp/proxy.py`, README/SECURITY status
-   lines; add the CHANGELOG section and `docs/release/vX.Y.Z-notes.md`;
+   workspace `pyproject.toml`, `apps/dashboard/package.json` (and the two
+   root entries of `package-lock.json`), `atp_gateway/app.py`,
+   `atp_adapter_mcp/proxy.py`, README/SECURITY status lines; add the
+   CHANGELOG section and `docs/release/vX.Y.Z-notes.md`; `uv lock` +
    `uv sync` (lockfile member versions); run `scripts/check.sh`.
 2. Commit `release: prepare vX.Y.Z`; push `main`; wait for `ci` to be
    green on that exact commit (five jobs).
 3. Tag that commit: `git tag -a vX.Y.Z -m "Agent Trust Plane vX.Y.Z"`;
    push only the tag.
 4. Build locally from a clean export of the tag (`git archive vX.Y.Z`),
-   record the sha256 of the wheel and sdist (builds are byte-for-byte
-   reproducible: hatchling normalises archive timestamps).
+   run `python scripts/check_dist.py dist`, record the sha256 of the wheel
+   and sdist (builds are byte-for-byte reproducible: hatchling normalises
+   archive timestamps and the backend version is pinned).
 5. Create the GitHub Release for the tag with the curated notes and the
    two artifacts.
 6. **Publishing** happens when that Release is published: the `publish`
    workflow runs, the `pypi` environment asks the maintainer to approve
    the deployment, and the action uploads with OIDC. Compare the hashes it
    prints (`print-hash: true`) with step 4.
-7. Post-publication smoke tests (also run by the `verify` job):
+7. Compare the digests the `publish` job verified with step 4.
+   Post-publication smoke tests (also run by the `verify` job):
    `uvx agent-trust-plane --help`, `uvx agent-trust-plane demo mcp`,
    `pip install agent-trust-plane` in a fresh venv then `atp doctor`.
 8. Update README/docs that say "not on PyPI" and the compatibility matrix

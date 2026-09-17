@@ -10,7 +10,7 @@ uv run atp mcp init -- <your mcp server>    # then: atp mcp wrap   (Streamable H
 uv run atp regression add <trace> && uv run atp test atp-regression.yaml
 ```
 
-> **Status: experimental, v0.3.1, no users yet, not independently audited.** Every claim below is backed by a test in this repository or says otherwise. What it does *not* protect is in [docs/security/threat-model.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/threat-model.md).
+> **Status: experimental, v0.3.2, no users yet, not independently audited.** Every claim below is backed by a test in this repository or says otherwise. What it does *not* protect is in [docs/security/threat-model.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/threat-model.md).
 
 ## Why this exists
 

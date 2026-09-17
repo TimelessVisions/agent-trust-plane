@@ -1,6 +1,6 @@
 [project]
 name = "atp-core"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent Trust Plane: shared domain models (ActionEnvelope, Decision, reason codes)"
 requires-python = ">=3.12"
 license = "MIT"

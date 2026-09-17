@@ -1,6 +1,6 @@
 [project]
 name = "notes-mcp-server"
-version = "0.3.1"
+version = "0.3.2"
 description = "Agent Trust Plane: harmless example MCP server (notes in a sandbox directory)"
 requires-python = ">=3.12"
 license = "MIT"
