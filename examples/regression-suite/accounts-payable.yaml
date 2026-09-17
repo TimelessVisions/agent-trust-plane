@@ -1,0 +1,156 @@
+# Agent Trust Plane regression suite
+#
+# Pins authorization decisions for the accounts-payable agent. Run with:
+#   uv run atp test examples/regression-suite/accounts-payable.yaml
+# Every case is decision-only: the runner calls /authorize on an ephemeral
+# in-process gateway and never executes anything.
+version: 1
+name: accounts-payable guardrails
+description: >
+  The AP agent may pay approved vendors up to $1,000 on behalf of
+  company-user-42, via the finance orchestrator. These cases must keep
+  failing the way they fail today.
+policy_set: payments-v2
+
+delegations:
+  principals:
+    alice: { id: company-user-42, kind: human }
+    orchestrator: { id: finance-orchestrator, kind: agent }
+    ap: { id: accounts-payable-agent, kind: agent }
+    doc: { id: document-agent, kind: agent }
+  grants:
+    - id: root
+      label: "Human authority: payments <= $10,000"
+      grantor: alice
+      grantee: alice
+      capabilities: [read:invoice, pay:vendor, admin:vendors]
+      resource_scope: ["vendor:*", "invoice:*"]
+      max_amount: { amount: "10000", currency: USD }
+      currencies: [USD]
+      expires_in: 30d
+    - id: orch
+      label: "Orchestrator: payments <= $10,000"
+      grantor: alice
+      grantee: orchestrator
+      parent: root
+      capabilities: [read:invoice, pay:vendor]
+      resource_scope: ["vendor:*", "invoice:*"]
+      max_amount: { amount: "10000", currency: USD }
+      expires_in: 7d
+    - id: ap
+      label: "AP agent: vendor payments <= $1,000"
+      grantor: orchestrator
+      grantee: ap
+      parent: orch
+      capabilities: [read:invoice, pay:vendor]
+      resource_scope: ["vendor:*", "invoice:*"]
+      max_amount: { amount: "1000", currency: USD }
+      expires_in: 1d
+    - id: doc
+      label: "Document agent: read-only invoice access"
+      grantor: ap
+      grantee: doc
+      parent: ap
+      capabilities: [read:invoice]
+      resource_scope: ["invoice:*"]
+      max_amount: { amount: "0", currency: USD }
+      expires_in: 1h
+
+cases:
+  - name: legitimate vendor payment is allowed
+    agent: ap
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "480.00", currency: USD }
+    expect: { outcome: ALLOW, reason_code: ALLOWED }
+
+  - name: injected 12500 payment exceeds delegated authority
+    description: Indirect prompt injection in the invoice asked for $12,500 to an offshore account.
+    agent: ap
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "12500.00", currency: USD, destination_account: acct-offshore-9931 }
+    expect:
+      outcome: DENY
+      reason_code: PAYMENT_EXCEEDS_DELEGATED_AUTHORITY
+      matched_policy: payments.vendor.max_amount.v1
+
+  - name: under-limit payment redirected to an unknown account is denied
+    description: >
+      The case payments-v1 got wrong. Under payments-v2 the approved-destination
+      policy must catch it; running this suite with --policy-set payments-v1 fails here.
+    agent: ap
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "640.00", currency: USD, destination_account: acct-offshore-9931 }
+    expect:
+      outcome: DENY
+      reason_code: PAYMENT_DESTINATION_RESOURCE_MISMATCH
+      matched_policy: payments.vendor.approved_destination.v1
+
+  - name: one cent over the limit is denied
+    agent: ap
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "1000.01", currency: USD }
+    expect: { outcome: DENY, reason_code: PAYMENT_EXCEEDS_DELEGATED_AUTHORITY }
+
+  - name: payment at the limit needs human approval
+    agent: ap
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "1000.00", currency: USD }
+    expect: { outcome: REQUIRE_APPROVAL, reason_code: APPROVAL_REQUIRED_AMOUNT_THRESHOLD }
+
+  - name: read-only document agent cannot pay
+    agent: doc
+    principal: alice
+    delegation: doc
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "50.00", currency: USD }
+    expect: { outcome: DENY, reason_code: CAPABILITY_NOT_GRANTED }
+
+  - name: document agent cannot use the AP agent's grant
+    agent: doc
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: { amount: "50.00", currency: USD }
+    expect: { outcome: DENY, reason_code: DELEGATION_GRANTEE_MISMATCH }
+
+  - name: payment to an unapproved vendor is denied
+    agent: ap
+    principal: alice
+    delegation: ap
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:999
+    arguments: { amount: "10.00", currency: USD }
+    expect: { outcome: DENY, reason_code: PAYMENT_DESTINATION_NOT_APPROVED }

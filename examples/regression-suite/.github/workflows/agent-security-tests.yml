@@ -1,0 +1,30 @@
+# Copy this into your repository's .github/workflows/ to run agent security
+# regression suites on every push and pull request. No secrets are required:
+# the runner uses an ephemeral in-process gateway and never executes tools.
+name: agent-security-tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      # Install the CLI. Until a PyPI release exists, install from the repo
+      # (pin a commit or tag you have reviewed).
+      - run: uv tool install "git+https://github.com/<owner>/agent-trust-plane@<tag>#subdirectory=packages/cli"
+      - name: run security regression suites
+        run: |
+          set -e
+          for f in security/*.yaml; do
+            atp test "$f" --junit "results-$(basename "$f" .yaml).xml" --json "results-$(basename "$f" .yaml).json"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-security-results
+          path: results-*.xml

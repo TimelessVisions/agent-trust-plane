@@ -267,6 +267,10 @@ class TrustPlaneClient:
         result: dict[str, Any] = self._request("POST", f"/delegations/{grant_id}/revoke")
         return result
 
+    def policy_sets(self) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = self._request("GET", "/policy-sets")
+        return result
+
     def run_evals(self) -> dict[str, Any]:
         result: dict[str, Any] = self._request("POST", "/evals/run")
         return result

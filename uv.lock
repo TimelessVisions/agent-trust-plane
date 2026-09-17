@@ -13,6 +13,7 @@ members = [
     "atp-adapter-http",
     "atp-adapter-mcp",
     "atp-audit",
+    "atp-cli",
     "atp-core",
     "atp-evals",
     "atp-gateway",
@@ -30,6 +31,7 @@ dependencies = [
     { name = "atp-adapter-http" },
     { name = "atp-adapter-mcp" },
     { name = "atp-audit" },
+    { name = "atp-cli" },
     { name = "atp-core" },
     { name = "atp-evals" },
     { name = "atp-gateway" },
@@ -54,6 +56,7 @@ requires-dist = [
     { name = "atp-adapter-http", editable = "adapters/http" },
     { name = "atp-adapter-mcp", editable = "adapters/mcp" },
     { name = "atp-audit", editable = "packages/audit" },
+    { name = "atp-cli", editable = "packages/cli" },
     { name = "atp-core", editable = "packages/core" },
     { name = "atp-evals", editable = "packages/evals" },
     { name = "atp-gateway", editable = "services/gateway" },
@@ -214,6 +217,33 @@ dependencies = [
 requires-dist = [{ name = "atp-core", editable = "packages/core" }]
 
 [[package]]
+name = "atp-cli"
+version = "0.1.0"
+source = { editable = "packages/cli" }
+dependencies = [
+    { name = "atp-adapter-http" },
+    { name = "atp-adapter-mcp" },
+    { name = "atp-core" },
+    { name = "atp-evals" },
+    { name = "atp-gateway" },
+    { name = "finance-agent" },
+    { name = "notes-mcp-server" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "atp-adapter-http", editable = "adapters/http" },
+    { name = "atp-adapter-mcp", editable = "adapters/mcp" },
+    { name = "atp-core", editable = "packages/core" },
+    { name = "atp-evals", editable = "packages/evals" },
+    { name = "atp-gateway", editable = "services/gateway" },
+    { name = "finance-agent", editable = "examples/finance-agent" },
+    { name = "notes-mcp-server", editable = "examples/notes-mcp-server" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "atp-core"
 version = "0.1.0"
 source = { editable = "packages/core" }
@@ -233,6 +263,7 @@ dependencies = [
     { name = "atp-gateway" },
     { name = "finance-agent" },
     { name = "httpx" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -241,6 +272,7 @@ requires-dist = [
     { name = "atp-gateway", editable = "services/gateway" },
     { name = "finance-agent", editable = "examples/finance-agent" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

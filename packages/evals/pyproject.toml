@@ -8,6 +8,7 @@ dependencies = [
   "atp-gateway",
   "finance-agent",
   "httpx>=0.28",
+  "pyyaml>=6.0",
 ]
 
 [build-system]

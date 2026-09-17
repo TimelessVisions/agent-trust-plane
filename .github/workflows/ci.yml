@@ -28,8 +28,21 @@ jobs:
         with:
           name: eval-report-py${{ matrix.python }}
           path: eval-reports/ci.json
-      - name: primary demo
-        run: uv run python -m finance_agent --scenario injection
+      - name: doctor
+        run: uv run atp doctor --port 1
+      - name: demos (A injection, B regression, C mcp)
+        run: |
+          uv run atp demo injection
+          uv run atp demo regression --out eval-reports/demo-regression.yaml
+          uv run atp demo mcp
+      - name: security regression suite (sample)
+        run: |
+          uv run atp test examples/regression-suite/accounts-payable.yaml --junit eval-reports/regression.xml --json eval-reports/regression.json
+          if uv run atp test examples/regression-suite/accounts-payable.yaml --policy-set payments-v1 --quiet; then echo "expected v1 to fail" && exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: regression-report-py${{ matrix.python }}
+          path: eval-reports/regression.*
 
   dashboard:
     runs-on: ubuntu-latest

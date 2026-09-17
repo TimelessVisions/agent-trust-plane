@@ -16,6 +16,7 @@ dependencies = [
   "atp-adapter-mcp",
   "finance-agent",
   "notes-mcp-server",
+  "atp-cli",
 ]
 
 [dependency-groups]
@@ -48,6 +49,7 @@ atp-adapter-http = { workspace = true }
 atp-adapter-mcp = { workspace = true }
 finance-agent = { workspace = true }
 notes-mcp-server = { workspace = true }
+atp-cli = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -61,6 +63,7 @@ testpaths = [
   "adapters/mcp/tests",
   "examples/finance-agent/tests",
   "examples/notes-mcp-server/tests",
+  "packages/cli/tests",
 ]
 addopts = "-q --strict-markers --import-mode=importlib --basetemp=.pytest-tmp"
 pythonpath = [
@@ -74,6 +77,7 @@ pythonpath = [
   "adapters/mcp/tests",
   "examples/finance-agent/tests",
   "examples/notes-mcp-server/tests",
+  "packages/cli/tests",
 ]
 filterwarnings = ["error::DeprecationWarning:atp_.*"]
 
@@ -87,7 +91,7 @@ select = ["E", "F", "I", "B", "UP", "N", "W", "SIM", "RUF"]
 ignore = ["RUF012"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["atp_core", "atp_identity", "atp_policy", "atp_audit", "atp_evals", "atp_gateway", "atp_adapter_http", "atp_adapter_mcp", "finance_agent"]
+known-first-party = ["atp_cli", "notes_mcp_server", "atp_core", "atp_identity", "atp_policy", "atp_audit", "atp_evals", "atp_gateway", "atp_adapter_http", "atp_adapter_mcp", "finance_agent"]
 known-local-folder = ["identity_fixtures", "policy_fixtures", "gateway_fixtures", "evals_fixtures", "agent_fixtures"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -108,6 +112,7 @@ mypy_path = [
   "adapters/mcp/src",
   "examples/finance-agent/src",
   "examples/notes-mcp-server/src",
+  "packages/cli/src",
 ]
 files = [
   "packages/core/src",
