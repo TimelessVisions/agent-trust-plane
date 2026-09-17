@@ -140,6 +140,11 @@ class Suite(BaseModel):
     name: str = Field(max_length=200)
     description: str = Field(default="", max_length=2000)
     policy_set: str = Field(default="payments-v2", pattern=r"^[A-Za-z0-9._-]+$")
+    policies: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Optional policy file (declared sets) resolved relative to the suite file.",
+    )
     delegations: DelegationSpec
     cases: tuple[CaseSpec, ...] = Field(min_length=1)
 
@@ -171,6 +176,11 @@ def load_suite(path: str | Path) -> Suite:
         raise ValueError(f"{p}: expected a mapping at top level")
     suite = Suite.model_validate(raw)
     suite.validate_references()
+    if suite.policies is not None:
+        resolved = (p.parent / suite.policies).resolve()
+        if not resolved.is_file():
+            raise ValueError(f"{p}: policies file {suite.policies!r} not found")
+        suite = suite.model_copy(update={"policies": str(resolved)})
     return suite
 
 

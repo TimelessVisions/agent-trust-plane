@@ -78,7 +78,7 @@ def test_record_from_live_gateway(
             "injected payment",
         )
         assert code == 0
-        assert "expect DENY PAYMENT_EXCEEDS_DELEGATED_AUTHORITY" in capsys.readouterr().out
+        assert "expected: DENY / PAYMENT_EXCEEDS_DELEGATED_AUTHORITY" in capsys.readouterr().out
         # without the operator key nothing can be recorded
         assert (
             _run("record", "--trace", result.trace_id, "--gateway", gw.url, "--suite", str(suite))

@@ -215,7 +215,7 @@ dependencies = [
 requires-dist = [
     { name = "atp-adapter-http", editable = "adapters/http" },
     { name = "atp-core", editable = "packages/core" },
-    { name = "mcp", specifier = ">=1.13" },
+    { name = "mcp", specifier = ">=2.2,<3" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

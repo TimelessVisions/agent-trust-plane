@@ -9,11 +9,12 @@ delegation graph, so results depend only on the suite and the policy set.
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 from xml.sax.saxutils import escape
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from atp_adapter_http import GatewayError, TrustPlaneClient
 from atp_core import ActionEnvelope, PrincipalKind, Provenance, new_id, new_trace_id, utcnow
@@ -36,6 +37,9 @@ class CaseResult(BaseModel):
     trace_id: str | None = None
     error: str | None = None
     duration_ms: int
+    decision: dict[str, Any] | None = Field(
+        default=None, description="The full decision (evaluations, authority) for analysis."
+    )
 
 
 class SuiteReport(BaseModel):
@@ -121,15 +125,40 @@ def _envelope(suite: Suite, case: CaseSpec, seeded: _Seeded) -> ActionEnvelope:
     )
 
 
-def run_suite(suite: Suite, *, policy_set: str | None = None) -> SuiteReport:
-    started = utcnow()
+def ephemeral_settings(version: str, policy_file: str | None) -> GatewaySettings:
+    return GatewaySettings(
+        _env_file=None,  # type: ignore[call-arg]
+        database_path=":memory:",
+        default_policy_set=version,
+        policy_file=policy_file or "",
+    )
+
+
+def decide_cases(
+    suite: Suite,
+    cases: Sequence[CaseSpec],
+    *,
+    policy_set: str | None = None,
+    policy_file: str | None = None,
+) -> list[CaseResult]:
+    """Decide ``cases`` against the suite's delegation graph on a fresh
+    ephemeral gateway. ``/authorize`` only; nothing executes."""
     version = policy_set or suite.policy_set
-    app = create_app(GatewaySettings(database_path=":memory:", default_policy_set=version))
+    app = create_app(ephemeral_settings(version, policy_file or suite.policies))
     results: list[CaseResult] = []
     with TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key) as operator:
         seeded = _seed(operator, suite)
-        for case in suite.cases:
+        for case in cases:
             results.append(_run_case(suite, case, seeded, operator, version))
+    return results
+
+
+def run_suite(
+    suite: Suite, *, policy_set: str | None = None, policy_file: str | None = None
+) -> SuiteReport:
+    started = utcnow()
+    version = policy_set or suite.policy_set
+    results = decide_cases(suite, suite.cases, policy_set=version, policy_file=policy_file)
     return SuiteReport(
         run_id=new_id("reg"),
         suite=suite.name,
@@ -196,6 +225,7 @@ def _run_case(
         explanation=explanation,
         trace_id=d.trace_id,
         duration_ms=int((time.perf_counter() - t0) * 1000),
+        decision=d.model_dump(mode="json"),
     )
 
 

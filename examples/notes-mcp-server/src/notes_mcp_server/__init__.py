@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 
 _ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -36,11 +37,19 @@ def build_server(root: Path | None = None) -> MCPServer:
     root = root or notes_dir()
     server = MCPServer("notes", instructions="Plain-text notes stored in a sandbox directory.")
 
-    @server.tool(name="list_notes", description="List the ids of all notes.")
+    @server.tool(
+        name="list_notes",
+        description="List the ids of all notes.",
+        annotations=ToolAnnotations(readOnlyHint=True),
+    )
     def list_notes() -> list[str]:
         return sorted(p.stem for p in root.glob("*.txt"))
 
-    @server.tool(name="read_note", description="Return the text of a note.")
+    @server.tool(
+        name="read_note",
+        description="Return the text of a note.",
+        annotations=ToolAnnotations(readOnlyHint=True),
+    )
     def read_note(id: str) -> str:
         p = _path(root, id)
         if not p.exists():
@@ -53,7 +62,11 @@ def build_server(root: Path | None = None) -> MCPServer:
         p.write_text(text, encoding="utf-8")
         return f"wrote {id} ({len(text)} chars)"
 
-    @server.tool(name="delete_note", description="Delete a note permanently.")
+    @server.tool(
+        name="delete_note",
+        description="Delete a note permanently.",
+        annotations=ToolAnnotations(destructiveHint=True),
+    )
     def delete_note(id: str) -> str:
         p = _path(root, id)
         if not p.exists():

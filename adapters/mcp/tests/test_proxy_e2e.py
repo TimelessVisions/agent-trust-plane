@@ -89,7 +89,6 @@ def _write_config(path: Path, gateway_url: str, grant_id: str, notes_dir: Path) 
                 "action": "write_note",
                 "capability": "notes:write",
                 "resource_template": "note:{id}",
-                "resource_arguments": ["id"],
             },
             {
                 "mcp_tool": "read_note",
@@ -97,14 +96,13 @@ def _write_config(path: Path, gateway_url: str, grant_id: str, notes_dir: Path) 
                 "action": "read_note",
                 "capability": "notes:read",
                 "resource_template": "note:{id}",
-                "resource_arguments": ["id"],
             },
             {
                 "mcp_tool": "list_notes",
                 "tool": "mcp.notes",
                 "action": "list_notes",
                 "capability": "notes:read",
-                "resource_template": "note:*",
+                "resource_template": "note:_list",
             },
         ],
     }

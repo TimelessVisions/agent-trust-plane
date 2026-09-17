@@ -224,6 +224,17 @@ class TrustPlaneClient:
         )
         return result
 
+    def report_shadow_outcome(
+        self, trace_id: str, *, succeeded: bool, summary: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Shadow mode: report that a WOULD_DENY action was executed anyway."""
+        result: dict[str, Any] = self._request(
+            "POST",
+            f"/traces/{trace_id}/shadow-outcome",
+            json={"succeeded": succeeded, "summary": summary},
+        )
+        return result
+
     # ----------------------------------------------------------- credentials
     def issue_credential(
         self, agent: dict[str, str], label: str, expires_at: str | None = None

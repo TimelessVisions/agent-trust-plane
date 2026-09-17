@@ -233,7 +233,6 @@ def demo_mcp(out_dir: Path | None = None) -> int:
                     "action": "write_note",
                     "capability": "notes:write",
                     "resource_template": "note:{id}",
-                    "resource_arguments": ["id"],
                 },
                 {
                     "mcp_tool": "read_note",
@@ -241,14 +240,13 @@ def demo_mcp(out_dir: Path | None = None) -> int:
                     "action": "read_note",
                     "capability": "notes:read",
                     "resource_template": "note:{id}",
-                    "resource_arguments": ["id"],
                 },
                 {
                     "mcp_tool": "list_notes",
                     "tool": "mcp.notes",
                     "action": "list_notes",
                     "capability": "notes:read",
-                    "resource_template": "note:*",
+                    "resource_template": "note:_list",
                 },
             ],
         }

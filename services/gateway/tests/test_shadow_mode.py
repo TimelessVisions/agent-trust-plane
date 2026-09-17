@@ -11,6 +11,9 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+
+from atp_gateway import GatewaySettings, build_runtime, create_app
+
 from gateway_fixtures import (
     ATTACKER_ACCOUNT,
     OPERATOR_KEY,
@@ -24,8 +27,6 @@ from gateway_fixtures import (
     payment_envelope,
     seed_chain,
 )
-
-from atp_gateway import GatewaySettings, build_runtime, create_app
 
 
 @pytest.fixture
@@ -44,9 +45,7 @@ def shadow_client(clock: Clock) -> Iterator[TestClient]:
     rt.close()
 
 
-def _shadow_report(
-    client: TestClient, trace_id: str, token: str, succeeded: bool = True
-) -> Any:
+def _shadow_report(client: TestClient, trace_id: str, token: str, succeeded: bool = True) -> Any:
     return client.post(
         f"/traces/{trace_id}/shadow-outcome",
         json={"succeeded": succeeded, "summary": {"note": "executor ran it"}},
@@ -59,9 +58,7 @@ class TestShadowSemantics:
         assert shadow_client.get("/health").json()["enforcement_mode"] == "shadow"
         assert client.get("/health").json()["enforcement_mode"] == "enforce"
 
-    def test_shadow_denial_mints_no_grant_and_is_labelled(
-        self, shadow_client: TestClient
-    ) -> None:
+    def test_shadow_denial_mints_no_grant_and_is_labelled(self, shadow_client: TestClient) -> None:
         chain = seed_chain(shadow_client)
         env = payment_envelope(chain["ap"], amount="12500.00", destination=ATTACKER_ACCOUNT)
         auth = authorize(shadow_client, env, chain["tokens"]["ap"])
