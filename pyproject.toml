@@ -6,6 +6,42 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
+  "pydantic>=2.10",
+  "pydantic-settings>=2.7",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.34",
+  "httpx>=0.28",
+  "pyyaml>=6.0",
+  "mcp>=2.2,<3",
+]
+
+[project.scripts]
+atp = "atp_cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "packages/core/src/atp_core",
+  "packages/identity/src/atp_identity",
+  "packages/policy/src/atp_policy",
+  "packages/audit/src/atp_audit",
+  "packages/evals/src/atp_evals",
+  "services/gateway/src/atp_gateway",
+  "adapters/http/src/atp_adapter_http",
+  "adapters/mcp/src/atp_adapter_mcp",
+  "packages/cli/src/atp_cli",
+  "examples/finance-agent/src/finance_agent",
+  "examples/notes-mcp-server/src/notes_mcp_server",
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["packages/*/src", "services/gateway/src", "adapters/*/src", "examples/*/src", "README.md", "LICENSE", "pyproject.toml"]
+
+[dependency-groups]
+dev = [
   "atp-core",
   "atp-identity",
   "atp-policy",
@@ -17,10 +53,6 @@ dependencies = [
   "finance-agent",
   "notes-mcp-server",
   "atp-cli",
-]
-
-[dependency-groups]
-dev = [
   "pytest>=8.3",
   "pytest-cov>=6.0",
   "httpx>=0.28",
