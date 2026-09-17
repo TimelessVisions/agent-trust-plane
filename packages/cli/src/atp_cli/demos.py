@@ -316,7 +316,9 @@ def demo_wrap(out_dir: Path | None = None) -> int:
 
     print("DEMO D - atp mcp wrap: from an MCP server to a regression test")
     print("upstream: notes MCP server (this repo)   gateway: in-process from .atp/   no LLM")
-    root = out_dir or Path(tempfile.mkdtemp(prefix="atp-wrap-demo-"))
+    # Absolute: the `atp` subprocesses below run with cwd=root, so a relative
+    # --out would otherwise be resolved twice (found by the first CI run).
+    root = (out_dir or Path(tempfile.mkdtemp(prefix="atp-wrap-demo-"))).resolve()
     root.mkdir(parents=True, exist_ok=True)
     notes = root / "notes"
     notes.mkdir(exist_ok=True)

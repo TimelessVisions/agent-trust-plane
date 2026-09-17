@@ -103,3 +103,15 @@ def test_console_script_is_installed() -> None:
         [sys.executable, "-m", "atp_cli.main", "--help"], capture_output=True, text=True
     )
     assert proc.returncode == 0 and "atp" in proc.stdout
+
+
+def test_demo_wrap_accepts_a_relative_out_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI runs `atp demo wrap --out eval-reports/wrap-demo`; the demo's own
+    subprocesses run with cwd=out, so the path must be absolute internally."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ATP_HOME", raising=False)
+    assert _run("demo", "wrap", "--out", "reports/wrap-demo") == 0
+    assert (tmp_path / "reports" / "wrap-demo" / "atp-regression.yaml").exists()
+    assert (tmp_path / "reports" / "wrap-demo" / ".atp" / "atp.db").exists()
