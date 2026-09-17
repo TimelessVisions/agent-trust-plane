@@ -18,7 +18,7 @@ cd apps/dashboard && npm install         # optional, dashboard only
 ```bash
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                              # strict, every src tree
-uv run pytest -p no:warnings             # ~470 tests incl. property tests and MCP e2e
+uv run pytest -p no:warnings             # 439 tests incl. property tests and MCP e2e
 uv run python -m atp_evals               # 8 adversarial evals must stay 8/8
 uv run atp test examples/regression-suite/accounts-payable.yaml
 uv run atp demo wrap

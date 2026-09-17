@@ -97,7 +97,7 @@ Guarantees, assumptions, deployment requirements, non-guarantees and known gaps 
 - The hash chain catches edits by non-writers; a DB writer can recompute it: [docs/security/trace-integrity.md](docs/security/trace-integrity.md).
 - Declared policies are limit/equality rules; use OPA/Cedar for more ([why-not-just-opa.md](docs/policies/why-not-just-opa.md)). Prompt injection is bounded, not detected.
 
-Evidence for what *is* handled: 470+ tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
+Evidence for what *is* handled: 439 tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
 
 ## Contributing
 
