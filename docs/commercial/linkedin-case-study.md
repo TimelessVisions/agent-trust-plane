@@ -84,5 +84,5 @@ how you're doing it.
 
 ---
 
-*Suggested first comment:* repository link, `docs/threat-model.md`,
-`docs/security-review.md`.
+*Suggested first comment:* repository link, `docs/security/threat-model.md`,
+`docs/security/security-review.md`.

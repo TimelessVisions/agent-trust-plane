@@ -213,7 +213,7 @@ returns `status: released`. The trusted executor (the proxy) performs the
 call and reports `POST /executions/{grant_id}/outcome`, which is accepted once,
 only from the grant's audience, only after a release. The trace therefore
 shows *who decided*, *who executed*, and *what came back*, with the same
-single-use binding as in-gateway tools. See `docs/mcp-proxy.md`.
+single-use binding as in-gateway tools. See `docs/integrations/mcp-proxy.md`.
 
 ## HTTP API
 

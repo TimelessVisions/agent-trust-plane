@@ -30,7 +30,7 @@ same set on Python 3.12 and 3.13.
 ## Ground rules
 
 - **Do not weaken a security property to make a test pass.** The properties
-  are listed in `docs/design-principles.md`; changing one needs an ADR in
+  are listed in `docs/architecture/design-principles.md`; changing one needs an ADR in
   `docs/adr/`.
 - **Every security claim needs a test.** If you add a control, add the attack
   it stops to `services/gateway/tests/test_identity_security.py` or
@@ -65,4 +65,4 @@ order of value:
 
 ## Releases
 
-See `docs/releasing.md`.
+See `docs/release/releasing.md`.

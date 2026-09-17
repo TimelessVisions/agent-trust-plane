@@ -1,6 +1,6 @@
 # Competitive research at code level (inspected 2026-09-17)
 
-Extends `docs/competitive-landscape.md` (2026-09-16/17). Everything below
+Extends `docs/research/competitive-landscape.md` (2026-09-16/17). Everything below
 was checked against a repository, an official documentation page, an issue
 tracker or a package index on the date given. Where a project was assessed
 from documentation only, that is stated. Star counts and issue states are

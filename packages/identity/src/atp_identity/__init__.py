@@ -10,6 +10,7 @@ from atp_identity.credentials import (
     SqliteCredentialStore,
 )
 from atp_identity.grants import DelegationGrant, DelegationRequest
+from atp_identity.provider import BearerCredentialProvider, IdentityProvider
 from atp_identity.scope import covers, matches, scope_covers, scope_matches
 from atp_identity.service import MAX_CHAIN_DEPTH, DelegationService, ResolvedChain
 from atp_identity.store import DelegationStore, InMemoryDelegationStore, SqliteDelegationStore
@@ -19,12 +20,14 @@ __all__ = [
     "AgentCredential",
     "AuthError",
     "AuthenticatedAgent",
+    "BearerCredentialProvider",
     "CredentialService",
     "CredentialStore",
     "DelegationGrant",
     "DelegationRequest",
     "DelegationService",
     "DelegationStore",
+    "IdentityProvider",
     "InMemoryCredentialStore",
     "InMemoryDelegationStore",
     "ResolvedChain",

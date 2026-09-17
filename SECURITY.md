@@ -1,9 +1,9 @@
 # Security policy
 
 Agent Trust Plane is an experimental MVP. It has had a documented self-review
-(`docs/security-review.md`) and no independent audit. Do not deploy it in
+(`docs/security/security-review.md`) and no independent audit. Do not deploy it in
 front of real money or production systems without reading
-`docs/threat-model.md` and `docs/deployment.md`.
+`docs/security/threat-model.md` and `docs/security/deployment.md`.
 
 ## Supported versions
 
@@ -24,7 +24,7 @@ Include: what you did, what you expected, what happened, and a minimal
 reproduction (a failing test in `services/gateway/tests/` is ideal). You will
 get an acknowledgement within 7 days and a fix or a documented decision
 within 30 days for anything that undermines a property listed in
-`docs/design-principles.md`.
+`docs/architecture/design-principles.md`.
 
 ## In scope
 
@@ -38,4 +38,4 @@ in responses/traces/logs, and MCP proxy bypasses *through* the proxy.
 Reaching an upstream tool without going through the gateway or proxy;
 compromise of the gateway host, its database file, the operator key, or an
 agent's bearer token; denial of service; anything listed under "Findings
-left open" in `docs/security-review.md`.
+left open" in `docs/security/security-review.md`.

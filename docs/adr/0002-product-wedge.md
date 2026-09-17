@@ -5,7 +5,7 @@ Date: 2026-09-17
 
 ## Context
 
-`docs/competitive-landscape.md` shows a crowded field of MCP gateways
+`docs/research/competitive-landscape.md` shows a crowded field of MCP gateways
 (ContextForge, agentgateway, ToolHive, Docker MCP Gateway) that already do
 transports, isolation, secrets and coarse tool RBAC well, and a separate
 field of evaluation tools (promptfoo, Inspect, AgentDojo) that find problems

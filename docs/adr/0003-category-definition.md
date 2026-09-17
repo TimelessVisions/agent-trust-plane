@@ -6,7 +6,7 @@ Supersedes the positioning paragraph of ADR-0002 (its technical decisions stand)
 
 ## Inputs
 
-`docs/first-principles.md`, `docs/premortem.md`,
+`docs/architecture/first-principles.md`, `docs/architecture/premortem.md`,
 `docs/research/competitive-code-review.md`, `docs/research/user-pain.md`.
 
 ## Five candidate positions

@@ -1,7 +1,7 @@
 """Property-based and stateful tests of the execution kernel (Hypothesis).
 
 These drive ``TrustPlane`` directly (no HTTP) with a controllable clock and
-check the invariants from ``docs/first-principles.md``:
+check the invariants from ``docs/architecture/first-principles.md``:
 
 * EXECUTION EXACTNESS — every ledger row's action hash equals the hash of an
   action the gateway authorized with ALLOW;

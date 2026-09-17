@@ -9,7 +9,7 @@ traces, logs, or read endpoints.
 This is deliberately the smallest thing that makes ``envelope.agent`` a
 verified claim instead of an asserted one. It is not an identity platform:
 there is no federation, no key rotation protocol, no mutual TLS. See
-docs/threat-model.md for what that leaves open.
+docs/security/threat-model.md for what that leaves open.
 """
 
 from __future__ import annotations

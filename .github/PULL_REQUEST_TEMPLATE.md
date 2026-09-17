@@ -3,7 +3,7 @@
 ## Why
 
 ## Security implication
-<!-- none / describe which property in docs/design-principles.md is affected and how it is still upheld -->
+<!-- none / describe which property in docs/architecture/design-principles.md is affected and how it is still upheld -->
 
 ## Checklist
 - [ ] `uv run ruff check . && uv run ruff format --check .`

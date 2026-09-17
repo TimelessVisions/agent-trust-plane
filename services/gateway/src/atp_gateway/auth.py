@@ -29,23 +29,18 @@ def _runtime(request: Request) -> Runtime:
     return rt
 
 
-def _bearer(authorization: str | None) -> str | None:
-    if not authorization:
-        return None
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        raise AuthError(ReasonCode.AGENT_CREDENTIAL_INVALID, "expected 'Authorization: Bearer'")
-    return token.strip()
-
-
 def current_agent(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
 ) -> AuthenticatedAgent:
+    """Authenticate through the configured IdentityProvider. The provider
+    sees request headers only, never the body: identity cannot come from
+    the envelope."""
     rt = _runtime(request)
-    return rt.trust_plane.credentials.authenticate(
-        _bearer(authorization), now=rt.trust_plane.clock()
-    )
+    tp = rt.trust_plane
+    if authorization is None:
+        raise AuthError(ReasonCode.AGENT_CREDENTIAL_MISSING, "agent credential required")
+    return tp.identity.authenticate({"authorization": authorization}, now=tp.clock())
 
 
 def optional_agent(

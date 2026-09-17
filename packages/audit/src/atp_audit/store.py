@@ -2,7 +2,7 @@
 
 The interface deliberately has no update or delete. Append-only semantics are
 enforced by the application (this module) rather than the database; see
-docs/threat-model.md for what stronger tamper-evidence would require.
+docs/security/threat-model.md for what stronger tamper-evidence would require.
 """
 
 from __future__ import annotations

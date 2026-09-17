@@ -8,6 +8,6 @@ labels: enhancement
 
 **Proposed change**
 
-**Which security property does it touch?** (see docs/design-principles.md; "none" is fine)
+**Which security property does it touch?** (see docs/architecture/design-principles.md; "none" is fine)
 
 **Would it need an ADR?** (changes to trust boundaries, grants, delegation or policy semantics do)

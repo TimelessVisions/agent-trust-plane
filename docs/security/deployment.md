@@ -17,7 +17,7 @@ cannot meet a line here, the corresponding guarantee does not hold.
    a secret store or a mode-600 `.env` that is never committed. The gateway
    refuses to start a persistent database without them.
 3. **The operator key is held by the operator only.** It is omnipotent (see
-   `docs/security-review.md` O1). Agents never receive it. The dashboard is
+   `docs/security/security-review.md` O1). Agents never receive it. The dashboard is
    an operator tool and asks for it; do not embed it in the dashboard build.
 4. **Agent credentials are issued per agent, with an expiry, and revoked
    when the agent is retired or suspected compromised.** A bearer token is

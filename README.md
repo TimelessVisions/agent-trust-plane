@@ -6,7 +6,7 @@
 
 *Real screenshot of the operator dashboard: a recorded $640 payment redirected to an unknown account was allowed by the baseline policy set (and settled to the local ledger), then replayed under the hardened set and denied. Nothing on this page is mocked.*
 
-> **Status: experimental open-source MVP (v0.2.0).** Every claim here is backed by a test or an eval in this repository; what it does not do is in [docs/threat-model.md](docs/threat-model.md) and [docs/security-review.md](docs/security-review.md). Not independently audited. Not production software.
+> **Status: experimental open-source MVP (v0.2.0).** Every claim here is backed by a test or an eval in this repository; what it does not do is in [docs/security/threat-model.md](docs/security/threat-model.md) and [docs/security/security-review.md](docs/security/security-review.md). Not independently audited. Not production software.
 
 ## What it actually does
 
@@ -19,7 +19,7 @@ Agent Trust Plane is a decision-and-evidence layer, not an MCP gateway. It:
 - **replays** any recorded decision under a different policy version and **pins** it as a YAML regression test that runs in CI with no side effects;
 - **intercepts real MCP tool calls** via a stdio proxy in front of an existing MCP server.
 
-It does not run your MCP servers, isolate containers, manage OAuth, or filter content. Those are solved by [other projects](docs/competitive-landscape.md); this sits beside or behind them.
+It does not run your MCP servers, isolate containers, manage OAuth, or filter content. Those are solved by [other projects](docs/research/competitive-landscape.md); this sits beside or behind them.
 
 ## Five-minute quickstart
 
@@ -77,7 +77,7 @@ tools:
     resource_arguments: [id]
 ```
 
-Verified against this repo's notes server on every CI run and against the reference `@modelcontextprotocol/server-filesystem` (opt-in test). Supported: MCP Python SDK 2.x, stdio transport, `tools/list` + `tools/call`, one upstream per proxy. Not yet: SSE/Streamable HTTP, prompts/resources, multiple upstreams. Full scope, and the bypass it cannot prevent (an agent reaching the upstream directly), in [docs/mcp-proxy.md](docs/mcp-proxy.md).
+Verified against this repo's notes server on every CI run and against the reference `@modelcontextprotocol/server-filesystem` (opt-in test). Supported: MCP Python SDK 2.x, stdio transport, `tools/list` + `tools/call`, one upstream per proxy. Not yet: SSE/Streamable HTTP, prompts/resources, multiple upstreams. Full scope, and the bypass it cannot prevent (an agent reaching the upstream directly), in [docs/integrations/mcp-proxy.md](docs/integrations/mcp-proxy.md).
 
 **From your own code.** Build an `ActionEnvelope`, call `/authorize`, then `/execute` with the grant — see `adapters/http` (`TrustPlaneClient`) and `examples/finance-agent`.
 
@@ -89,7 +89,7 @@ uv run atp test examples/regression-suite/accounts-payable.yaml --policy-set pay
 uv run atp record --trace <id> --suite security/ap.yaml --name "injected 12500"          # trace -> case
 ```
 
-A suite declares principals, a delegation graph and cases with expected `outcome` / `reason_code` / `matched_policy`. Runs use an ephemeral in-process gateway and call only `/authorize` — nothing executes. Output is human-readable, JSON and JUnit XML. The GitHub Actions example needs no secrets: [examples/regression-suite/.github/workflows/agent-security-tests.yml](examples/regression-suite/.github/workflows/agent-security-tests.yml). Guide: [docs/regression-testing.md](docs/regression-testing.md).
+A suite declares principals, a delegation graph and cases with expected `outcome` / `reason_code` / `matched_policy`. Runs use an ephemeral in-process gateway and call only `/authorize` — nothing executes. Output is human-readable, JSON and JUnit XML. The GitHub Actions example needs no secrets: [examples/regression-suite/.github/workflows/agent-security-tests.yml](examples/regression-suite/.github/workflows/agent-security-tests.yml). Guide: [docs/regression/regression-testing.md](docs/regression/regression-testing.md).
 
 ## Architecture
 
@@ -105,13 +105,13 @@ flowchart LR
     T --> R[Replay · atp record · atp test]
 ```
 
-Packages: `atp-core` (envelope, decision, reason codes), `atp-identity` (credentials, grants, chain resolution), `atp-policy`, `atp-audit`, `atp-gateway` (FastAPI, SQLite), `atp-adapter-http`, `atp-adapter-mcp` (proxy), `atp-evals` (adversarial evals + regression suites), `atp-cli`, `finance-agent` and `notes-mcp-server` (examples), `apps/dashboard` (Next.js). Details: [docs/architecture.md](docs/architecture.md); decisions: [docs/adr/](docs/adr/).
+Packages: `atp-core` (envelope, decision, reason codes), `atp-identity` (credentials, grants, chain resolution), `atp-policy`, `atp-audit`, `atp-gateway` (FastAPI, SQLite), `atp-adapter-http`, `atp-adapter-mcp` (proxy), `atp-evals` (adversarial evals + regression suites), `atp-cli`, `finance-agent` and `notes-mcp-server` (examples), `apps/dashboard` (Next.js). Details: [docs/architecture/architecture.md](docs/architecture/architecture.md); decisions: [docs/adr/](docs/adr/).
 
 Overhead, measured ([docs/benchmarks.md](docs/benchmarks.md)): policy evaluation 0.3 ms; authorize + execute over loopback ~11 ms p50; ~21 ms p50 added to an MCP tool call end to end. Single machine, sequential, no concurrency.
 
 ## Security limitations
 
-Full lists: [docs/threat-model.md](docs/threat-model.md), [docs/security-review.md](docs/security-review.md), [docs/deployment.md](docs/deployment.md). Headlines:
+Full lists: [docs/security/threat-model.md](docs/security/threat-model.md), [docs/security/security-review.md](docs/security/security-review.md), [docs/security/deployment.md](docs/security/deployment.md). Headlines:
 
 - **The operator key is omnipotent** — it issues every agent credential and stands in for every human.
 - **Agent credentials are bearer tokens** — a stolen token is the agent until it expires or is revoked.

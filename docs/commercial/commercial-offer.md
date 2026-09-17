@@ -107,6 +107,6 @@ in production, it is reported as unconfirmed with the staging evidence.
 The method is the one applied to Agent Trust Plane, an open-source control
 plane with an eight-scenario adversarial suite and 300+ tests, including a
 documented self-review with fixed and open findings
-(`docs/security-review.md`). That project is an MVP built by one engineer;
+(`docs/security/security-review.md`). That project is an MVP built by one engineer;
 it is offered as evidence of method and rigor, not of production experience
 with payment systems.

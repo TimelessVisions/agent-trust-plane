@@ -38,10 +38,12 @@ from atp_gateway.tools import ToolRegistry
 from atp_identity import (
     AuthenticatedAgent,
     AuthError,
+    BearerCredentialProvider,
     CredentialService,
     DelegationGrant,
     DelegationRequest,
     DelegationService,
+    IdentityProvider,
     ResolvedChain,
 )
 from atp_policy import PolicyContext, PolicyEngine, PolicySetRegistry, VendorDirectory
@@ -126,6 +128,7 @@ class TrustPlane:
         grant_ttl_seconds: int = 120,
         clock: Callable[[], datetime] = utcnow,
         enforcement_mode: EnforcementMode = "enforce",
+        identity: IdentityProvider | None = None,
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
@@ -138,6 +141,7 @@ class TrustPlane:
         self.grant_ttl_seconds = grant_ttl_seconds
         self.clock = clock
         self.enforcement_mode: EnforcementMode = enforcement_mode
+        self.identity: IdentityProvider = identity or BearerCredentialProvider(credentials)
         self.engine = PolicyEngine()
         # One lock around each state-changing operation: the MVP stores share a
         # single SQLite connection and the trace chain must not interleave.
@@ -168,11 +172,10 @@ class TrustPlane:
     def _check_credential_live(self, caller: AuthenticatedAgent) -> None:
         """Authentication happened in the HTTP layer, outside the lock. Re-check
         the credential here so a revocation cannot land in between."""
-        cred = self.credentials.store.get(caller.credential_id)
-        if cred is None or cred.is_revoked():
-            raise AuthError(ReasonCode.AGENT_CREDENTIAL_REVOKED, "agent credential was revoked")
-        if cred.is_expired(self.clock()):
-            raise AuthError(ReasonCode.AGENT_CREDENTIAL_EXPIRED, "agent credential has expired")
+        if not self.identity.is_live(caller.credential_id, now=self.clock()):
+            raise AuthError(
+                ReasonCode.AGENT_CREDENTIAL_REVOKED, "agent credential was revoked or expired"
+            )
 
     def _trace_owner(self, trace_id: str) -> str | None:
         """The agent that first wrote to a trace owns it. Gateway-authored

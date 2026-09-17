@@ -1,7 +1,8 @@
-# Security review (self-conducted, 2026-09-16)
+# Security review (self-conducted; last pass 2026-09-17, v0.3.0)
 
-Scope: the gateway, identity, policy, audit, adapters and dashboard as of
-commit `e18d86b`. Method: read the code against the checklist below, write an
+Scope: the gateway, identity, policy, audit, adapters, CLI and dashboard.
+The first pass covered commit `e18d86b`; the v0.2.0 and v0.3.0 sections
+below cover the code added since. Method: read the code against the checklist below, write an
 attack for anything suspicious, keep the attack as a regression test. This is
 a self-review by the author, not an independent audit; treat it accordingly.
 
@@ -45,10 +46,35 @@ Open items added:
 
 | # | Area | Finding | Severity | Mitigation |
 |---|---|---|---|---|
-| O13 | Proxy | Direct upstream access bypasses everything. | High if upstreams are reachable | Deployment requirement; see `docs/mcp-proxy.md`. |
+| O13 | Proxy | Direct upstream access bypasses everything. | High if upstreams are reachable | Deployment requirement; see `docs/integrations/mcp-proxy.md`. |
 | O14 | Proxy | The proxy is trusted code holding a bearer token. | High if the agent host is compromised | Host isolation, short credential TTLs, revocation. |
 | O15 | Proxy | stdio only; no transport auth on the proxy's own stdio (the launching client is trusted by construction). | Medium | Streamable HTTP with client auth is roadmap. |
 | O16 | Policy | No generic argument-constraint policy for arbitrary MCP tools; only capability + resource scope apply to `mcp.*`. | Medium | Roadmap item; today, scope resources narrowly. |
+
+## Additions in v0.3.0 (wrap, declared policies, analyses, shadow mode)
+
+Method for this pass: `docs/red-team/architecture-attacks.md` lists every
+attack attempted; property-based tests and an exhaustive state-machine
+check were added alongside example tests.
+
+| # | Area | Finding | Severity | Handling | Test |
+|---|---|---|---|---|---|
+| F18 | Grants | `GrantStore.revoke` on an already-consumed grant overwrote `consumed` with `revoked`, erasing the record that a side effect happened. Found by the exhaustive state-machine check; no route exposed `revoke`, so not reachable, but the store contract was wrong. | Low | `consumed` and `revoked` are absorbing in both stores. | `test_grant_state_machine.py` |
+| F19 | Proxy | A tool name outside the MCP grammar (spaces, control chars) would have made `atp mcp init` fail with a traceback; a hostile description could carry newlines/YAML into the generated file. | Low | Unmappable tools are skipped with a note (unmapped = denied); descriptions are cleaned and bounded. | `discovery.py`, wrap e2e |
+| F20 | Files | Policy files, suites, proxy configs and bundles had no size cap before `yaml.safe_load`/`json.loads`. | Low | 1 MiB cap on every untrusted file read (`read_bounded_text`). | `test_oversized_policy_file_refused_before_parsing`, alias-bomb test |
+| F21 | Scope | Concrete resources could not contain `/`, so path scoping was impossible and the filesystem test used a constant resource. | Medium (missing control) | Resource grammar widened; prefix patterns `type:prefix*`; path normalisation in mappings. | `test_scope.py` prefix tests, `test_mapping.py`, property `test_covers_is_sound` |
+| F22 | Modes | No way to observe without blocking, so users would run unprotected. | Medium (adoption) | Shadow mode declared by the gateway only; explicit events and `WOULD_DENY` labels; owner-bound once-only shadow outcome. | `test_shadow_mode.py`, wrap e2e |
+| F23 | Identity | Liveness re-check under the lock was bound to the bearer store. | Low | `IdentityProvider` protocol; kernel calls `is_live`; second implementation tested. | `test_alternative_provider_drives_binding` |
+
+Open items added:
+
+| # | Area | Finding | Severity | Mitigation |
+|---|---|---|---|---|
+| O17 | Paths | Prefix scopes are textual: a wrong `casefold` setting on a case-insensitive filesystem, or a symlink inside the scoped directory, lets a path outside the scope be reached. | Medium | Init sets `casefold` on Windows; document; forbid links in scoped roots; future: resolve through the upstream's own `roots`. |
+| O18 | Executor | A lost outcome report leaves `execution_released` as the last event; the external effect is unknown. | Medium | Reconcile against the upstream; idempotency key injection is roadmap (`idempotency.md`). |
+| O19 | Policy | Declared rules are limit/equality checks on single arguments; nothing conditional or cumulative. | Low | By design; OPA/Cedar adapter boundary (`../policies/why-not-just-opa.md`). |
+| O20 | Home | `.atp/keys.env` is the operator key on the developer's disk; mode 600 on POSIX, ACL-dependent on Windows. | Medium | Document; keep `.atp/` out of shared drives; rotate by deleting `keys.env` (invalidates outstanding grants). |
+| O21 | Generator | `atp mcp init` proposes `read` and `write` capabilities from unverified annotations; a lying server gets `write` for a destructive tool marked read-only. | Medium | The file is a proposal the human reviews and says so; destructive is never delegated; future: verify against the tool's declared `inputSchema` side effects (not expressible in MCP today). |
 
 ## Findings left open
 
@@ -56,7 +82,7 @@ Open items added:
 |---|---|---|---|---|---|
 | O1 | Trust anchor | The operator key is omnipotent: it issues credentials for any agent, delegates all human authority, and reads everything. Whoever holds it is every human and every agent. | High (by design) | Compromise of the operator key is total compromise. | Split into roles (credential admin, human-authority signer, reader); represent humans with their own signed authority instead of the operator standing in for them. |
 | O2 | Credentials | Bearer tokens: a stolen token is the agent until revoked or expired. No sender binding, no rotation protocol. | High | Token theft from an agent host = impersonation. | Short TTLs (supported), mTLS or DPoP-style proof of possession, rotation with overlap, per-host binding. |
-| O3 | Tool bypass | Code with an in-process reference to a tool can call it without the gateway (`test_in_process_tool_call_is_not_protected` demonstrates this on purpose). | High if tools are co-located with agents | The boundary is the gateway process. | **Deployment requirement**: real tools accept calls only from the gateway (network policy, tool-side credentials held only by the gateway). See `docs/deployment.md`. |
+| O3 | Tool bypass | Code with an in-process reference to a tool can call it without the gateway (`test_in_process_tool_call_is_not_protected` demonstrates this on purpose). | High if tools are co-located with agents | The boundary is the gateway process. | **Deployment requirement**: real tools accept calls only from the gateway (network policy, tool-side credentials held only by the gateway). See `docs/security/deployment.md`. |
 | O4 | Gateway compromise | The gateway process and its SQLite file are the trust anchor; a DB-writer can mint grant records, rewrite chains, and produce a self-consistent forged trace. | High | Total. | Separate hardened service, least-privilege DB, asymmetric grant signing with KMS-held keys, external anchoring of chain heads. |
 | O5 | Audit | Hash chain is tamper-evident only against edits that do not recompute the chain. | Medium | Insider forgery undetectable. | Anchor heads externally; write-only audit sink. |
 | O6 | Grants | Symmetric HMAC; no `kid`; rotation invalidates all outstanding grants (TTL is 120 s, so the blast radius is small). | Low | Operational. | Ed25519 + `kid`. |
@@ -81,4 +107,4 @@ Open items added:
 | Revocation race conditions | F6; delegation and credential revocation both re-checked under the execute lock. |
 | Audit-chain integrity and tampering | Detected for naive edits at DB level (`_tamper_sqlite`); O5 for the rest. |
 | Error responses leaking secrets | `test_error_messages_do_not_echo_credentials`, `test_secrets_never_appear_in_responses_or_traces`; O9. |
-| Unsafe configuration for public deployment | F7, F8; `docs/deployment.md`. |
+| Unsafe configuration for public deployment | F7, F8; `docs/security/deployment.md`. |

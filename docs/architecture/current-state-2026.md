@@ -40,7 +40,7 @@ one Next.js app (1.3 k lines of TS):
 | `atp-audit` | Hash-chained append-only trace store (memory + SQLite), integrity verification | ~350 | Solid for what it claims; chain is recomputable by a DB writer (documented). |
 | `atp-gateway` | `TrustPlane` service (authorize/execute/replay/report_outcome under one RLock), FastAPI routes, HMAC-SHA256 single-use grants with server-side `issued→consumed`, settings that refuse insecure persistent configs, `LocalGateway` (uvicorn in a thread), `ExternalTool` release/outcome protocol | ~1900 | Solid. Security logic lives in `service.py`, not in handlers. |
 | `atp-adapter-http` | `TrustPlaneClient` (sync httpx; ASGI in-process transport; agent/operator role helpers) | 284 | Adequate; returns raw dicts for most reads. |
-| `atp-adapter-mcp` | stdio MCP proxy on MCP Python SDK 2.2 lowlevel `Server`; tools/list filtering; tools/call → authorize → execute(release) → upstream → outcome | 306 + 176 | Real and verified over the wire. `interceptor.py` (`McpInterceptor`) is the v0.1 in-process shim: still exported and tested, **unused by the proxy**, referenced only by `docs/architecture.md`. |
+| `atp-adapter-mcp` | stdio MCP proxy on MCP Python SDK 2.2 lowlevel `Server`; tools/list filtering; tools/call → authorize → execute(release) → upstream → outcome | 306 + 176 | Real and verified over the wire. `interceptor.py` (`McpInterceptor`) is the v0.1 in-process shim: still exported and tested, **unused by the proxy**, referenced only by `docs/architecture/architecture.md`. |
 | `atp-evals` | 8 adversarial scenarios + regression suite format/runner/recorder | ~1100 | Solid. `record` requires a *running* gateway and the operator key. |
 | `atp-cli` | `atp doctor/demo/test/record/serve/keygen/mcp-proxy/mcp-init` | ~670 | Works. `mcp-init` writes a static template with `REPLACE_WITH_GRANT_ID`; there is no path from "I have an MCP server" to "it is wrapped" without the user first running a gateway, issuing a credential and a delegation by hand. |
 | `finance-agent` | Deterministic simulated AP agent + optional Claude agent (untested) | ~500 | Demo only. |
@@ -99,12 +99,12 @@ cryptography beyond `hmac`/`hashlib`. No Hypothesis.
 - `scripts/demo.sh` starts the gateway with `python -m atp_gateway --port`
   and calls `POST /evals/run` without an operator key: **stale** (reads are
   operator-only since v0.1.1; the CLI is `atp serve`).
-- `docs/README-v0.1.md` (407 lines) is an archived README kept for
-  history; `docs/commercial-offer.md`, `docs/agent-production-readiness-audit.md`,
-  `docs/prospect-message.md`, `docs/linkedin-case-study.md`,
-  `docs/portfolio-case-study.md`, `docs/launch-post.md` are marketing/
+- `docs/archive/README-v0.1.md` (407 lines) is an archived README kept for
+  history; `docs/commercial/commercial-offer.md`, `docs/commercial/agent-production-readiness-audit.md`,
+  `docs/commercial/prospect-message.md`, `docs/commercial/linkedin-case-study.md`,
+  `docs/commercial/portfolio-case-study.md`, `docs/launch/launch-post-v0.2.0.md` are marketing/
   portfolio material sitting in the technical docs root.
-- `docs/architecture.md` still draws `McpInterceptor` as the MCP adapter.
+- `docs/architecture/architecture.md` still draws `McpInterceptor` as the MCP adapter.
 - `eval-reports/` is gitignored but present locally with stale runs.
 
 ## Overly complex / under-engineered
@@ -118,13 +118,13 @@ cryptography beyond `hmac`/`hashlib`. No Hypothesis.
 
 ## Stale docs and comments
 
-- `docs/architecture.md`: MCP adapter drawn as in-process interceptor.
+- `docs/architecture/architecture.md`: MCP adapter drawn as in-process interceptor.
 - `scripts/demo.sh`: wrong entrypoint, unauthenticated eval call.
 - `packages/cli/src/atp_cli/main.py` docstring lists `mcp-proxy`/`mcp-init`
   but the README tells users to run `atp keygen`, `atp serve`, then edit YAML
   by hand — the "one config change" claim in ADR-0002 is not what a user
   experiences.
-- `docs/security-review.md` header says "as of commit e18d86b"; the v0.2.0
+- `docs/security/security-review.md` header says "as of commit e18d86b"; the v0.2.0
   additions are appended but the scope line was not updated.
 
 ## Architectural inconsistencies

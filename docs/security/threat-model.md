@@ -1,74 +1,75 @@
-# Threat model
+# Threat model (v0.3.0)
 
-This document states what Agent Trust Plane defends against **today**, what it
-does not, and what it would take to close each gap. It is written to be
-checked against the code and the eval suite, not to reassure.
+Written to be checked against the code and the test suite, for a reader who
+assumes nothing. Every "handled" row names a mechanism and a test. Every
+gap is stated as a gap.
 
 ## Assets
 
-- **Money and side effects**: anything a tool does in the world (the demo's
-  payments ledger stands in for a real rail).
-- **Authority**: the delegation grants that say who may do what.
-- **The audit trail**: the ability to reconstruct, after the fact, what
-  happened and why.
+1. **Side effects in the world** — files written, payments sent, tickets
+   changed. The demo ledger stands in for a real rail.
+2. **Authority** — the delegation graph that says who may do what, and
+   the operator key that roots it.
+3. **Evidence** — the ability to reconstruct, after the fact, what was
+   proposed, decided, executed and why.
+4. **Keys and credentials** — grant signing key, operator key, agent
+   bearer secrets, upstream secrets held by the proxy.
+
+## Actors
+
+| Actor | Trust | Holds |
+|---|---|---|
+| Human principal | authority source; represented by the operator in this release | nothing directly |
+| Operator | fully trusted; the trust anchor | operator key, `.atp/keys.env` |
+| Agent (model + runtime) | **untrusted**; assumed compromised by injection at any time | its own bearer credential |
+| MCP client (IDE, host app) | trusted to launch the proxy; not trusted for authority | the proxy's stdio |
+| ATP proxy / executor | trusted code; holds an agent credential and the upstream session | agent token, upstream secrets from its config |
+| Gateway process + store | trusted; the boundary | signing key, operator key, all records |
+| Upstream MCP server / tool | untrusted for metadata and results; trusted to perform what it is told | its own state |
+| External content (documents, web, tool output) | untrusted | — |
+| Attacker | controls any agent, any content, the network path to the gateway; can replay/edit anything an agent sees | agent-level credentials |
 
 ## Trust boundaries
 
 ```
-untrusted                      |  trusted (MVP)
--------------------------------+----------------------------------------
-model outputs                  |  gateway process
-retrieved content (invoices,   |  gateway SQLite file
-  email, web, tool output)     |  grant signing key
-agent code and its claims      |  operator key (the human trust anchor)
-the delegation graph AS        |  policy set code
-  ASSERTED by an agent         |  vendor directory
-an agent's bearer credential   |
-  (proves identity; can be     |
-  stolen)                      |
+untrusted                              |  trusted
+---------------------------------------+---------------------------------------
+model output, prompts, retrieved docs  |  gateway process and its SQLite store
+tool descriptions, annotations, results|  grant signing key, operator key
+MCP client requests (name, arguments)  |  policy sets (built-in code, declared file)
+the envelope (every field)             |  the proxy process and its config
+agent bearer credential (can be stolen)|  the deployment boundary (docs/security/enforcing-the-boundary.md)
+traces imported from elsewhere         |  the operator's machine (`.atp/`)
+regression suites, policy files (as    |
+  files: parsed strictly, never run)   |
 ```
 
-## Identity trust anchor
+## Attack surfaces
 
-Every agent-facing call carries a bearer credential issued by the operator
-(`atpa_<id>.<secret>`; only the SHA-256 is stored). The authenticated agent
-must equal the envelope's `agent`, the delegation chain's leaf grantee, and
-the execution grant's audience. Provenance events are attributed to the
-authenticated agent; there is no free-text actor. A trace belongs to the
-first agent that writes to it.
-
-**Human identity is the operator.** Humans do not authenticate; the holder of
-`ATP_OPERATOR_KEY` issues credentials, delegates all human-rooted authority,
-selects non-default policy sets, runs evals, and reads traces. That key is
-the trust anchor and its compromise is total. This is a deliberate MVP
-simplification, listed again under "not yet handled".
-
-Everything on the left is input. Nothing on the left is believed without
-being checked against something on the right.
+`POST /authorize`, `/execute`, `/executions/{grant}/outcome`,
+`/traces/{id}/events`, `/traces/{id}/shadow-outcome`, `/delegations*`
+(agent-authenticated); operator routes; the proxy's stdio (`tools/list`,
+`tools/call`); the upstream connection (stdio child or Streamable HTTP);
+files read by the CLI (`atp-mcp.yaml`, `policies.yaml`, suites, bundles);
+the dashboard (operator key in browser memory).
 
 ## Attacker model
 
-An attacker can:
+An attacker can: author any content an agent reads; fully control one or
+more agents including their valid credentials; observe and replay
+anything returned to those agents; craft any MCP message to the proxy;
+craft any file the CLI reads.
 
-- author any content an agent will read (indirect prompt injection);
-- fully control one or more agents (a "compromised agent"), including making
-  arbitrary HTTP calls to the gateway with arbitrary envelopes and tokens,
-  using that agent's own valid credential;
-- observe tokens returned to a compromised agent and replay or edit them;
-- try to create delegations through the API.
-
-An attacker in the MVP model **cannot**:
-
-- read or write the gateway's database or process memory;
-- obtain the grant signing key or the operator key;
-- obtain another agent's credential;
-- change policy set code.
-
-The section "Not yet handled" covers what happens when those assumptions fail.
+An attacker in this model **cannot**: write the gateway's store or process
+memory; obtain the signing or operator key; obtain another agent's
+credential; change policy code or the policy file; reach the upstream
+without the proxy (a deployment requirement, not a property). The
+"unhandled" section says what happens when each of these assumptions
+fails.
 
 ---
 
-## Threats handled in the MVP
+## Handled threats
 
 Each row names the mechanism and the test or eval that exercises it.
 
@@ -114,14 +115,41 @@ Each row names the mechanism and the test or eval that exercises it.
 | **Replay used to execute** | Use `/replay` as a back door to run an action. | Replay re-evaluates only; it never mints grants or touches tools. | `test_replay_under_hardened_policy_flips_a_missed_attack` (ledger unchanged) |
 
 ---
+| **Path traversal past a directory scope (MCP)** | `write_file` to `/work/../etc/passwd` under scope `path:/work/*`. | Path normalisation before the resource string is built (`..`, separators, optional case folding); relative paths refused without a base. | `test_mapping.py::TestPathNormalization`, prefix-scope tests |
+| **Wildcard smuggling in a resource** | Argument value `*` or `a*` to match a wider scope. | Concrete resources may not contain `*` anywhere; patterns allow it only in the defined positions. | `test_wildcard_in_derived_resource_is_refused`, `test_validate_pattern_rejects_misplaced_wildcards` |
+| **Shadow/enforce confusion** | A caller asks for shadow mode, or a shadow denial is mistaken for a block. | Mode is a gateway setting; not an envelope or query field; every decision carries `enforcement`; traces record `shadow_would_deny` and `shadow_execution_*`; the CLI prints `WOULD_DENY`. | `test_shadow_mode.py`, wrap e2e |
+| **Forged shadow outcome** | An agent reports that it executed a shadowed action on someone else's trace, or twice, or for an enforced denial. | Trace-owner bound; requires a recorded shadow denial; once. | `test_shadow_outcome_is_owner_bound_and_once`, `test_shadow_outcome_rejected_in_enforce_mode_and_for_allows` |
+| **Policy file weakening the kernel** | A declared set tries to drop delegation/capability/scope checks or to replace `payments-v2`. | Kernel policies are always prepended; built-in names cannot be shadowed; unknown keys rejected; 1 MiB cap; safe YAML only. | `test_declarative.py`, `test_suite_cannot_switch_off_kernel_policies_via_policy_file`, `test_oversized_policy_file_refused_before_parsing` |
+| **Offline analysis executing tools** | `atp test`, `policy impact`, `mutate` reach `/execute`. | They call only `/authorize` on an ephemeral gateway; a spy on `TrustPlane.execute` sees zero calls. | `test_no_execute_call_during_suite_impact_or_mutation` |
+| **Hostile tool metadata** | Upstream tool names/descriptions with control characters, YAML syntax or spoofed annotations. | Names outside the MCP grammar are skipped (unmapped = denied); descriptions are cleaned and bounded; annotations only choose a *suggested* capability name that the human reviews; `destroy` is never delegated by the generator. | `discovery.py`, wrap e2e with the annotated notes server |
+| **Evidence bundle tampering** | Edit a decision, an event, the order, or the head hash in an exported bundle. | Bundle hash + recomputed event chain; verification fails on each. | `test_tampered_bundle_fails_verification` |
+| **Stray configuration overriding the local home** | A `.env` or `ATP_*` variable changes keys or mode for `atp mcp wrap`. | The home's `keys.env` and the explicit mode are passed as init values; `.env` is not read. | `test_home_is_authoritative_over_stray_env` |
+| **Identity from the request body** | A provider that reads `envelope.agent`. | The provider protocol receives headers only; a second implementation is tested driving the same binding. | `test_alternative_provider_drives_binding` |
 
-## Threats NOT yet handled
+
+---
+
+## Partially mitigated
+
+Each row has a real mitigation and a real remaining gap.
+
+| Threat | Mitigation in place | Remaining gap |
+|---|---|---|
+| **Agent credential theft** | Short TTLs, revocation re-checked under the lock, per-agent audience on grants | Bearer: a stolen token is the agent until revoked (`identity-providers.md`) |
+| **Proxy host compromise** | The proxy cannot mint grants or forge decisions; unmapped tools stay denied | It can forward arbitrary calls to *its* upstream and holds upstream secrets from its config |
+| **Audit tampering by a DB writer** | Hash chain detects naive edits; bundles verify offline | A writer can recompute a consistent history (`trace-integrity.md`) |
+| **Partial execution failure** | At most one release per grant; outcomes reported once; `execution_released` without outcome is visible | External effect may have happened; no idempotency key injected (`idempotency.md`) |
+| **Case-insensitive filesystems** | `casefold` option on path normalisation; init sets it on Windows | A wrong setting lets `/WORK` escape `path:/work/*`; symlinks are never resolved |
+| **Malicious tool output** | Bounded preview recorded; never executed by ATP | Not labelled as untrusted content for the agent; no output policy |
+| **Approval** | `REQUIRE_APPROVAL` recorded, no grant minted | No approver identity or endpoint (design in `../research/rejected-ideas.md`) |
+
+## Unhandled threats
 
 Stated plainly. Each has a sketch of what closing it would take.
 
 | Threat | Current state | What it would take |
 |---|---|---|
-| **Direct upstream access (MCP)** | An agent launches or connects to the upstream MCP server without the proxy. | Not prevented. The proxy is the enforcement point; `test_direct_upstream_access_is_not_protected` shows the bypass. Deploy upstreams so only the proxy can reach them (`docs/deployment.md`, `docs/mcp-proxy.md`). |
+| **Direct upstream access (MCP)** | An agent launches or connects to the upstream MCP server without the proxy. | Not prevented. The proxy is the enforcement point; `test_direct_upstream_access_is_not_protected` shows the bypass. Deploy upstreams so only the proxy can reach them (`docs/security/deployment.md`, `docs/integrations/mcp-proxy.md`). |
 | **Proxy host compromise** | The proxy holds the agent's bearer token and a live upstream session. | A compromised proxy can forward arbitrary calls to the upstream it launched; it cannot mint grants or forge gateway decisions. Same mitigation as credential theft: short TTLs, revocation, host isolation. |
 | **Operator key compromise** | The operator key issues credentials for any agent, delegates all human authority and reads everything. It is the trust anchor; its holder is every human and every agent. | Split into roles; give humans their own signed authority; keep the key in a secret store and rotate it. |
 | **Agent credential theft** | Bearer tokens are the agent until revoked or expired. There is no proof of possession, no sender binding, no rotation protocol. | Short TTLs (supported today), mTLS or DPoP-style proof of possession, per-host binding, rotation with overlap. |
@@ -141,11 +169,48 @@ Stated plainly. Each has a sketch of what closing it would take.
 
 ---
 
+
+---
+
+## Deployment requirements
+
+The guarantees above hold only when (full list: [deployment.md](deployment.md)):
+
+1. Tools are reachable only through the gateway/proxy
+   ([enforcing-the-boundary.md](enforcing-the-boundary.md)).
+2. Keys are explicit, secret and rotated; `.atp/` is private to the
+   operator.
+3. Agents hold their own short-lived credentials; the operator key never
+   reaches an agent host.
+4. TLS in front of `atp serve`; `atp mcp wrap` is local by construction.
+5. One gateway instance per store.
+
+## Assumptions
+
+- The gateway clock is roughly correct (NTP).
+- Python, SQLite, `hmac`/`hashlib`, pydantic and the MCP SDK are not
+  themselves compromised (supply chain: `docs/release/verification.md`).
+- The operator reviews generated configs before relying on them:
+  `atp mcp init` proposes, it does not decide.
+- The upstream MCP server performs the call it is given and nothing else.
+
+## Non-goals
+
+- Detecting or filtering prompt injection in content. ATP bounds what an
+  injected agent can *do*; it does not detect that it was injected.
+- Sandboxing or isolating tools; secret management for tools; transports
+  served with client auth; federation. Use a gateway.
+- Exactly-once external side effects (`idempotency.md`).
+- Distinguishing individual humans (the operator stands in for all).
+- Data-loss prevention over trace contents (`privacy.md`).
+- Rate limiting and budgets over time (designed, not built).
+
 ## Residual risk summary
 
-The MVP proves that **authority can be bounded, decisions can be explained,
-execution can be bound to decisions, and agents can be told apart** in a way
-that survives a fully compromised agent holding its own valid credential. It
-does not prove that the gateway itself is a hardened trust anchor, and it
-concentrates all human authority in one operator key. Anyone evaluating this
-for real use should read the second table and `docs/deployment.md` first.
+v0.3.0 shows that authority can be bounded, decisions explained, execution
+bound to decisions, agents told apart, policy changes measured against
+recorded actions, and denials kept from silently returning — in a way that
+survives a fully compromised agent holding its own valid credential. It
+does not show that the gateway is a hardened trust anchor, and it
+concentrates human authority in one operator key. Read the partial and
+unhandled tables and the deployment requirements before relying on it.

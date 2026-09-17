@@ -488,7 +488,7 @@ class TestRevocationAndBypass:
         """Documented limitation, not a claim: code that holds a direct
         reference to a tool can call it. The trust boundary is the gateway
         process; real tools must only accept calls from it (network policy,
-        tool-side credentials held by the gateway). See docs/threat-model.md."""
+        tool-side credentials held by the gateway). See docs/security/threat-model.md."""
         tool = runtime.trust_plane.tools.get("payments")
         assert isinstance(tool, PaymentsTool)
         from atp_core import ActionEnvelope

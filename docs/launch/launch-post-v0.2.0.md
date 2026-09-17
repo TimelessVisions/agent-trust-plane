@@ -39,7 +39,7 @@ What it does not do, so you don't have to find out: the operator key is
 omnipotent; agent credentials are bearer tokens; an agent that can launch the
 upstream itself bypasses the proxy (a test demonstrates it); stdio only, one
 upstream per proxy; no approval workflow; no rate limits; the "payments" are a
-SQLite table. All listed with severities in `docs/security-review.md`.
+SQLite table. All listed with severities in `docs/security/security-review.md`.
 
 328 tests (+1 opt-in third-party test), 8 adversarial evals, strict typing, MIT. If you run agents against
 tools that matter and want to compare notes on where the boundary should

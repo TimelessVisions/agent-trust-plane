@@ -321,3 +321,90 @@ def test_decision_carries_no_mode_chosen_by_the_envelope() -> None:
             }
         )
     assert utcnow().tzinfo is not None
+
+
+class TestIdentityProviderBoundary:
+    """A second IdentityProvider implementation: the kernel binds envelopes
+    to whatever the provider verifies, never to what the envelope claims."""
+
+    def test_alternative_provider_drives_binding(self) -> None:
+        from collections.abc import Mapping
+        from datetime import datetime, timedelta
+
+        from atp_identity import AuthenticatedAgent, AuthError
+
+        class HeaderProvider:
+            name = "test-header"
+            revoked: set[str] = set()
+
+            def authenticate(
+                self, headers: Mapping[str, str], *, now: datetime
+            ) -> AuthenticatedAgent:
+                who = headers.get("x-test-agent")
+                if not who:
+                    raise AuthError(ReasonCode.AGENT_CREDENTIAL_MISSING, "no test identity")
+                return AuthenticatedAgent(
+                    agent=PrincipalRef(id=who, kind=PrincipalKind.AGENT), credential_id=f"hdr-{who}"
+                )
+
+            def is_live(self, credential_id: str, *, now: datetime) -> bool:
+                return credential_id not in self.revoked
+
+        from atp_core import ReasonCode
+
+        rt = build_runtime(
+            GatewaySettings(
+                database_path=":memory:", grant_signing_key=SIGNING_KEY, operator_key=OPERATOR_KEY
+            )
+        )
+        provider = HeaderProvider()
+        tp = rt.trust_plane
+        tp.identity = provider
+        now = tp.clock()
+        root = tp.issue_delegation(
+            DelegationRequest(
+                label="root",
+                grantor=HUMAN,
+                grantee=HUMAN,
+                capabilities=frozenset({"pay:vendor"}),
+                resource_scope=("vendor:*",),
+                constraints=AuthorityConstraints(max_amount=Money(amount="1000", currency="USD")),
+                expires_at=now + timedelta(days=1),
+            )
+        )
+        leaf = tp.issue_delegation(
+            DelegationRequest(
+                label="ap",
+                grantor=HUMAN,
+                grantee=AGENT,
+                parent_grant_id=root.grant_id,
+                capabilities=frozenset({"pay:vendor"}),
+                resource_scope=("vendor:*",),
+                constraints=AuthorityConstraints(max_amount=Money(amount="1000", currency="USD")),
+                expires_at=now + timedelta(hours=1),
+            )
+        )
+        env = ActionEnvelope(
+            principal=HUMAN,
+            agent=AGENT,
+            delegation_grant_id=leaf.grant_id,
+            capability="pay:vendor",
+            tool="payments",
+            action="send_payment",
+            resource="vendor:128",
+            arguments={"amount": "10.00", "currency": "USD"},
+        )
+        caller = provider.authenticate({"x-test-agent": "ap"}, now=now)
+        assert tp.authorize(env, caller).execution_grant is not None
+        # Another verified identity presenting the same envelope is refused.
+        other = provider.authenticate({"x-test-agent": "mallory"}, now=now)
+        env2 = env.model_copy(update={"trace_id": "b" * 12})
+        with pytest.raises(AuthError) as exc:
+            tp.authorize(env2, other)
+        assert exc.value.reason_code is ReasonCode.AGENT_IDENTITY_MISMATCH
+        # Revocation through the provider is honoured under the lock.
+        provider.revoked.add("hdr-ap")
+        env3 = env.model_copy(update={"trace_id": "c" * 12})
+        with pytest.raises(AuthError):
+            tp.authorize(env3, caller)
+        rt.close()

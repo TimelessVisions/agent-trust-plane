@@ -299,7 +299,7 @@ def demo_mcp(out_dir: Path | None = None) -> int:
     print()
     print("limits: stdio transport, one upstream per proxy, tools/list + tools/call only;")
     print(
-        "an agent that launches the notes server itself bypasses the proxy (see docs/mcp-proxy.md)"
+        "an agent that launches the notes server itself bypasses the proxy (see docs/integrations/mcp-proxy.md)"
     )
     return 0
 
