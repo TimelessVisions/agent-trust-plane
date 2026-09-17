@@ -1,6 +1,6 @@
 [project]
 name = "atp-cli"
-version = "0.3.0"
+version = "0.3.1"
 description = "Agent Trust Plane: the `atp` command (doctor, demo, test, record, serve, mcp-proxy)"
 requires-python = ">=3.12"
 license = "MIT"

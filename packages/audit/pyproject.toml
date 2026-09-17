@@ -1,6 +1,6 @@
 [project]
 name = "atp-audit"
-version = "0.3.0"
+version = "0.3.1"
 description = "Agent Trust Plane: hash-chained append-only trace store"
 requires-python = ">=3.12"
 license = "MIT"

@@ -6,6 +6,35 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-17
+
+Patch release following the first public GitHub Actions run.
+
+### Fixed
+- `atp demo wrap --out <relative path>` resolved the output directory twice:
+  the demo runs its own `atp` subprocesses with `cwd=<out>`, so a relative
+  `--out` produced paths like `out/out/.atp`. The directory is now resolved
+  to an absolute path first. Found by the first CI run on all three OS legs;
+  local runs had only used an absolute temporary directory.
+- Regression test `test_demo_wrap_accepts_a_relative_out_dir` covers the
+  failing shape.
+
+### Verified (GitHub Actions run 35234834560, and again on the docs commit)
+- ubuntu-latest, Python 3.12 and 3.13: lint, mypy, full test suite, evals,
+  doctor, demos A–D, sample suite, impact, link check
+- windows-latest, Python 3.13: same job set
+- `package` job: wheel build, isolated `uvx` run, pip-audit, CycloneDX SBOM
+- `dashboard` job: typecheck, production build
+
+macOS is not in the CI matrix and is not verified. No IDE MCP client has
+been tested. Nothing is published to PyPI. This is not production software
+and has not been independently audited.
+
+### Changed
+- Compatibility matrix, verification record, roadmap and hostile review
+  updated to reflect the remote CI results; stale "CI has not run on a
+  remote" statements removed.
+
 ## [0.3.0] - 2026-09-17
 
 Category: action control and security regression infrastructure for AI tool
