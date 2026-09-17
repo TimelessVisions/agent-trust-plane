@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from atp_audit import EventType
 from atp_core import ActionEnvelope, PolicyRef, PrincipalRef
@@ -37,6 +37,24 @@ class TraceEventRequest(BaseModel):
 
     event_type: EventType
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionOutcomeRequest(BaseModel):
+    """Reported by a trusted external executor after the gateway released a grant."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    succeeded: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("summary")
+    @classmethod
+    def _bounded(cls, value: dict[str, Any]) -> dict[str, Any]:
+        from atp_core import canonical_json
+
+        if len(canonical_json(value)) > 8 * 1024:
+            raise ValueError("outcome summary exceeds 8 KiB")
+        return value
 
 
 class CredentialIssueRequest(BaseModel):

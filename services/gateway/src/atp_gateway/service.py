@@ -401,6 +401,24 @@ class TrustPlane:
                 message=exc.message,
             )
 
+        if result.get("status") == "released":
+            # External executor: the gateway has bound and consumed the grant;
+            # the trusted executor performs the side effect and reports back.
+            self.traces.append(
+                trace_id,
+                EventType.EXECUTION_RELEASED,
+                GATEWAY_ACTOR,
+                {"grant_id": claims.grant_id, "tool": envelope.tool, "executor": "external"},
+            )
+            return ExecutionResult(
+                trace_id=trace_id,
+                envelope_id=envelope.envelope_id,
+                status="released",
+                reason_code=ReasonCode.EXECUTION_RELEASED,
+                message=f"{envelope.qualified_action} released to the external executor",
+                result=result,
+            )
+
         self.traces.append(
             trace_id,
             EventType.EXECUTION_COMPLETED,
@@ -415,6 +433,62 @@ class TrustPlane:
             message=f"{envelope.qualified_action} executed",
             result=result,
         )
+
+    def report_outcome(
+        self,
+        grant_id: str,
+        caller: AuthenticatedAgent,
+        *,
+        succeeded: bool,
+        summary: dict[str, Any],
+    ) -> TraceEvent:
+        """An external executor reports what happened after a release.
+
+        Bound to the consumed grant: only its audience may report, only once,
+        and only for a grant the gateway actually released.
+        """
+        with self._lock:
+            self._check_credential_live(caller)
+            record = self.grants.get(grant_id)
+            if record is None or record.claims.agent_id != caller.agent.id:
+                raise GrantError(
+                    ReasonCode.GRANT_AUDIENCE_MISMATCH,
+                    "no released grant for this agent with that id",
+                )
+            trace_id = record.claims.trace_id
+            events = self.traces.events(trace_id)
+            released = any(
+                e.event_type is EventType.EXECUTION_RELEASED
+                and e.payload.get("grant_id") == grant_id
+                for e in events
+            )
+            if not released:
+                raise ATPError(
+                    ReasonCode.EXECUTION_OUTCOME_NOT_RELEASED,
+                    "the grant was not released to an external executor",
+                )
+            already = any(
+                e.event_type in (EventType.EXECUTION_COMPLETED, EventType.EXECUTION_FAILED)
+                and e.payload.get("grant_id") == grant_id
+                for e in events
+            )
+            if already:
+                raise ATPError(
+                    ReasonCode.EXECUTION_OUTCOME_ALREADY_REPORTED,
+                    "an outcome was already reported for this grant",
+                )
+            event_type = EventType.EXECUTION_COMPLETED if succeeded else EventType.EXECUTION_FAILED
+            return self.traces.append(
+                trace_id,
+                event_type,
+                caller.agent.id,
+                {
+                    "grant_id": grant_id,
+                    "reported_by": "external_executor",
+                    "credential_id": caller.credential_id,
+                    "summary": summary,
+                },
+            )
 
     def _verify_grant(
         self, envelope: ActionEnvelope, token: str | None, now: datetime
@@ -537,6 +611,7 @@ class TrustPlane:
                 decision = Decision.model_validate(ev.payload["decision"])
             elif ev.event_type in (
                 EventType.EXECUTION_BLOCKED,
+                EventType.EXECUTION_RELEASED,
                 EventType.EXECUTION_COMPLETED,
                 EventType.EXECUTION_FAILED,
             ):

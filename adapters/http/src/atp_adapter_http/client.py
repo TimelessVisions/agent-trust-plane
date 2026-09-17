@@ -213,6 +213,17 @@ class TrustPlaneClient:
         )
         return result
 
+    def report_outcome(
+        self, grant_id: str, *, succeeded: bool, summary: dict[str, Any]
+    ) -> dict[str, Any]:
+        """External executor: report the result of a released execution."""
+        result: dict[str, Any] = self._request(
+            "POST",
+            f"/executions/{grant_id}/outcome",
+            json={"succeeded": succeeded, "summary": summary},
+        )
+        return result
+
     # ----------------------------------------------------------- credentials
     def issue_credential(
         self, agent: dict[str, str], label: str, expires_at: str | None = None
@@ -223,6 +234,11 @@ class TrustPlaneClient:
             f"/agents/{agent['id']}/credentials",
             json={"agent": agent, "label": label, "expires_at": expires_at},
         )
+        return result
+
+    def list_credentials(self, agent_id: str) -> list[dict[str, Any]]:
+        """Operator-only. Metadata only; never tokens."""
+        result: list[dict[str, Any]] = self._request("GET", f"/agents/{agent_id}/credentials")
         return result
 
     def revoke_credential(self, credential_id: str) -> dict[str, Any]:

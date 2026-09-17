@@ -25,23 +25,48 @@ class Tool(Protocol):
     def execute(self, envelope: ActionEnvelope) -> dict[str, Any]: ...
 
 
+class ExternalTool:
+    """A tool the gateway does not run itself.
+
+    Execution happens in a trusted executor outside the gateway process (for
+    example the MCP proxy forwarding to an upstream server). The gateway still
+    does everything that binds the decision to the execution: it verifies and
+    consumes the grant, re-checks delegation and credential, and records the
+    release. The executor then reports the outcome against the consumed grant.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def execute(self, envelope: ActionEnvelope) -> dict[str, Any]:
+        return {"status": "released", "executor": "external", "tool": envelope.tool}
+
+
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        self._external_prefixes: list[str] = []
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
 
+    def register_external_prefix(self, prefix: str) -> None:
+        """Tools named ``<prefix>…`` are executed by an external executor."""
+        self._external_prefixes.append(prefix)
+
     def get(self, name: str) -> Tool:
-        try:
-            return self._tools[name]
-        except KeyError:
-            raise ToolError(
-                ReasonCode.TOOL_NOT_REGISTERED, f"tool '{name}' is not registered"
-            ) from None
+        tool = self._tools.get(name)
+        if tool is not None:
+            return tool
+        if any(name.startswith(p) for p in self._external_prefixes):
+            return ExternalTool(name)
+        raise ToolError(ReasonCode.TOOL_NOT_REGISTERED, f"tool '{name}' is not registered")
+
+    def is_external(self, name: str) -> bool:
+        return name not in self._tools and any(name.startswith(p) for p in self._external_prefixes)
 
     def names(self) -> list[str]:
-        return sorted(self._tools)
+        return sorted(self._tools) + [f"{p}*" for p in self._external_prefixes]
 
 
 class PaymentRecord(BaseModel):

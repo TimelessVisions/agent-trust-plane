@@ -22,6 +22,7 @@ class EventType(StrEnum):
     GRANT_ISSUED = "grant_issued"
     EXECUTION_ATTEMPTED = "execution_attempted"
     EXECUTION_BLOCKED = "execution_blocked"
+    EXECUTION_RELEASED = "execution_released"
     EXECUTION_COMPLETED = "execution_completed"
     EXECUTION_FAILED = "execution_failed"
     REPLAY_PERFORMED = "replay_performed"

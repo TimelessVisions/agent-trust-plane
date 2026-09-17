@@ -100,6 +100,8 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     vendors = InMemoryVendorDirectory(DEMO_VENDORS)
     tools = ToolRegistry()
     tools.register(PaymentsTool(ledger, vendors))
+    for prefix in settings.external_tool_prefix_list():
+        tools.register_external_prefix(prefix)
 
     policy_sets = PolicySetRegistry.builtin()
     if settings.default_policy_set != policy_sets.default_version:

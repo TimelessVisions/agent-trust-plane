@@ -8,6 +8,7 @@ Who may call what:
 | POST /authorize                  | required         | for policy-set override |
 | POST /execute                    | required         |              |
 | POST /traces/{id}/events         | required         |              |
+| POST /executions/{grant}/outcome | grant audience   |              |
 | POST /delegations                | grantor (agent)  | grantor (human) |
 | POST /delegations/{id}/revoke    | grantor (agent)  | or operator  |
 | GET  /delegations                |                  | required     |
@@ -35,6 +36,7 @@ from atp_gateway.schemas import (
     CredentialIssueRequest,
     CredentialView,
     ExecuteRequest,
+    ExecutionOutcomeRequest,
     HealthView,
     PolicySetView,
     ReplayRequest,
@@ -102,6 +104,18 @@ def execute(body: ExecuteRequest, request: Request, caller: Agent) -> ExecutionR
     unexpired, be unused, be addressed to the authenticated agent, and match
     the submitted envelope's action hash."""
     return _tp(request).execute(body.envelope, body.execution_grant, caller)
+
+
+@router.post("/executions/{grant_id}/outcome", tags=["control"])
+def report_outcome(
+    grant_id: str, body: ExecutionOutcomeRequest, request: Request, caller: Agent
+) -> dict[str, Any]:
+    """External executors (e.g. the MCP proxy) report the result of a released
+    execution. Bound to the consumed grant's audience; accepted once."""
+    event = _tp(request).report_outcome(
+        grant_id, caller, succeeded=body.succeeded, summary=body.summary
+    )
+    return event.model_dump(mode="json")
 
 
 @router.get("/traces", response_model=list[TraceSummary], tags=["audit"])

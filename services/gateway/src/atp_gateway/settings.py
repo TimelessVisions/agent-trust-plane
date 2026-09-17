@@ -40,6 +40,11 @@ class GatewaySettings(BaseSettings):
     database_path: str = Field(default="./data/atp.db", description="SQLite path or ':memory:'.")
     cors_origins: str = Field(default="http://localhost:3000")
     default_policy_set: str = Field(default="payments-v2")
+    external_tool_prefixes: str = Field(
+        default="mcp.",
+        description="Comma-separated tool-name prefixes executed by an external, trusted "
+        "executor (e.g. the MCP proxy). The gateway decides and binds; the executor runs.",
+    )
 
     @property
     def ephemeral(self) -> bool:
@@ -66,6 +71,9 @@ class GatewaySettings(BaseSettings):
             f"{name} is not set. A persistent gateway will not start with generated keys. "
             "Run: python -m atp_gateway keygen  and put the output in .env"
         )
+
+    def external_tool_prefix_list(self) -> list[str]:
+        return [p.strip() for p in self.external_tool_prefixes.split(",") if p.strip()]
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

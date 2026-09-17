@@ -23,7 +23,7 @@ def test_health(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["default_policy_set"] == "payments-v2"
-    assert body["tools"] == ["payments"]
+    assert body["tools"] == ["payments", "mcp.*"]
 
 
 class TestHappyPath:

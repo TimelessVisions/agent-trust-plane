@@ -15,6 +15,7 @@ dependencies = [
   "atp-adapter-http",
   "atp-adapter-mcp",
   "finance-agent",
+  "notes-mcp-server",
 ]
 
 [dependency-groups]
@@ -24,6 +25,7 @@ dev = [
   "httpx>=0.28",
   "ruff>=0.9",
   "mypy>=1.14",
+  "types-PyYAML>=6.0",
 ]
 
 [tool.uv.workspace]
@@ -32,6 +34,7 @@ members = [
   "services/gateway",
   "adapters/*",
   "examples/finance-agent",
+  "examples/notes-mcp-server",
 ]
 
 [tool.uv.sources]
@@ -44,6 +47,7 @@ atp-evals = { workspace = true }
 atp-adapter-http = { workspace = true }
 atp-adapter-mcp = { workspace = true }
 finance-agent = { workspace = true }
+notes-mcp-server = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -56,6 +60,7 @@ testpaths = [
   "adapters/http/tests",
   "adapters/mcp/tests",
   "examples/finance-agent/tests",
+  "examples/notes-mcp-server/tests",
 ]
 addopts = "-q --strict-markers --import-mode=importlib --basetemp=.pytest-tmp"
 pythonpath = [
@@ -68,6 +73,7 @@ pythonpath = [
   "adapters/http/tests",
   "adapters/mcp/tests",
   "examples/finance-agent/tests",
+  "examples/notes-mcp-server/tests",
 ]
 filterwarnings = ["error::DeprecationWarning:atp_.*"]
 
@@ -101,6 +107,7 @@ mypy_path = [
   "adapters/http/src",
   "adapters/mcp/src",
   "examples/finance-agent/src",
+  "examples/notes-mcp-server/src",
 ]
 files = [
   "packages/core/src",
@@ -112,4 +119,5 @@ files = [
   "adapters/http/src",
   "adapters/mcp/src",
   "examples/finance-agent/src",
+  "examples/notes-mcp-server/src",
 ]
