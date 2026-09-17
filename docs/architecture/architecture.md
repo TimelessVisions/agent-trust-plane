@@ -11,7 +11,7 @@ flowchart LR
     subgraph Agents["Agent side (untrusted)"]
         A[Agent / model]
         SDK[atp-adapter-http<br/>TrustPlaneClient]
-        MCP[atp-adapter-mcp<br/>McpInterceptor]
+        MCP[atp-adapter-mcp<br/>stdio proxy: init / wrap / proxy]
     end
 
     subgraph Gateway["Trust gateway (services/gateway)"]

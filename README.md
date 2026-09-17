@@ -38,7 +38,7 @@ Prerequisites: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/). No API keys
 
 ```bash
 git clone <this repository> && cd agent-trust-plane
-uv run atp demo wrap          # syncs the workspace on first run; ~1 minute cold
+uv run atp demo wrap          # syncs the workspace on first run; 37 s cold on the maintainer machine
 ```
 
 The same commands work in PowerShell. `uv run atp doctor` explains anything missing. Other demos: `atp demo injection` (an injected invoice tries to pay $12,500 on a $1,000 delegation), `atp demo regression` (a permitted payment reveals a policy hole; replay under the fix flips it), `atp demo mcp` (the proxy against a remote-style gateway) — [docs/demos.md](docs/demos.md).
@@ -52,6 +52,8 @@ uv run atp mcp init --name fs -- npx -y @modelcontextprotocol/server-filesystem 
 uv run atp mcp wrap --mode shadow      # observe first: denials are recorded as WOULD_DENY and forwarded
 uv run atp mcp wrap                    # enforce
 ```
+
+Tools the server itself marks destructive (`write_file`, `edit_file`, `move_file` on the reference server) get `fs:destroy`, which is **not delegated by default**: the first write is denied with `CAPABILITY_NOT_GRANTED` until you add `fs:destroy` to `authority.capabilities` in `atp-mcp.yaml` — a deliberate fail-closed default, and the one thing the first-user test tripped over.
 
 Point your MCP client at the wrap command instead of the server ([config example](docs/integrations/frameworks.md)). Verified upstreams: this repo's notes server (stdio and Streamable HTTP, every CI run) and the reference `@modelcontextprotocol/server-filesystem` (opt-in test, run 2026-09-17). Everything else is listed as *not verified* in [docs/integrations/compatibility.md](docs/integrations/compatibility.md).
 

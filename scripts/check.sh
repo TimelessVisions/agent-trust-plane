@@ -10,6 +10,8 @@ uv run python -m atp_evals
 uv run atp doctor --port 1
 uv run atp demo injection >/dev/null
 uv run atp demo regression >/dev/null
+uv run atp demo wrap >/dev/null
 uv run atp demo mcp >/dev/null
 uv run atp test examples/regression-suite/accounts-payable.yaml --quiet
 (cd apps/dashboard && npm run typecheck && npm run build)
+uv run python scripts/check_links.py

@@ -45,7 +45,13 @@ export default function DecisionPanel({ view }: { view: TraceView | null }) {
       </div>
       <div className="verdict">
         <div className={`outcome ${d.outcome}`}>
-          {d.outcome === "DENY" ? "BLOCKED" : d.outcome === "ALLOW" ? "ALLOWED" : "HELD"}
+          {d.enforcement === "shadow" && d.outcome !== "ALLOW"
+            ? `WOULD ${d.outcome === "DENY" ? "BLOCK" : "HOLD"} (shadow mode; not enforced)`
+            : d.outcome === "DENY"
+              ? "BLOCKED"
+              : d.outcome === "ALLOW"
+                ? "ALLOWED"
+                : "HELD"}
         </div>
         <div className="headline">{headline}</div>
         <div className="reason">{d.explanation}</div>

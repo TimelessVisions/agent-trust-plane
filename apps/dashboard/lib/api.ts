@@ -60,6 +60,7 @@ export interface Decision {
   evaluations: PolicyEvaluation[];
   effective_authority: EffectiveAuthority | null;
   approval: { approver_role: string; reason: string } | null;
+  enforcement?: "enforce" | "shadow";
   replay_of: string | null;
 }
 
