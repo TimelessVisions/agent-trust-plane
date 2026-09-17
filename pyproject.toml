@@ -1,12 +1,39 @@
 [project]
 name = "agent-trust-plane"
 version = "0.3.1"
-description = "A control boundary between agent reasoning and real-world execution."
+description = "Authorization boundary and security regression testing for AI agent tool calls (MCP): decide on arguments against delegated authority, bind decisions to single-use grants, replay, and pin denials as CI tests. Experimental."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "George Gakravyi", email = "george@agentcommercegateway.com" }]
+keywords = [
+  "ai-agents",
+  "mcp",
+  "model-context-protocol",
+  "agent-security",
+  "authorization",
+  "security-testing",
+  "regression-testing",
+  "llm-security",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Topic :: Security",
+  "Topic :: Software Development :: Testing",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Environment :: Console",
+  "Typing :: Typed",
+]
 dependencies = [
   "pydantic>=2.10",
   "pydantic-settings>=2.7",
@@ -17,8 +44,19 @@ dependencies = [
   "mcp>=2.2,<3",
 ]
 
+[project.urls]
+Homepage = "https://github.com/TimelessVisions/agent-trust-plane"
+Repository = "https://github.com/TimelessVisions/agent-trust-plane"
+Issues = "https://github.com/TimelessVisions/agent-trust-plane/issues"
+Documentation = "https://github.com/TimelessVisions/agent-trust-plane/tree/main/docs"
+Changelog = "https://github.com/TimelessVisions/agent-trust-plane/blob/main/CHANGELOG.md"
+Security = "https://github.com/TimelessVisions/agent-trust-plane/blob/main/SECURITY.md"
+
 [project.scripts]
 atp = "atp_cli.main:main"
+# Same CLI under the distribution name so `uvx agent-trust-plane …` works
+# (uvx runs the executable that matches the package name).
+agent-trust-plane = "atp_cli.main:main"
 
 [build-system]
 requires = ["hatchling>=1.27"]

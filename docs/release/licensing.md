@@ -44,10 +44,17 @@ imported, not vendored or redistributed in the wheel.
 | PSF-2.0 / Python Software Foundation | typing_extensions, pywin32 (Windows only) |
 | MPL-2.0 | certifi (file-level copyleft; used unmodified as a dependency, which MPL permits) |
 
-Not installed on the audit machine and therefore **not verified here**:
-`uvloop` (Linux/macOS only; its own metadata says MIT/Apache-2.0),
-`httpx2-jsfetch` (emscripten only). Dev-only tools (pytest, ruff, mypy,
-hypothesis, pip-audit) are not distributed.
+Linux check (2026-09-17): the wheel's dependencies were resolved for
+`x86_64-unknown-linux-gnu` / Python 3.12 with `uv pip install --target
+--python-platform` (41 distributions incl. `agent-trust-plane`, current
+PyPI versions as a fresh user would receive them) and every
+`METADATA` license field was read. All are permissive; the only
+Linux-specific additions are `uvloop 0.22.1` (metadata: MIT License) and
+the absence of `pywin32`. `httpx2-jsfetch` is emscripten-only and does not
+resolve on Linux, Windows or macOS. `idna` resolved to 3.20 (BSD-3-Clause)
+rather than the locked 3.19. Dev-only tools (pytest, ruff, mypy,
+hypothesis, pip-audit) are not distributed. macOS was not resolved
+separately; its wheel set is the Linux set (uvloop included).
 
 ## Dashboard (`apps/dashboard`, not packaged, `private: true`)
 
@@ -64,7 +71,14 @@ Neither affects the MIT licensing of this repository's own code. If the
 dashboard were ever *distributed* as a bundle, sharp/libvips attribution
 requirements would need to be revisited.
 
-## What cannot be verified from this machine
+## What the wheel redistributes
 
-- Licenses of platform-specific wheels not resolved on Windows (uvloop,
-  httpx2-jsfetch); re-run `pip-licenses` on Linux before a PyPI release.
+Only this project's own code (11 import packages) plus `LICENSE`. No
+dependency is vendored; users' resolvers fetch dependencies from PyPI
+under those packages' own licenses. Nothing above requires attribution
+inside our artifacts.
+
+## Previously open item — resolved
+
+The Windows-only audit could not see `uvloop`; the Linux resolution above
+closes that item. Nothing remains unverified for the distributed set.

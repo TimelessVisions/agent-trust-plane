@@ -58,3 +58,26 @@ GitHub Actions run: https://github.com/TimelessVisions/agent-trust-plane/actions
 Still not verified: macOS; any IDE MCP client; PyPI publication (nothing
 has been published to PyPI). The `v0.3.0` tag still points at `16d937c`,
 i.e. before the demo fix; only `main` carries the fix.
+
+## PyPI readiness check (2026-09-17, no upload performed)
+
+| Check | Result |
+|---|---|
+| PyPI name `agent-trust-plane` (and `agent_trust_plane`, `agenttrustplane`) | unregistered (HTTP 404 on the JSON API). Unrelated `agent-trust-sdk`, `agent-trust-stack`, `agent-trust-mcp` exist under other owners; `atp` and `atp-core` are taken by unrelated projects (CLI name kept; distribution name differs) |
+| Rebuild from `git archive v0.3.1` (twice) vs GitHub Release assets | byte-for-byte identical: wheel `cc5bd8dd…39d2731`, sdist `dec67508…038b7fe` (hatchling normalises archive timestamps to 2020-02-02) |
+| Wheel/sdist contents | 98 / 111 entries; 11 import packages + `LICENSE`; no `.env`, `keys.env`, `.db`, `.atp/`, tests, caches, images, node_modules, git metadata; no private paths or secret-shaped strings in packaged code; no install-time hooks or dynamic version logic; `subprocess` only in `atp_cli/demos.py` (runs its own CLI) |
+| `twine check` on v0.3.1 artifacts | PASSED (Markdown renders) — but ~30 relative links and the hero image do not resolve on pypi.org |
+| Metadata of v0.3.1 artifacts | Version 0.3.1, License-Expression MIT, License-File, Requires-Python >=3.12, 7 public deps, `atp` entry point; **no Project-URL, Keywords or Classifier** |
+| Clean install matrix (fresh venvs, cold uv cache, empty cwd, no `ATP_*`, repo not on `sys.path`) | Python **3.12, 3.13, 3.14** on Windows: install, `atp --help`, `atp doctor`, `atp demo injection`, `atp demo regression`, `atp demo mcp`, `atp demo wrap --out out/wrap` all exit 0; `importlib.metadata.version` = 0.3.1 |
+| `uvx --isolated --from <wheel> atp doctor` / `atp demo mcp` | OK |
+| `pipx run --spec <wheel> atp doctor` (pipx 1.17.3 via `uvx pipx`) | OK |
+| bare `uvx agent-trust-plane` | not possible with v0.3.1 (only the `atp` executable exists); fixed on `main` by a second console script |
+| Linux dependency licenses (resolved for x86_64 Linux / Python 3.12) | 41 distributions, all permissive; see `licensing.md` |
+| `pip-audit 2.10.1` on the Linux-resolved pins (`--no-deps --disable-pip`, PyPI advisory DB via OSV, 2026-09-17) | No known vulnerabilities found; `uvloop 0.22.1` also queried directly at api.osv.dev: none |
+| Private/local dependency scan | `Requires-Dist` contains only public PyPI names with version ranges; no `file://`, path, git or workspace references; workspace members are bundled into the single wheel |
+| Trusted Publishing | pending-publisher flow researched (docs.pypi.org, 2026-09-17); workflow prepared, not enabled on PyPI |
+
+Conclusion: **NO-GO for publishing v0.3.1 to PyPI** (presentation defects
+that cannot be fixed without new artifacts); **GO-ready path** is v0.3.2 from
+`main` after the metadata/README changes and the Trusted Publisher are in
+place — see `pypi-publishing.md`.

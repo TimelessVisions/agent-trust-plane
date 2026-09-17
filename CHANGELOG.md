@@ -6,6 +6,18 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+### Changed (PyPI readiness; will ship as 0.3.2)
+- Package metadata: descriptive summary, keywords, accurate classifiers,
+  project URLs (Homepage, Repository, Issues, Documentation, Changelog,
+  Security); second console script `agent-trust-plane` so
+  `uvx agent-trust-plane …` works once published.
+- README links and the hero image are absolute GitHub URLs so the PyPI page
+  renders them.
+- `.github/workflows/publish.yml`: PyPI Trusted Publishing workflow
+  (release-triggered, tag == version check, isolated install test, OIDC,
+  attestations); `docs/release/pypi-publishing.md` runbook;
+  `docs/release/licensing.md` Linux dependency-license result.
+
 ## [0.3.1] - 2026-09-17
 
 Patch release following the first public GitHub Actions run.
