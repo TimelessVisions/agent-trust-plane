@@ -19,7 +19,7 @@ from gateway_fixtures import (
 
 
 def test_health(client: TestClient) -> None:
-    r = client.get("/health")
+    r = client.get("/health", headers=op())
     assert r.status_code == 200
     body = r.json()
     assert body["default_policy_set"] == "payments-v2"
@@ -47,7 +47,7 @@ class TestHappyPath:
         assert len(rows) == 1
         assert rows[0]["amount"] == "480.00"
 
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         types = [e["event_type"] for e in trace["events"]]
         assert types == [
             "action_proposed",
@@ -96,7 +96,7 @@ class TestPrimaryDemo:
 
         assert ledger(client) == []
 
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         types = [e["event_type"] for e in trace["events"]]
         assert types == [
             "action_proposed",
@@ -114,13 +114,13 @@ class TestPrimaryDemo:
         assert auth["decision"]["outcome"] == "REQUIRE_APPROVAL"
         assert auth["decision"]["approval"]["approver_role"] == "finance-manager"
         assert auth["execution_grant"] is None
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         assert "approval_requested" in [e["event_type"] for e in trace["events"]]
 
 
 class TestTraces:
     def test_unknown_trace_is_404(self, client: TestClient) -> None:
-        r = client.get("/traces/000000000000")
+        r = client.get("/traces/000000000000", headers=op())
         assert r.status_code == 404
         assert r.json()["reason_code"] == "TRACE_NOT_FOUND"
 
@@ -149,7 +149,7 @@ class TestTraces:
         g = seed_chain(client)
         for amount in ("10.00", "20.00"):
             authorize(client, payment_envelope(g["ap"], amount=amount), g["tokens"]["ap"])
-        summaries = client.get("/traces").json()
+        summaries = client.get("/traces", headers=op()).json()
         assert len(summaries) == 2
         assert summaries[0]["event_count"] == 5  # ALLOW path incl. grant_issued
 
@@ -159,7 +159,7 @@ class TestReplay:
         g = seed_chain(client)
         env = payment_envelope(g["ap"], amount="12500.00")
         original = authorize(client, env, g["tokens"]["ap"])["decision"]
-        r = client.post(f"/replay/{env['trace_id']}", json={})
+        r = client.post(f"/replay/{env['trace_id']}", json={}, headers=op())
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["outcome_changed"] is False
@@ -185,14 +185,16 @@ class TestReplay:
         assert auth["decision"]["outcome"] == "ALLOW"
         assert auth["decision"]["policy_set_version"] == "payments-v1"
 
-        r = client.post(f"/replay/{env['trace_id']}", json={"policy_set_version": "payments-v2"})
+        r = client.post(
+            f"/replay/{env['trace_id']}", json={"policy_set_version": "payments-v2"}, headers=op()
+        )
         body = r.json()
         assert body["outcome_changed"] is True
         assert body["replayed_decision"]["outcome"] == "DENY"
         assert body["replayed_decision"]["reason_code"] == "PAYMENT_DESTINATION_RESOURCE_MISMATCH"
         assert "payments-v1: ALLOW" in body["summary"] and "payments-v2: DENY" in body["summary"]
 
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         assert trace["events"][-1]["event_type"] == "replay_performed"
         assert trace["replays"][0]["execution"] == "not permitted on replay"
         assert trace["integrity"]["valid"] is True
@@ -203,7 +205,9 @@ class TestReplay:
         g = seed_chain(client)
         env = payment_envelope(g["ap"])
         authorize(client, env, g["tokens"]["ap"])
-        r = client.post(f"/replay/{env['trace_id']}", json={"policy_set_version": "nope"})
+        r = client.post(
+            f"/replay/{env['trace_id']}", json={"policy_set_version": "nope"}, headers=op()
+        )
         assert r.status_code == 404
         assert r.json()["reason_code"] == "POLICY_SET_NOT_FOUND"
 
@@ -215,7 +219,7 @@ class TestReplay:
             json={"event_type": "task_received", "payload": {}},
             headers=bearer(g["tokens"]["ap"]),
         )
-        r = client.post(f"/replay/{trace_id}", json={})
+        r = client.post(f"/replay/{trace_id}", json={}, headers=op())
         assert r.status_code == 409
         assert r.json()["reason_code"] == "TRACE_HAS_NO_PROPOSAL"
 
@@ -223,7 +227,7 @@ class TestReplay:
 class TestDelegationApi:
     def test_chain_endpoint(self, client: TestClient) -> None:
         g = seed_chain(client)
-        r = client.get(f"/delegations/{g['doc']}/chain")
+        r = client.get(f"/delegations/{g['doc']}/chain", headers=op())
         assert r.status_code == 200
         body = r.json()
         assert [x["grantee"]["id"] for x in body["grants"]][-1] == DOC_AGENT.id
@@ -256,7 +260,7 @@ class TestDelegationApi:
         assert r.status_code == 200 and len(r.json()) == 4
 
     def test_policy_sets_catalog(self, client: TestClient) -> None:
-        body = client.get("/policy-sets").json()
+        body = client.get("/policy-sets", headers=op()).json()
         versions = {p["version"]: p for p in body}
         assert versions["payments-v2"]["is_default"] is True
         assert len(versions["payments-v2"]["policies"]) == 8

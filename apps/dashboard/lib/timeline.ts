@@ -70,6 +70,20 @@ export function buildTimeline(view: TraceView): TimelineStep[] {
         );
         break;
       }
+      case "identity_rejected": {
+        const who = p["authenticated_agent"] as { id?: string } | undefined;
+        const claimed = p["claimed_agent"] as { id?: string } | undefined;
+        steps.push(
+          step(
+            ev,
+            i,
+            "Identity rejected",
+            "bad",
+            `${who?.id ?? "?"} authenticated but claimed to be ${claimed?.id ?? "?"}`,
+          ),
+        );
+        break;
+      }
       case "action_proposed": {
         const env = p["envelope"] as
           | { tool?: string; action?: string; resource?: string; arguments?: Record<string, unknown> }

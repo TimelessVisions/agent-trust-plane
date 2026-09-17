@@ -55,7 +55,7 @@ class TestImpersonation:
         assert r.json()["reason_code"] == "AGENT_IDENTITY_MISMATCH"
         assert ledger(client) == []
         # The attempt is on the record, attributed to the real credential.
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         assert trace["events"][0]["event_type"] == "identity_rejected"
         assert trace["events"][0]["payload"]["credential_id"] == g["creds"]["doc"]
         assert trace["events"][0]["payload"]["authenticated_agent"]["id"] == DOC_AGENT.id
@@ -91,7 +91,9 @@ class TestImpersonation:
             headers=bearer(g["tokens"]["doc"]),
         )
         assert r.status_code == 403
-        assert r.json()["reason_code"] == "AGENT_IDENTITY_MISMATCH"
+        # The stolen envelope carries the AP agent's trace, so trace ownership
+        # fires first; either refusal is correct and both are 403.
+        assert r.json()["reason_code"] in {"TRACE_OWNED_BY_OTHER_AGENT", "AGENT_IDENTITY_MISMATCH"}
         assert ledger(client) == []
         # And the rightful agent can still use it exactly once.
         assert execute(client, env, grant, g["tokens"]["ap"])["status"] == "completed"
@@ -196,7 +198,9 @@ class TestForgery:
             "/traces/aaaaaaaaaaaa/events", json={"event_type": "task_received", "payload": {}}
         )
         assert r.status_code == 401
-        assert client.get("/traces/aaaaaaaaaaaa").status_code == 404  # nothing was written
+        assert (
+            client.get("/traces/aaaaaaaaaaaa", headers=op()).status_code == 404
+        )  # nothing written
 
 
 # ------------------------------------------------------------- credentials
@@ -284,13 +288,13 @@ class TestCredentialEnforcement:
         import json
 
         blobs = [
-            json.dumps(client.get(f"/traces/{env['trace_id']}").json()),
-            json.dumps(client.get("/traces").json()),
+            json.dumps(client.get(f"/traces/{env['trace_id']}", headers=op()).json()),
+            json.dumps(client.get("/traces", headers=op()).json()),
             json.dumps(
                 client.get("/agents/accounts-payable-agent/credentials", headers=op()).json()
             ),
             json.dumps(client.get("/delegations", headers=op()).json()),
-            json.dumps(client.get("/health").json()),
+            json.dumps(client.get("/health", headers=op()).json()),
         ]
         for blob in blobs:
             for secret in (*g["tokens"].values(), OPERATOR_KEY, SIGNING_KEY):
@@ -349,7 +353,7 @@ class TestConcurrentGrantConsumption:
         }
         with TestClient(app) as check:
             assert len(ledger(check)) == 1
-            trace = check.get(f"/traces/{env['trace_id']}").json()
+            trace = check.get(f"/traces/{env['trace_id']}", headers=op()).json()
             assert trace["integrity"]["valid"]
             assert [e["event_type"] for e in trace["events"]].count("execution_completed") == 1
 
@@ -412,6 +416,68 @@ class TestRevocationAndBypass:
         r = client.post(f"/delegations/{g['ap']}/revoke", headers=bearer(g["tokens"]["doc"]))
         assert r.status_code == 403
         assert client.post(f"/delegations/{g['ap']}/revoke").status_code == 403
+
+    def test_reads_are_operator_only(self, client: TestClient) -> None:
+        """Traces, ledger and delegations expose decisions and accounts; a
+        public deployment must not serve them anonymously."""
+        g = seed_chain(client)
+        env = payment_envelope(g["ap"])
+        authorize(client, env, g["tokens"]["ap"])
+        for path in (
+            "/traces",
+            f"/traces/{env['trace_id']}",
+            "/ledger/payments",
+            f"/delegations/{g['ap']}",
+            f"/delegations/{g['ap']}/chain",
+            "/vendors",
+            "/evals/results",
+        ):
+            assert client.get(path).status_code == 403, path
+            assert client.get(path, headers=bearer(g["tokens"]["ap"])).status_code == 403, path
+            assert client.get(path, headers=op()).status_code == 200, path
+        assert client.post(f"/replay/{env['trace_id']}", json={}).status_code == 403
+        health = client.get("/health").json()
+        assert "signing_key_fingerprint" not in health
+
+    def test_agent_cannot_append_to_another_agents_trace(self, client: TestClient) -> None:
+        g = seed_chain(client)
+        env = payment_envelope(g["ap"], amount="480.00")
+        authorize(client, env, g["tokens"]["ap"])
+        # doc agent tries to add provenance to the AP agent's trace
+        r = client.post(
+            f"/traces/{env['trace_id']}/events",
+            json={"event_type": "task_received", "payload": {"task": "planted"}},
+            headers=bearer(g["tokens"]["doc"]),
+        )
+        assert r.status_code == 403
+        assert r.json()["reason_code"] == "TRACE_OWNED_BY_OTHER_AGENT"
+        # and cannot trigger an identity_rejected event onto it either
+        planted = payment_envelope(g["ap"], agent=AP_AGENT, trace_id=env["trace_id"])
+        r = client.post("/authorize", json=planted, headers=bearer(g["tokens"]["doc"]))
+        assert r.status_code == 403
+        assert r.json()["reason_code"] == "TRACE_OWNED_BY_OTHER_AGENT"
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
+        assert all(e["actor"] in {AP_AGENT.id, "gateway"} for e in trace["events"])
+        assert not any(e["event_type"] == "identity_rejected" for e in trace["events"])
+
+    def test_revoked_credential_is_rechecked_under_the_lock(
+        self, client: TestClient, runtime: Runtime
+    ) -> None:
+        """Even if the HTTP-layer check is bypassed (simulated by calling the
+        service directly with a stale AuthenticatedAgent), a revoked credential
+        cannot execute."""
+        from atp_core import ActionEnvelope
+        from atp_identity import AuthenticatedAgent, AuthError
+
+        g = seed_chain(client)
+        env = payment_envelope(g["ap"], amount="480.00")
+        grant = authorize(client, env, g["tokens"]["ap"])["execution_grant"]["token"]
+        stale = AuthenticatedAgent(agent=AP_AGENT, credential_id=g["creds"]["ap"])
+        client.post(f"/credentials/{g['creds']['ap']}/revoke", headers=op())
+        with pytest.raises(AuthError) as exc:
+            runtime.trust_plane.execute(ActionEnvelope.model_validate(env), grant, stale)
+        assert exc.value.reason_code is ReasonCode.AGENT_CREDENTIAL_REVOKED
+        assert ledger(client) == []
 
     def test_no_route_reaches_a_tool_without_the_gateway(self, client: TestClient) -> None:
         """The only HTTP path to a tool is /execute. Nothing else mentions tools."""

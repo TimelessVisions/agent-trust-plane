@@ -15,8 +15,10 @@ Who may call what:
 | GET  /agents/{id}/credentials    |                  | required     |
 | POST /credentials/{id}/revoke    |                  | required     |
 | POST /evals/run                  |                  | required     |
-| GET  /traces*, /policy-sets, /vendors,  |                  |              |
-|      /ledger/payments, /health; POST /replay | open (read-only / replay event only) |
+| GET  /traces*, /ledger/payments,        |                  |              |
+|      /delegations/{id}[/chain], /vendors,|                  |              |
+|      /evals/results; POST /replay        |                  | required     |
+| GET  /health, /policy-sets               | open             |              |
 """
 
 from __future__ import annotations
@@ -104,13 +106,13 @@ def execute(body: ExecuteRequest, request: Request, caller: Agent) -> ExecutionR
 
 @router.get("/traces", response_model=list[TraceSummary], tags=["audit"])
 def list_traces(
-    request: Request, limit: int = Query(default=50, ge=1, le=500)
+    request: Request, _: Operator, limit: int = Query(default=50, ge=1, le=500)
 ) -> list[TraceSummary]:
     return _tp(request).list_traces(limit)
 
 
 @router.get("/traces/{trace_id}", response_model=TraceView, tags=["audit"])
-def get_trace(trace_id: str, request: Request) -> TraceView:
+def get_trace(trace_id: str, request: Request, _: Operator) -> TraceView:
     return _tp(request).get_trace(trace_id)
 
 
@@ -126,7 +128,9 @@ def append_trace_event(
 
 
 @router.post("/replay/{trace_id}", response_model=ReplayResult, tags=["audit"])
-def replay(trace_id: str, request: Request, body: ReplayRequest | None = None) -> ReplayResult:
+def replay(
+    trace_id: str, request: Request, _: Operator, body: ReplayRequest | None = None
+) -> ReplayResult:
     """Re-evaluate the recorded action against the same or a different policy
     set. Never executes, never mints a grant."""
     version = body.policy_set_version if body else None
@@ -167,12 +171,12 @@ def list_delegations(request: Request, _: Operator) -> list[DelegationGrant]:
 
 
 @router.get("/delegations/{grant_id}", response_model=DelegationGrant, tags=["identity"])
-def get_delegation(grant_id: str, request: Request) -> DelegationGrant:
+def get_delegation(grant_id: str, request: Request, _: Operator) -> DelegationGrant:
     return _tp(request).get_delegation(grant_id)
 
 
 @router.get("/delegations/{grant_id}/chain", tags=["identity"])
-def resolve_delegation(grant_id: str, request: Request) -> dict[str, Any]:
+def resolve_delegation(grant_id: str, request: Request, _: Operator) -> dict[str, Any]:
     chain = _tp(request).resolve_delegation(grant_id)
     return {
         "grants": [g.model_dump(mode="json") for g in chain.grants],
@@ -254,12 +258,12 @@ def policy_sets(request: Request) -> list[PolicySetView]:
 
 
 @router.get("/vendors", tags=["catalog"])
-def vendors(request: Request) -> list[dict[str, Any]]:
+def vendors(request: Request, _: Operator) -> list[dict[str, Any]]:
     return [v.model_dump(mode="json") for v in _rt(request).vendors.all()]
 
 
 @router.get("/ledger/payments", response_model=list[PaymentRecord], tags=["catalog"])
-def ledger(request: Request) -> list[PaymentRecord]:
+def ledger(request: Request, _: Operator) -> list[PaymentRecord]:
     """What actually executed. The proof that blocked payments never settled."""
     return _rt(request).ledger.all()
 
@@ -272,13 +276,12 @@ def health(request: Request) -> HealthView:
         default_policy_set=rt.trust_plane.policy_sets.default_version,
         grant_ttl_seconds=rt.trust_plane.grant_ttl_seconds,
         tools=rt.trust_plane.tools.names(),
-        signing_key_fingerprint=rt.trust_plane.signer.key_fingerprint,
     )
 
 
 # --------------------------------------------------------------------- evals
 @router.get("/evals/results", tags=["evals"])
-def eval_results(request: Request) -> dict[str, Any]:
+def eval_results(request: Request, _: Operator) -> dict[str, Any]:
     latest = _rt(request).reports.latest()
     return latest or {"status": "never_run", "results": []}
 

@@ -484,12 +484,16 @@ def eval_008_execution_grant_replay(ctx: EvalContext) -> str:
         ctx.agent(DOC_AGENT).execute(fresh, fresh_auth.execution_grant)
         ctx.expect("stolen_grant.rejected", "accepted", "rejected")
     except GatewayError as exc:
-        ctx.expect("stolen_grant.rejected", exc.reason_code, "AGENT_IDENTITY_MISMATCH")
+        # The thief is touching another agent's trace, so trace ownership is
+        # the first control to fire; identity binding sits behind it.
+        ctx.expect("stolen_grant.rejected", exc.reason_code, "TRACE_OWNED_BY_OTHER_AGENT")
+        ctx.expect("stolen_grant.status", exc.status_code, 403)
     ctx.expect("stolen_grant.ledger_delta", ctx.ledger_size() - before, 1)
     return (
         "The same execution grant was presented twice. The first use settled the payment; "
         "the second was blocked because grants are single-use and consumed atomically. A "
-        "fresh grant handed to a different authenticated agent was also refused."
+        "fresh grant handed to a different authenticated agent was also refused, before "
+        "it could even touch the victim's trace."
     )
 
 

@@ -95,4 +95,3 @@ class HealthView(BaseModel):
     default_policy_set: str
     grant_ttl_seconds: int
     tools: list[str]
-    signing_key_fingerprint: str

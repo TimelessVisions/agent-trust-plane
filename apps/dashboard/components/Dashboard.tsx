@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   api,
   isReport,
+  setOperatorKey as setApiOperatorKey,
   type EvalReport,
   type EvalResult,
   type Health,
@@ -44,8 +45,10 @@ export default function Dashboard() {
   // Operator key lives in this tab only (sessionStorage); it is never sent
   // anywhere except as a header on operator-only calls.
   const [operatorKey, setOperatorKeyState] = useState<string>("");
+  const [keyLoaded, setKeyLoaded] = useState(false);
   const setOperatorKey = useCallback((v: string) => {
     setOperatorKeyState(v);
+    setApiOperatorKey(v);
     try {
       sessionStorage.setItem("atp.operatorKey", v);
     } catch {
@@ -55,10 +58,14 @@ export default function Dashboard() {
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem("atp.operatorKey");
-      if (saved) setOperatorKeyState(saved);
+      if (saved) {
+        setOperatorKeyState(saved);
+        setApiOperatorKey(saved);
+      }
     } catch {
       /* storage unavailable */
     }
+    setKeyLoaded(true);
   }, []);
 
   const loadTraces = useCallback(async () => {
@@ -80,16 +87,24 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Initial load: health, policy sets, latest eval report, traces.
+  // Initial load: health and policy sets are open; everything else needs the
+  // operator key, so it re-runs when the key changes.
   useEffect(() => {
+    if (!keyLoaded) return;
     let cancelled = false;
     (async () => {
       try {
-        const [h, ps, rep] = await Promise.all([api.health(), api.policySets(), api.evalResults()]);
+        const [h, ps] = await Promise.all([api.health(), api.policySets()]);
         if (cancelled) return;
         setHealth(h);
         setPolicySets(ps);
         setReplayVersion(ps.find((p) => p.is_default)?.version ?? ps[0]?.version ?? "");
+        if (!operatorKey) {
+          setError(null);
+          return;
+        }
+        const rep = await api.evalResults();
+        if (cancelled) return;
         if (isReport(rep)) {
           setReport(rep);
           const primary = rep.results.find((r) => r.eval_id === PRIMARY_EVAL)?.primary_trace_id;
@@ -104,12 +119,12 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [loadTraces, selectTrace]);
+  }, [loadTraces, selectTrace, keyLoaded, operatorKey]);
 
   const runEvals = useCallback(async () => {
     setRunning(true);
     try {
-      const rep = await api.runEvals(operatorKey);
+      const rep = await api.runEvals();
       setReport(rep);
       const primary = rep.results.find((r) => r.eval_id === PRIMARY_EVAL)?.primary_trace_id;
       if (primary) await selectTrace(primary);
@@ -150,8 +165,16 @@ export default function Dashboard() {
       <Header health={health} error={error} />
       {error && (
         <div className="error-banner">
-          Gateway error: <code>{error}</code>. Start it with <code>uv run python -m atp_gateway</code>{" "}
-          and make sure <code>NEXT_PUBLIC_ATP_GATEWAY_URL</code> points at it.
+          Gateway error: <code>{error}</code>. Start it with <code>uv run python -m atp_gateway</code>,
+          make sure <code>NEXT_PUBLIC_ATP_GATEWAY_URL</code> points at it, and enter the gateway&apos;s{" "}
+          <code>ATP_OPERATOR_KEY</code> above.
+        </div>
+      )}
+      {!error && !operatorKey && (
+        <div className="error-banner" style={{ borderColor: "var(--line-strong)" }}>
+          This dashboard is an operator tool. Enter the gateway&apos;s <code>ATP_OPERATOR_KEY</code>{" "}
+          to read traces, the ledger, and eval results. The key stays in this tab and is only sent
+          as a request header.
         </div>
       )}
       <div className="stack">

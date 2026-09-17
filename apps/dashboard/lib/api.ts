@@ -177,7 +177,6 @@ export interface Health {
   default_policy_set: string;
   grant_ttl_seconds: number;
   tools: string[];
-  signing_key_fingerprint: string;
 }
 
 export interface PolicySetView {
@@ -208,10 +207,23 @@ export class GatewayError extends Error {
   }
 }
 
+/** Operator key for this tab. Set from the UI; sent only as a request header. */
+let operatorKey = "";
+export function setOperatorKey(key: string): void {
+  operatorKey = key;
+}
+export function hasOperatorKey(): boolean {
+  return operatorKey.length > 0;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${GATEWAY_URL}${path}`, {
     ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(operatorKey ? { "X-ATP-Operator-Key": operatorKey } : {}),
+      ...(init?.headers ?? {}),
+    },
     cache: "no-store",
   });
   if (!res.ok) {
@@ -237,12 +249,8 @@ export const api = {
   trace: (id: string) => request<TraceView>(`/traces/${id}`),
   ledger: () => request<Record<string, unknown>[]>("/ledger/payments"),
   evalResults: () => request<EvalReport | { status: "never_run"; results: [] }>("/evals/results"),
-  /** Operator-only. The key is sent as a header and never stored server-side or logged. */
-  runEvals: (operatorKey: string) =>
-    request<EvalReport>("/evals/run", {
-      method: "POST",
-      headers: { "X-ATP-Operator-Key": operatorKey },
-    }),
+  /** Operator-only, like every read below except /health and /policy-sets. */
+  runEvals: () => request<EvalReport>("/evals/run", { method: "POST" }),
   replay: (id: string, policySetVersion: string | null) =>
     request<ReplayResult>(`/replay/${id}`, {
       method: "POST",

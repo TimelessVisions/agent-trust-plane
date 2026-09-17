@@ -223,5 +223,7 @@ def execute(
 
 
 def ledger(client: TestClient) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = client.get("/ledger/payments").json()
+    r = client.get("/ledger/payments", headers=op())
+    assert r.status_code == 200, r.text
+    rows: list[dict[str, Any]] = r.json()
     return rows

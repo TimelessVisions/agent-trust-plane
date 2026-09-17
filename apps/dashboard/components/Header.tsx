@@ -21,7 +21,6 @@ export default function Header({ health, error }: { health: Health | null; error
           <>
             <span className="pill">policy {health.default_policy_set}</span>
             <span className="pill">grant ttl {health.grant_ttl_seconds}s</span>
-            <span className="pill">key {health.signing_key_fingerprint}</span>
           </>
         )}
         <span className="pill" title={GATEWAY_URL}>

@@ -332,7 +332,7 @@ class TestTraceIntegrity:
         payload["decision"]["outcome"] = "ALLOW"
         payload["decision"]["reason_code"] = "ALLOWED"
         events[idx] = events[idx].model_copy(update={"payload": payload})
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         assert trace["integrity"]["valid"] is False
         assert trace["integrity"]["first_bad_seq"] == events[idx].seq
 
@@ -353,6 +353,6 @@ class TestTraceIntegrity:
             "UPDATE trace_events SET payload = ? WHERE seq = ?", (json.dumps(payload), row[0])
         )
         conn.commit()
-        trace = client.get(f"/traces/{env['trace_id']}").json()
+        trace = client.get(f"/traces/{env['trace_id']}", headers=op()).json()
         assert trace["integrity"]["valid"] is False
         assert trace["integrity"]["first_bad_seq"] == row[0]

@@ -157,13 +157,46 @@ class TrustPlane:
             )
         body = {**payload, "credential_id": caller.credential_id}
         with self._lock:
+            self._check_credential_live(caller)
+            self._check_trace_owner(trace_id, caller)
             return self.traces.append(trace_id, event_type, caller.agent.id, body)
 
     # -------------------------------------------------------------- identity
+    def _check_credential_live(self, caller: AuthenticatedAgent) -> None:
+        """Authentication happened in the HTTP layer, outside the lock. Re-check
+        the credential here so a revocation cannot land in between."""
+        cred = self.credentials.store.get(caller.credential_id)
+        if cred is None or cred.is_revoked():
+            raise AuthError(ReasonCode.AGENT_CREDENTIAL_REVOKED, "agent credential was revoked")
+        if cred.is_expired(self.clock()):
+            raise AuthError(ReasonCode.AGENT_CREDENTIAL_EXPIRED, "agent credential has expired")
+
+    def _trace_owner(self, trace_id: str) -> str | None:
+        """The agent that first wrote to a trace owns it. Gateway-authored
+        first events name the agent they concern in their payload."""
+        events = self.traces.events(trace_id)
+        if not events:
+            return None
+        first = events[0]
+        if first.actor != GATEWAY_ACTOR:
+            return first.actor
+        who = first.payload.get("authenticated_agent")
+        return who.get("id") if isinstance(who, dict) else None
+
+    def _check_trace_owner(self, trace_id: str, caller: AuthenticatedAgent) -> None:
+        owner = self._trace_owner(trace_id)
+        if owner is not None and owner != caller.agent.id:
+            raise AuthError(
+                ReasonCode.TRACE_OWNED_BY_OTHER_AGENT,
+                f"trace {trace_id} belongs to another agent; {caller.agent} cannot append to it",
+            )
+
     def _bind_identity(self, envelope: ActionEnvelope, caller: AuthenticatedAgent) -> None:
         """The authenticated agent must be the envelope's acting agent. A
         mismatch with a *valid* credential is recorded: it is an authenticated
         party attempting to act as someone else."""
+        self._check_credential_live(caller)
+        self._check_trace_owner(envelope.trace_id, caller)
         if caller.agent != envelope.agent:
             self.traces.append(
                 envelope.trace_id,
