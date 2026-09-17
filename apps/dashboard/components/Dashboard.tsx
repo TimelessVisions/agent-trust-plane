@@ -20,11 +20,11 @@ import DecisionPanel from "./DecisionPanel";
 import DelegationChain from "./DelegationChain";
 import EvalGrid from "./EvalGrid";
 import Header from "./Header";
-import ReplayPanel from "./ReplayPanel";
+import BeforeAfter from "./BeforeAfter";
 import TraceList from "./TraceList";
 import TraceTimeline from "./TraceTimeline";
 
-const PRIMARY_EVAL = "EVAL-002";
+const PRIMARY_EVAL = "EVAL-006";
 
 function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -42,6 +42,7 @@ export default function Dashboard() {
   const [replayVersion, setReplayVersion] = useState<string>("");
   const [replaying, setReplaying] = useState(false);
   const [replay, setReplay] = useState<ReplayResult | null>(null);
+  const [ledger, setLedger] = useState<Record<string, unknown>[]>([]);
   // Operator key lives in this tab only (sessionStorage); it is never sent
   // anywhere except as a header on operator-only calls.
   const [operatorKey, setOperatorKeyState] = useState<string>("");
@@ -70,7 +71,9 @@ export default function Dashboard() {
 
   const loadTraces = useCallback(async () => {
     try {
-      setTraces(await api.traces(50));
+      const [t, l] = await Promise.all([api.traces(50), api.ledger()]);
+      setTraces(t);
+      setLedger(l);
     } catch (e) {
       setError(describe(e));
     }
@@ -193,9 +196,7 @@ export default function Dashboard() {
             <TraceList traces={traces} selected={selectedId} onSelect={selectTrace} onRefresh={loadTraces} />
           </div>
           <div className="stack">
-            <DecisionPanel view={view} />
-            <DelegationChain view={view} />
-            <ReplayPanel
+            <BeforeAfter
               view={view}
               policySets={policySets}
               selected={replayVersion}
@@ -203,7 +204,10 @@ export default function Dashboard() {
               onReplay={doReplay}
               busy={replaying}
               result={replay}
+              ledger={ledger}
             />
+            <DecisionPanel view={view} />
+            <DelegationChain view={view} />
           </div>
         </div>
         <ArchitectureFlow view={view} />
