@@ -40,7 +40,7 @@ Measured 51 s from a cold clone to the first result on the reference machine.
 
 ## Verification
 
-334 tests (gateway tests on in-memory and SQLite stores), 8/8 adversarial
+328 tests (+1 opt-in third-party test) (gateway tests on in-memory and SQLite stores), 8/8 adversarial
 evals, ruff, mypy `--strict`, dashboard typecheck + production build, three
 demos and the sample regression suite all run in CI on Python 3.12 and 3.13.
 

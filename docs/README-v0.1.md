@@ -1,3 +1,5 @@
+> **Archived** — this is the v0.1.0 README kept for history. Some statements (test counts, endpoints, auth) are superseded; the current README is at the repository root.
+
 # Agent Trust Plane
 
 AI agents are gaining the ability to take consequential actions.

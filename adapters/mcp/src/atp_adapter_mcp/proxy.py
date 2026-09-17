@@ -100,7 +100,7 @@ class TrustPlaneProxy:
         self.upstream = upstream
         self.server: Server[Any] = Server(
             f"atp-proxy:{config.server_name}",
-            version="0.1.0",
+            version="0.2.0",
             instructions=(
                 "Tool calls are authorized by Agent Trust Plane before execution. A denied "
                 "call returns isError with a reason_code; do not retry it with different "
