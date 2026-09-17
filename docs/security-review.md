@@ -31,6 +31,25 @@ the real app produce exactly one `execution_completed` and one ledger row
 (`TestConcurrentGrantConsumption`), and the SQLite conditional `UPDATE` is
 single-winner on its own without the service lock.
 
+## Additions in v0.2.0 (MCP proxy, regression suites)
+
+| # | Area | Finding | Severity | Handling | Test |
+|---|---|---|---|---|---|
+| F13 | Proxy | Truncating oversized arguments would let the upstream receive more than was authorized. | High | Refuse (`TOOL_ARGUMENTS_TOO_LARGE`) instead of truncate. | `_bounded` (proxy) |
+| F14 | Proxy | Unmapped tools silently absent from evidence. | Low | Unmapped calls are sent as `mcp:unmapped` so the denial is on the trace; hidden from `tools/list` by default. | proxy e2e |
+| F15 | Gateway | External executor could report outcomes for grants it does not hold, or repeatedly. | Medium | Outcome bound to grant audience, requires `execution_released`, accepted once. | `report_outcome`, proxy e2e |
+| F16 | Regression | Recorded traces are untrusted input to the suite recorder. | Medium | Strict models (`extra="forbid"`, patterns, 16 KiB cap), chain/leaf consistency checks, provenance excerpts dropped, runner never executes. | `test_regression.py::TestRecording`, `TestFormatValidation` |
+| F17 | Regression | A suite could try to select a policy set the operator did not intend. | Low | Suites and `--policy-set` run on an *ephemeral* gateway they own; they cannot affect a persistent gateway. | `run_suite` |
+
+Open items added:
+
+| # | Area | Finding | Severity | Mitigation |
+|---|---|---|---|---|
+| O13 | Proxy | Direct upstream access bypasses everything. | High if upstreams are reachable | Deployment requirement; see `docs/mcp-proxy.md`. |
+| O14 | Proxy | The proxy is trusted code holding a bearer token. | High if the agent host is compromised | Host isolation, short credential TTLs, revocation. |
+| O15 | Proxy | stdio only; no transport auth on the proxy's own stdio (the launching client is trusted by construction). | Medium | Streamable HTTP with client auth is roadmap. |
+| O16 | Policy | No generic argument-constraint policy for arbitrary MCP tools; only capability + resource scope apply to `mcp.*`. | Medium | Roadmap item; today, scope resources narrowly. |
+
 ## Findings left open
 
 | # | Area | Finding | Severity | Impact | Mitigation |

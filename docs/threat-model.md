@@ -108,6 +108,9 @@ Each row names the mechanism and the test or eval that exercises it.
 | **Unauthenticated execution / provenance** | No `Authorization` header. | 401 with `WWW-Authenticate: Bearer`; nothing written. | `test_execute_without_identity`, `test_unauthenticated_provenance_is_rejected` |
 | **Concurrent execution of one grant** | Eight simultaneous `/execute` calls with the same grant. | Conditional UPDATE `issued → consumed`; single winner verified at app and store level. | `TestConcurrentGrantConsumption` |
 | **Anonymous reads of decisions and accounts** | `GET /traces`, `/ledger/payments` from the network. | Operator key required for all reads except `/health` and `/policy-sets`. | `test_reads_are_operator_only` |
+| **MCP tool call outside delegated authority** | A client behind the proxy calls a mapped tool on a resource outside its scope, or an unmapped tool. | Every `tools/call` is an envelope decided by the gateway; unmapped tools map to the never-delegated `mcp:unmapped` capability and are hidden from `tools/list`. | `test_proxy_forwards_allowed_calls_and_blocks_unmapped_ones`, `test_proxy_enforces_argument_derived_resource_scope` |
+| **Argument tampering between authorize and forward (proxy)** | The proxy could forward different arguments than it hashed. | The proxy forwards exactly the arguments in the envelope and refuses oversized arguments rather than truncating. | `_bounded` in `proxy.py`; e2e tests |
+| **Forged or duplicate execution outcome** | An executor reports an outcome for a grant it does not hold, or twice. | `/executions/{grant}/outcome` requires the grant's audience credential, a prior `execution_released`, and accepts one report. | `report_outcome` in `service.py`; proxy e2e trace shape |
 | **Replay used to execute** | Use `/replay` as a back door to run an action. | Replay re-evaluates only; it never mints grants or touches tools. | `test_replay_under_hardened_policy_flips_a_missed_attack` (ledger unchanged) |
 
 ---
@@ -118,6 +121,8 @@ Stated plainly. Each has a sketch of what closing it would take.
 
 | Threat | Current state | What it would take |
 |---|---|---|
+| **Direct upstream access (MCP)** | An agent launches or connects to the upstream MCP server without the proxy. | Not prevented. The proxy is the enforcement point; `test_direct_upstream_access_is_not_protected` shows the bypass. Deploy upstreams so only the proxy can reach them (`docs/deployment.md`, `docs/mcp-proxy.md`). |
+| **Proxy host compromise** | The proxy holds the agent's bearer token and a live upstream session. | A compromised proxy can forward arbitrary calls to the upstream it launched; it cannot mint grants or forge gateway decisions. Same mitigation as credential theft: short TTLs, revocation, host isolation. |
 | **Operator key compromise** | The operator key issues credentials for any agent, delegates all human authority and reads everything. It is the trust anchor; its holder is every human and every agent. | Split into roles; give humans their own signed authority; keep the key in a secret store and rotate it. |
 | **Agent credential theft** | Bearer tokens are the agent until revoked or expired. There is no proof of possession, no sender binding, no rotation protocol. | Short TTLs (supported today), mTLS or DPoP-style proof of possession, per-host binding, rotation with overlap. |
 | **Human identity** | Humans have no credential; the operator stands in for all of them, and `envelope.principal` is only checked against the chain root. | Per-human signed root grants. |

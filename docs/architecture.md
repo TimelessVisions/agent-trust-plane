@@ -204,6 +204,17 @@ Credentials are issued by `POST /agents/{id}/credentials` (token shown once,
 SHA-256 stored), listed without secrets, and revoked by id. Revocation and
 expiry are checked at the HTTP layer and again under the execute lock.
 
+## External executors (MCP proxy)
+
+Tools named with a configured prefix (`mcp.` by default) are not run by the
+gateway. `/execute` still verifies, audience-checks and consumes the grant,
+re-checks delegation and credential, then records `execution_released` and
+returns `status: released`. The trusted executor (the proxy) performs the
+call and reports `POST /executions/{grant_id}/outcome`, which is accepted once,
+only from the grant's audience, only after a release. The trace therefore
+shows *who decided*, *who executed*, and *what came back*, with the same
+single-use binding as in-gateway tools. See `docs/mcp-proxy.md`.
+
 ## HTTP API
 
 | Method | Path | Auth | Purpose |
@@ -211,6 +222,7 @@ expiry are checked at the HTTP layer and again under the execute lock.
 | POST | `/authorize` | agent (+ operator for `?policy_set_version=`) | Decide; mint a grant on ALLOW |
 | POST | `/execute` | agent | Verify grant (signature, expiry, action hash, audience), re-check delegation and credential, consume, run tool |
 | POST | `/traces/{id}/events` | agent (trace owner) | Provenance: `task_received`, `external_content_ingested` |
+| POST | `/executions/{grant_id}/outcome` | agent (grant audience) | External executor reports completed/failed, once |
 | POST | `/delegations` | agent grantor **or** operator for human grantor | Issue a grant (validated against parent) |
 | POST | `/delegations/{id}/revoke` | grantor agent or operator | Revoke |
 | GET | `/delegations`, `/delegations/{id}`, `…/chain` | operator | Inspect grants and effective authority |

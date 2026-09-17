@@ -31,6 +31,17 @@ cannot meet a line here, the corresponding guarantee does not hold.
    grants, and the audit chain. Mode 600, owned by the gateway user, on a
    volume the agents cannot read.
 
+## MCP proxy deployments
+
+- The proxy must be the **only** thing able to launch or reach the upstream
+  server. Run upstreams as the proxy's child processes with no other
+  listener, or behind a socket only the proxy user can open.
+- Give the proxy its own agent credential with a short `expires_at`; revoke
+  it when the agent host is rotated.
+- One proxy per upstream per agent identity. Do not share a proxy between
+  agents; the envelope names one agent and the credential must match.
+- Keep `expose_unmapped_tools: false` unless you are mapping a new upstream.
+
 ## Strongly recommended
 
 - Ship trace events to an append-only sink and periodically anchor the chain
