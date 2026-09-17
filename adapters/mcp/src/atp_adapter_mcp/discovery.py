@@ -73,6 +73,13 @@ def _resource_for(tool: types.Tool, *, casefold: bool) -> tuple[str, PathNormali
     return f"tool:{_SAFE.sub('_', tool.name)[:64]}", None
 
 
+def _clean(text: str | None) -> str:
+    """Tool names and descriptions are untrusted: printable characters only,
+    one line, bounded."""
+    cleaned = "".join(ch if ch.isprintable() else " " for ch in (text or ""))
+    return " ".join(cleaned.split())[:200]
+
+
 def _flags(tool: types.Tool) -> tuple[bool, bool]:
     ann = tool.annotations
     read_only = bool(getattr(ann, "read_only_hint", False)) if ann else False
@@ -105,18 +112,26 @@ def propose_config(
             cap, bucket = f"{server_name}:write", proposal.other
         bucket.append(tool.name)
         template, norm = _resource_for(tool, casefold=fold)
-        uses_paths = uses_paths or norm is not None
-        mappings.append(
-            ToolMapping(
+        try:
+            mapping = ToolMapping(
                 mcp_tool=tool.name,
                 tool=f"mcp.{server_name}",
                 action=_SAFE.sub("_", tool.name)[:64],
                 capability=cap,
                 resource_template=template,
                 path_normalization=norm,
-                description=(tool.description or "")[:200].replace("\n", " "),
+                description=_clean(tool.description),
             )
-        )
+        except ValueError:
+            # A tool name outside the MCP naming guidance cannot be mapped; it
+            # stays unmapped, i.e. denied and hidden.
+            proposal.notes.append(
+                f"skipped tool {_clean(tool.name)[:60]!r}: name is not mappable (unmapped = denied)"
+            )
+            bucket.remove(tool.name)
+            continue
+        uses_paths = uses_paths or norm is not None
+        mappings.append(mapping)
     scope: list[str] = []
     if uses_paths and scope_dirs:
         norm = PathNormalization(casefold=fold)

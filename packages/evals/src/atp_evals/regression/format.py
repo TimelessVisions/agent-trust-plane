@@ -19,7 +19,14 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from atp_core import RESOURCE_PATTERN, SCOPE_PATTERN, DecisionOutcome, Money, PrincipalRef
+from atp_core import (
+    RESOURCE_PATTERN,
+    SCOPE_PATTERN,
+    DecisionOutcome,
+    Money,
+    PrincipalRef,
+    read_bounded_text,
+)
 
 _ALIAS = r"^[A-Za-z0-9._-]{1,64}$"
 _IDENT = r"^[A-Za-z0-9._:-]+$"
@@ -171,7 +178,7 @@ class Suite(BaseModel):
 
 def load_suite(path: str | Path) -> Suite:
     p = Path(path)
-    raw: Any = yaml.safe_load(p.read_text(encoding="utf-8"))
+    raw: Any = yaml.safe_load(read_bounded_text(p))
     if not isinstance(raw, dict):
         raise ValueError(f"{p}: expected a mapping at top level")
     suite = Suite.model_validate(raw)

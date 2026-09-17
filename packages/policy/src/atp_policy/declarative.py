@@ -41,6 +41,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atp_core import ConstraintEvaluation, PolicyEvaluation, ReasonCode
 from atp_core.canonical import canonical_json
+from atp_core.files import read_bounded_text
 from atp_policy.base import Policy, PolicyContext, PolicySet
 from atp_policy.policies import (
     CapabilityRequiredPolicy,
@@ -398,7 +399,7 @@ def build_policy_set(spec: PolicySetSpec) -> PolicySet:
 
 def load_policy_file(path: str | Path) -> PolicyFile:
     p = Path(path)
-    raw: Any = yaml.safe_load(p.read_text(encoding="utf-8"))
+    raw: Any = yaml.safe_load(read_bounded_text(p))
     if not isinstance(raw, dict):
         raise ValueError(f"{p}: expected a mapping at top level")
     return PolicyFile.model_validate(raw)

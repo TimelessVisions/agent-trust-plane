@@ -18,6 +18,7 @@ from atp_core.decision import (
 )
 from atp_core.envelope import ActionEnvelope, ContentSource, ContentTrust, Provenance
 from atp_core.errors import ATPError, DelegationError, EnvelopeError, GrantError, ToolError
+from atp_core.files import MAX_INPUT_BYTES, read_bounded_text
 from atp_core.ids import new_id, new_trace_id
 from atp_core.money import Money
 from atp_core.principals import PrincipalKind, PrincipalRef
@@ -26,6 +27,7 @@ from atp_core.resources import RESOURCE_PATTERN, SCOPE_PATTERN
 from atp_core.timeutil import ensure_aware, in_seconds, utcnow
 
 __all__ = [
+    "MAX_INPUT_BYTES",
     "RESOURCE_PATTERN",
     "SCOPE_PATTERN",
     "ATPError",
@@ -56,6 +58,7 @@ __all__ = [
     "in_seconds",
     "new_id",
     "new_trace_id",
+    "read_bounded_text",
     "sha256_hex",
     "utcnow",
 ]

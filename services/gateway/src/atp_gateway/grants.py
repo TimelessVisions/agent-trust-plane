@@ -174,6 +174,10 @@ class InMemoryGrantStore:
             record = self._records.get(grant_id)
             if record is None:
                 return None
+            if record.status is not GrantStatus.ISSUED:
+                # consumed and revoked are absorbing: a side effect that
+                # happened must stay recorded as consumed.
+                return record
             revoked = record.model_copy(update={"status": GrantStatus.REVOKED})
             self._records[grant_id] = revoked
             return revoked
@@ -238,8 +242,8 @@ class SqliteGrantStore:
     def revoke(self, grant_id: str) -> GrantRecord | None:
         with self._lock:
             self._conn.execute(
-                "UPDATE execution_grants SET status = ? WHERE grant_id = ?",
-                (GrantStatus.REVOKED.value, grant_id),
+                "UPDATE execution_grants SET status = ? WHERE grant_id = ? AND status = ?",
+                (GrantStatus.REVOKED.value, grant_id, GrantStatus.ISSUED.value),
             )
             self._conn.commit()
             return self.get(grant_id)

@@ -26,7 +26,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from atp_adapter_mcp.mapping import ToolMapping
-from atp_core import SCOPE_PATTERN, PrincipalKind, PrincipalRef
+from atp_core import SCOPE_PATTERN, PrincipalKind, PrincipalRef, read_bounded_text
 
 
 class UpstreamConfig(BaseModel):
@@ -174,7 +174,7 @@ class ProxyConfig(BaseModel):
 
 
 def load_config(path: str | Path) -> ProxyConfig:
-    raw: Any = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    raw: Any = yaml.safe_load(read_bounded_text(path))
     if not isinstance(raw, dict):
         raise ValueError(f"{path}: expected a mapping at top level")
     return ProxyConfig.model_validate(raw)
