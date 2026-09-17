@@ -1,5 +1,9 @@
 # AI Agent Production Readiness Audit
 
+*See [commercial-offer.md](commercial-offer.md) for the concise offer, pilot
+pricing hypothesis, exclusions, and what is tested where, and
+[prospect-message.md](prospect-message.md) for the outreach note.*
+
 A fixed-scope engagement for teams putting LLM agents in front of real
 systems. The output is evidence, not opinion: a reproducible eval suite run
 against your actual agent stack, the traces it produced, and a before/after
@@ -73,11 +77,13 @@ integrations agreed up front). Larger estates are scoped as phases.
 ## What you get that you can't get from a checklist
 
 The reference implementation behind this audit is open source: a working
-control plane with delegated authority, a policy engine, execution grants
-bound to authorized actions, hash-chained traces, replay, and an eval
-harness that runs the same attacks against it. The audit applies the same
+control plane with authenticated agent identity, delegated authority, a
+policy engine, execution grants bound to authorized actions, hash-chained
+traces, replay, and an eval harness that runs the same attacks against it —
+plus a written self-review with open findings. The audit applies the same
 adversarial method to your system, and the recommendations point at
-mechanisms that exist and are tested, not at slideware.
+mechanisms that exist and are tested, not at slideware. It is an MVP by one
+engineer; it demonstrates method, not production track record.
 
 ## What this is not
 

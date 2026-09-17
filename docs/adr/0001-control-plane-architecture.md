@@ -142,11 +142,37 @@ policy, identity, audit ← gateway ← evals, adapters, examples
 domain models (envelope, decision, reason codes, money, principals) so
 identity, policy, and audit do not import each other.
 
+### D11. Agents authenticate with server-managed bearer credentials (added 2026-09-16)
+
+The first MVP asserted `envelope.agent`. The smallest defensible fix that fits
+the architecture: the operator issues per-agent bearer credentials
+(`atpa_<id>.<secret>`; only the SHA-256 is stored; constant-time compare).
+The authenticated identity is bound to the envelope's agent, to the
+delegation chain's leaf grantee, to the execution grant's audience, and to
+provenance authorship. A trace is owned by its first writer. Human authority
+is represented by the operator key — an explicit simplification: humans do
+not authenticate in the MVP, and the operator key is the trust anchor.
+
+Rejected alternatives: mTLS (deployment burden for a local MVP), signed
+envelopes with per-agent keys (better properties, more client complexity;
+the natural next step), OAuth/OIDC (a platform, not a control-plane
+primitive). Bearer credentials leave token theft as the residual risk;
+short expiry and revocation are the available mitigations.
+
+### D12. No insecure defaults (added 2026-09-16)
+
+A persistent gateway refuses to start without explicit ≥32-character signing
+and operator keys. Only the `:memory:` configuration generates per-process
+keys, because nothing outlives the process. Reads of traces, ledger and
+delegations require the operator key; `/health` and `/policy-sets` are the
+only open routes.
+
 ## Consequences
 
 - Anything the agent asserts about its own authority is ignored. The only
   input that matters is the grant id and the gateway's own records.
 - Every decision is explainable by reason code, matched policy, and the
   constraints evaluated, and every decision is reproducible by replay.
-- The MVP's security boundary is the gateway process and its SQLite file.
-  Compromise of either defeats the guarantees; the threat model says so.
+- The MVP's security boundary is the gateway process, its SQLite file, and
+  the operator key. Compromise of any defeats the guarantees; the threat
+  model says so.

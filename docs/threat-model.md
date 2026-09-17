@@ -20,10 +20,28 @@ untrusted                      |  trusted (MVP)
 model outputs                  |  gateway process
 retrieved content (invoices,   |  gateway SQLite file
   email, web, tool output)     |  grant signing key
-agent code and its claims      |  policy set code
-the delegation graph AS        |  vendor directory
-  ASSERTED by an agent         |
+agent code and its claims      |  operator key (the human trust anchor)
+the delegation graph AS        |  policy set code
+  ASSERTED by an agent         |  vendor directory
+an agent's bearer credential   |
+  (proves identity; can be     |
+  stolen)                      |
 ```
+
+## Identity trust anchor
+
+Every agent-facing call carries a bearer credential issued by the operator
+(`atpa_<id>.<secret>`; only the SHA-256 is stored). The authenticated agent
+must equal the envelope's `agent`, the delegation chain's leaf grantee, and
+the execution grant's audience. Provenance events are attributed to the
+authenticated agent; there is no free-text actor. A trace belongs to the
+first agent that writes to it.
+
+**Human identity is the operator.** Humans do not authenticate; the holder of
+`ATP_OPERATOR_KEY` issues credentials, delegates all human-rooted authority,
+selects non-default policy sets, runs evals, and reads traces. That key is
+the trust anchor and its compromise is total. This is a deliberate MVP
+simplification, listed again under "not yet handled".
 
 Everything on the left is input. Nothing on the left is believed without
 being checked against something on the right.
@@ -34,14 +52,16 @@ An attacker can:
 
 - author any content an agent will read (indirect prompt injection);
 - fully control one or more agents (a "compromised agent"), including making
-  arbitrary HTTP calls to the gateway with arbitrary envelopes and tokens;
+  arbitrary HTTP calls to the gateway with arbitrary envelopes and tokens,
+  using that agent's own valid credential;
 - observe tokens returned to a compromised agent and replay or edit them;
 - try to create delegations through the API.
 
 An attacker in the MVP model **cannot**:
 
 - read or write the gateway's database or process memory;
-- obtain the grant signing key;
+- obtain the grant signing key or the operator key;
+- obtain another agent's credential;
 - change policy set code.
 
 The section "Not yet handled" covers what happens when those assumptions fail.
@@ -77,6 +97,17 @@ Each row names the mechanism and the test or eval that exercises it.
 | **Sub-cent padding** | `amount: "1000.004"` rounds to the limit. | `Money` rejects more than two decimal places instead of rounding. | `test_sub_cent_padding_cannot_slip_under_the_limit` |
 | **Trace bloat / oversized payloads** | Multi-megabyte `arguments`. | 16 KiB cap on canonical `arguments`; string length caps on every other field. | `test_oversized_arguments_are_rejected` |
 | **Provenance spoofing** | Agent writes events as `actor: "gateway"` or writes gateway-only event types. | Reserved actor and reserved event types are rejected on the agent-writable endpoint. | `test_agent_cannot_write_events_as_the_gateway`, `test_agent_can_record_provenance_but_not_gateway_events` |
+| **Agent impersonation (A claims to be B)** | Doc agent's valid credential, envelope names the AP agent. | Authenticated identity must equal `envelope.agent`; the attempt is recorded as `identity_rejected` against the real credential. | `TestImpersonation`, EVAL-005(c) |
+| **Using another agent's delegation** | Doc agent names itself, presents the AP grant. | Chain leaf grantee must equal the authenticated agent. | `test_agent_a_using_agent_b_delegation_honestly`, EVAL-005(b) |
+| **Stolen execution grant** | Doc agent presents a grant minted for the AP agent. | Identity binding on `/execute` plus grant audience (`agent_id` claim) check. | `test_execute_with_someone_elses_grant_token`, `test_grant_audience_is_enforced_*`, EVAL-008 |
+| **Forged human principal** | Envelope claims to act for a different human than the chain root. | `DELEGATION_PRINCIPAL_MISMATCH`. | `test_forging_the_human_principal` |
+| **Forged human authority via delegation** | Agent issues a grant with a human grantor. | Human grantors require the operator key. | `test_forging_human_authority_via_delegation`, EVAL-003(c) |
+| **Forged audit actor** | Agent writes provenance as another agent or as the gateway. | No actor field; actor = authenticated agent; gateway-only event types rejected. | `test_forging_audit_actor` |
+| **Trace pollution** | Agent appends to another agent's trace. | Trace ownership by first writer. | `test_agent_cannot_append_to_another_agents_trace` |
+| **Revoked / expired credential** | Continue using a revoked token; use an expired one. | Checked at the HTTP layer and again under the execute lock. | `test_revoked_credential`, `test_expired_credential`, `test_revoked_credential_is_rechecked_under_the_lock` |
+| **Unauthenticated execution / provenance** | No `Authorization` header. | 401 with `WWW-Authenticate: Bearer`; nothing written. | `test_execute_without_identity`, `test_unauthenticated_provenance_is_rejected` |
+| **Concurrent execution of one grant** | Eight simultaneous `/execute` calls with the same grant. | Conditional UPDATE `issued → consumed`; single winner verified at app and store level. | `TestConcurrentGrantConsumption` |
+| **Anonymous reads of decisions and accounts** | `GET /traces`, `/ledger/payments` from the network. | Operator key required for all reads except `/health` and `/policy-sets`. | `test_reads_are_operator_only` |
 | **Replay used to execute** | Use `/replay` as a back door to run an action. | Replay re-evaluates only; it never mints grants or touches tools. | `test_replay_under_hardened_policy_flips_a_missed_attack` (ledger unchanged) |
 
 ---
@@ -87,7 +118,9 @@ Stated plainly. Each has a sketch of what closing it would take.
 
 | Threat | Current state | What it would take |
 |---|---|---|
-| **Agent identity spoofing** | The gateway does **not authenticate callers**. `envelope.agent` is asserted by whoever sends the request. A caller who knows a grant id and the grantee's id can act as that grantee. | Per-agent credentials (mTLS, signed envelopes with per-agent keys, or workload identity), and binding `envelope.agent` to the authenticated identity. This is the single most important gap. |
+| **Operator key compromise** | The operator key issues credentials for any agent, delegates all human authority and reads everything. It is the trust anchor; its holder is every human and every agent. | Split into roles; give humans their own signed authority; keep the key in a secret store and rotate it. |
+| **Agent credential theft** | Bearer tokens are the agent until revoked or expired. There is no proof of possession, no sender binding, no rotation protocol. | Short TTLs (supported today), mTLS or DPoP-style proof of possession, per-host binding, rotation with overlap. |
+| **Human identity** | Humans have no credential; the operator stands in for all of them, and `envelope.principal` is only checked against the chain root. | Per-human signed root grants. |
 | **Gateway compromise** | If the gateway process or its SQLite file is attacker-writable, every guarantee falls: grants can be minted, chains rewritten, traces edited to look consistent. | Run the gateway as a separate hardened service; least-privilege DB credentials; asymmetric grant signing with the private key in an HSM/KMS so a DB-writer still cannot mint grants. |
 | **Signing key exposure** | One symmetric key signs and verifies. Anyone with it can mint grants (they still need a server-side record, but a DB-writer can add one). | Ed25519 grants; key rotation with `kid` in the token; key in KMS. The token format is already versioned (`atp-grant/1`). |
 | **Audit tampering by a DB-writer** | The hash chain is tamper-*evident* against naive edits only. An attacker who can rewrite the whole chain can produce a consistent forgery. | Anchor chain heads externally (append to a write-once log, a transparency log, or periodically sign heads with a key the gateway does not hold); write-only audit credentials; ship events to a separate sink. |
@@ -106,7 +139,8 @@ Stated plainly. Each has a sketch of what closing it would take.
 ## Residual risk summary
 
 The MVP proves that **authority can be bounded, decisions can be explained,
-and execution can be bound to decisions** in a way that survives a fully
-compromised agent. It does not yet prove that the gateway itself is a hardened
-trust anchor, and it does not authenticate agents. Anyone evaluating this for
-real use should read the second table first.
+execution can be bound to decisions, and agents can be told apart** in a way
+that survives a fully compromised agent holding its own valid credential. It
+does not prove that the gateway itself is a hardened trust anchor, and it
+concentrates all human authority in one operator key. Anyone evaluating this
+for real use should read the second table and `docs/deployment.md` first.

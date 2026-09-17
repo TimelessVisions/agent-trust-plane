@@ -64,7 +64,7 @@ What an agent sends when it wants to do anything.
 | Field | Meaning | Trusted? |
 |---|---|---|
 | `principal` | The human whose authority is being exercised (`acting_for`). | Verified against the chain root. |
-| `agent` | The agent proposing the action. | **Not authenticated in the MVP**; verified against the chain leaf. |
+| `agent` | The agent proposing the action. | Must equal the **authenticated** agent (bearer credential); also verified against the chain leaf and the grant audience. |
 | `delegation_grant_id` | The grant the agent claims to act under. | Looked up server-side. |
 | `capability`, `tool`, `action`, `resource`, `arguments` | What will happen. | Evaluated by policy. Hashed into the execution grant. |
 | `provenance` | Task, content sources (with trust label and content hash), model, rationale. | Recorded for audit; never used for authorization. |
@@ -191,27 +191,42 @@ SQLite via the standard library, one connection, one table per store:
 `ATP_DATABASE_PATH=:memory:` swaps in in-memory stores with the same
 interfaces. Nothing in policy or identity knows which one is in use.
 
+## Identity
+
+Two credential kinds, never interchangeable:
+
+| Credential | Header | Who holds it | What it permits |
+|---|---|---|---|
+| Agent credential `atpa_<id>.<secret>` | `Authorization: Bearer …` | one agent | authorize, execute, write its own provenance, delegate *from its own* grants, revoke grants it issued |
+| Operator key | `X-ATP-Operator-Key` | the deployment operator | issue/list/revoke agent credentials, human-rooted delegations, policy-set override, run evals, read traces/ledger/delegations, replay |
+
+Credentials are issued by `POST /agents/{id}/credentials` (token shown once,
+SHA-256 stored), listed without secrets, and revoked by id. Revocation and
+expiry are checked at the HTTP layer and again under the execute lock.
+
 ## HTTP API
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/authorize` | Decide; mint a grant on ALLOW. `?policy_set_version=` requires `X-ATP-Operator-Key` |
-| POST | `/execute` | Verify grant, consume it, run the tool |
-| GET | `/traces` | Recent traces |
-| GET | `/traces/{id}` | Full trace with integrity report, envelope, decision, chain |
-| POST | `/traces/{id}/events` | Agent-side provenance (`task_received`, `external_content_ingested` only) |
-| POST | `/replay/{id}` | Re-evaluate under a policy set |
-| POST | `/delegations` | Issue a grant (validated against parent) |
-| GET | `/delegations/{id}/chain` | Resolve and show effective authority |
-| POST | `/delegations/{id}/revoke` | Revoke |
-| GET | `/policy-sets` | Catalog of versioned policy sets |
-| GET | `/ledger/payments` | What actually executed |
-| GET/POST | `/evals/results`, `/evals/run` | Latest report; run the suite in-process |
-| GET | `/health` | Status, default policy set, key fingerprint |
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| POST | `/authorize` | agent (+ operator for `?policy_set_version=`) | Decide; mint a grant on ALLOW |
+| POST | `/execute` | agent | Verify grant (signature, expiry, action hash, audience), re-check delegation and credential, consume, run tool |
+| POST | `/traces/{id}/events` | agent (trace owner) | Provenance: `task_received`, `external_content_ingested` |
+| POST | `/delegations` | agent grantor **or** operator for human grantor | Issue a grant (validated against parent) |
+| POST | `/delegations/{id}/revoke` | grantor agent or operator | Revoke |
+| GET | `/delegations`, `/delegations/{id}`, `…/chain` | operator | Inspect grants and effective authority |
+| POST | `/agents/{id}/credentials` | operator | Issue a credential (token shown once) |
+| GET | `/agents/{id}/credentials` | operator | Metadata only |
+| POST | `/credentials/{id}/revoke` | operator | Revoke |
+| GET | `/traces`, `/traces/{id}` | operator | Trace list; full trace with integrity report |
+| POST | `/replay/{id}` | operator | Re-evaluate under a policy set; never executes |
+| GET | `/ledger/payments`, `/vendors` | operator | What executed; approved vendors |
+| GET/POST | `/evals/results`, `/evals/run` | operator | Latest report; run the suite in-process |
+| GET | `/policy-sets`, `/health` | open | Catalog; liveness (no secrets, no fingerprints) |
 
-Errors carry `{reason_code, message}` with 404 (not found), 422 (delegation
-invariant violated or schema error), 403 (grant error surfaced as an
-exception), 409 (other domain errors). Blocked executions are `200` with
+Errors carry `{reason_code, message}` with 401 (missing/invalid/revoked/expired
+credential, plus `WWW-Authenticate: Bearer`), 403 (identity mismatch, operator
+key required, trace owned by another agent), 404 (not found), 422 (delegation
+invariant violated or schema error), 409 (other domain errors). Blocked executions are `200` with
 `status: "blocked"` so the trace and the response agree.
 
 ## What would change at scale
@@ -221,5 +236,5 @@ exception), 409 (other domain errors). Blocked executions are `200` with
 - Move grant signing to asymmetric keys in a KMS; executors verify with the
   public key.
 - Ship trace events to an append-only sink and anchor chain heads.
-- Authenticate agents (see threat model) so `envelope.agent` is proven, not
-  asserted.
+- Replace bearer credentials with proof-of-possession (mTLS/DPoP) and split
+  the operator key into roles; give humans their own signed authority.
