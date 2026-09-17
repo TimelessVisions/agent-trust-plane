@@ -84,12 +84,15 @@ place — see `pypi-publishing.md`.
 
 ## v0.3.2 release preparation (2026-09-17, Windows 11, local; no upload performed)
 
-Built from a clean export of the tracked tree (250 files) with the pinned
-backend (`hatchling==1.32.0`, `uv build --python 3.12`), twice:
+Tag `v0.3.2` → commit `5953f019b8855c234b21fc10a027ad18463e9700`
+(GitHub Actions run 35266340358: all five jobs green before tagging).
+Built with the pinned backend (`hatchling==1.32.0`, `uv build --python 3.12`):
 
 | Check | Result |
 |---|---|
-| Artifacts | `agent_trust_plane-0.3.2-py3-none-any.whl` sha256 `a21dc5b6a8d99a3212e46c0aa3df90b7fc8378b464ac2c379ea33a69c997da47`; `agent_trust_plane-0.3.2.tar.gz` sha256 `dcc67354adf417b073d57d8a8ab0d3cc59343eed97d5215e060fba8cd7e7c4dd`; two independent builds byte-identical |
+| Artifacts from `git archive v0.3.2` (two independent exports, Windows) | `agent_trust_plane-0.3.2-py3-none-any.whl` sha256 `66fdab1bbb5d9f3c8e0422adde15b75316505be4a735c63a3afce16159dd4d3c`; `agent_trust_plane-0.3.2.tar.gz` sha256 `c2511e58a4e89f5dd8f66207d7c6ba7e24e269debe7141992d63952d76772fe1`; both builds byte-identical |
+| Same commit built by the CI `package` job (ubuntu-latest, run 35266340358) | sdist sha256 `c2511e58…772fe1` — **byte-identical** to the Windows build; wheel sha256 `fb6cc40edcccd7b334ee3d2049760a80403762bd4b793c3142d665e4b13b241b` — every entry's content, name, timestamp and permission bits identical to the Windows wheel; the only difference is the zip header `create_system` byte (0 on Windows, 3 on Unix) on each of the 98 entries. So the wheel is reproducible per OS family, the sdist across OS. The publish workflow builds on ubuntu, so the PyPI wheel is expected to be `fb6cc40e…` |
+| Working-tree build before commit | differed from the tag build only because four source files in the Windows checkout carry CRLF endings that git normalises to LF on commit (`atp_identity/service.py`, `atp_policy/base.py`, `atp_policy/policies/payments.py`, `finance_agent/agent.py`); all checks below were re-run on the tag build |
 | Metadata (wheel `METADATA` and sdist `PKG-INFO`) | Metadata-Version 2.5; Name `agent-trust-plane`; Version 0.3.2; License-Expression MIT; License-File LICENSE (copyright line `Copyright (c) 2026 George Gakravyi`); Requires-Python >=3.12; 6 Project-URL, 8 Keywords, 15 Classifier; 7 public `Requires-Dist`; console scripts `atp` and `agent-trust-plane` both → `atp_cli.main:main` |
 | `twine check --strict` (twine 7.0.0) | PASSED for wheel and sdist |
 | `scripts/check_dist.py --version 0.3.2` | OK (98 wheel / 111 sdist entries; 11 packages + `py.typed`; no forbidden names; no secret/local-path patterns; no non-index dependency; no relative link in the long description) |
