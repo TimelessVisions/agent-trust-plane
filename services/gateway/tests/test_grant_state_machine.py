@@ -23,6 +23,7 @@ from atp_gateway.grants import (
     SqliteGrantStore,
     new_grant_claims,
 )
+
 from gateway_fixtures import NOW
 
 OPS = ("consume", "revoke", "tick")
