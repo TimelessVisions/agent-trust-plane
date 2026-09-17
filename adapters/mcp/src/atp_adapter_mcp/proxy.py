@@ -44,7 +44,7 @@ from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 from mcp.shared._httpx_utils import create_mcp_http_client
 
-from atp_adapter_http import GatewayError, TrustPlaneClient
+from atp_adapter_http import AgentClient, GatewayError, TrustPlaneClient
 from atp_adapter_mcp.config import ProxyConfig
 from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY
 from atp_core import ActionEnvelope, Provenance, canonical_json, new_trace_id
@@ -135,7 +135,7 @@ def _summarise(result: types.CallToolResult) -> dict[str, Any]:
 
 
 class TrustPlaneProxy:
-    def __init__(self, config: ProxyConfig, client: TrustPlaneClient, upstream: Upstream) -> None:
+    def __init__(self, config: ProxyConfig, client: AgentClient, upstream: Upstream) -> None:
         self.config = config
         self.client = client
         self.upstream = upstream
@@ -355,7 +355,7 @@ def _bounded(arguments: dict[str, Any]) -> dict[str, Any]:
     return arguments
 
 
-async def serve(config: ProxyConfig, client: TrustPlaneClient | None = None) -> None:
+async def serve(config: ProxyConfig, client: AgentClient | None = None) -> None:
     """Serve the proxy over stdio. ``client`` defaults to an HTTP client for
     ``config.gateway`` authenticated with ``$ATP_AGENT_TOKEN``; ``atp mcp wrap``
     passes an in-process client instead."""

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from atp_audit import InMemoryTraceStore, SqliteTraceStore, TraceStore
+from atp_core.sqlite import SqliteUnitOfWork, no_transaction
 from atp_gateway.grants import GrantSigner, GrantStore, InMemoryGrantStore, SqliteGrantStore
 from atp_gateway.reports import EvalReportStore, InMemoryEvalReportStore, SqliteEvalReportStore
 from atp_gateway.service import TrustPlane
@@ -69,6 +71,7 @@ class Runtime:
 def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     settings = settings or GatewaySettings()
     conn: sqlite3.Connection | None
+    transaction: Any = no_transaction
     delegation_store: DelegationStore
     trace_store: TraceStore
     grant_store: GrantStore
@@ -90,6 +93,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        transaction = SqliteUnitOfWork(conn)
         delegation_store = SqliteDelegationStore(conn)
         trace_store = SqliteTraceStore(conn)
         grant_store = SqliteGrantStore(conn)
@@ -123,6 +127,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         tools=tools,
         grant_ttl_seconds=settings.grant_ttl_seconds,
         enforcement_mode=settings.enforcement_mode,
+        transaction=transaction,
     )
     return Runtime(
         trust_plane=trust_plane,

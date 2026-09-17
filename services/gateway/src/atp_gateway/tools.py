@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from atp_core import ActionEnvelope, ReasonCode, ToolError, new_id, utcnow
+from atp_core.sqlite import commit_if_implicit
 from atp_policy import VendorDirectory
 from atp_policy.policies import PaymentArguments
 
@@ -117,7 +118,7 @@ class SqlitePaymentLedger:
         self._lock = threading.RLock()
         with self._lock:
             conn.executescript(self._DDL)
-            conn.commit()
+            commit_if_implicit(conn)
 
     def record(self, payment: PaymentRecord) -> None:
         with self._lock:
@@ -125,7 +126,7 @@ class SqlitePaymentLedger:
                 "INSERT INTO payments (payment_id, body) VALUES (?, ?)",
                 (payment.payment_id, payment.model_dump_json()),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
 
     def all(self) -> list[PaymentRecord]:
         with self._lock:

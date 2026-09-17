@@ -11,6 +11,7 @@ import threading
 from typing import Any, Protocol
 
 from atp_core import utcnow
+from atp_core.sqlite import commit_if_implicit
 
 
 class EvalReportStore(Protocol):
@@ -44,7 +45,7 @@ class SqliteEvalReportStore:
         self._lock = threading.RLock()
         with self._lock:
             conn.executescript(self._DDL)
-            conn.commit()
+            commit_if_implicit(conn)
 
     def save(self, report: dict[str, Any]) -> None:
         with self._lock:
@@ -52,7 +53,7 @@ class SqliteEvalReportStore:
                 "INSERT INTO eval_reports (saved_at, body) VALUES (?, ?)",
                 (utcnow().isoformat(), json.dumps(report)),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
 
     def latest(self) -> dict[str, Any] | None:
         with self._lock:

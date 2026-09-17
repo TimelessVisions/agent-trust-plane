@@ -25,6 +25,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from atp_core import ATPError, PrincipalKind, PrincipalRef, ReasonCode, ensure_aware, new_id, utcnow
+from atp_core.sqlite import commit_if_implicit
 
 TOKEN_PREFIX = "atpa_"
 
@@ -124,7 +125,7 @@ class SqliteCredentialStore:
         self._lock = threading.RLock()
         with self._lock:
             conn.executescript(self._DDL)
-            conn.commit()
+            commit_if_implicit(conn)
 
     def put(self, credential: AgentCredential) -> None:
         with self._lock:
@@ -142,7 +143,7 @@ class SqliteCredentialStore:
                     credential.revoked_at.isoformat() if credential.revoked_at else None,
                 ),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
 
     def get(self, credential_id: str) -> AgentCredential | None:
         with self._lock:
@@ -160,7 +161,7 @@ class SqliteCredentialStore:
                 "AND revoked_at IS NULL",
                 (at.isoformat(), credential_id),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
             return self.get(credential_id)
 
     def for_agent(self, agent_id: str) -> list[AgentCredential]:

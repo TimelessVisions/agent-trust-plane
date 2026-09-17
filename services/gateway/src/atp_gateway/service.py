@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Any
 
@@ -33,6 +34,7 @@ from atp_core import (
     ToolError,
     utcnow,
 )
+from atp_core.sqlite import no_transaction
 from atp_gateway.grants import GrantClaims, GrantSigner, GrantStore, new_grant_claims
 from atp_gateway.tools import ToolRegistry
 from atp_identity import (
@@ -129,6 +131,7 @@ class TrustPlane:
         clock: Callable[[], datetime] = utcnow,
         enforcement_mode: EnforcementMode = "enforce",
         identity: IdentityProvider | None = None,
+        transaction: Callable[[], AbstractContextManager[None]] = no_transaction,
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
@@ -142,6 +145,9 @@ class TrustPlane:
         self.clock = clock
         self.enforcement_mode: EnforcementMode = enforcement_mode
         self.identity: IdentityProvider = identity or BearerCredentialProvider(credentials)
+        # One durable unit per kernel operation: its trace events and any
+        # grant-state change commit together (one fsync) or roll back together.
+        self.transaction = transaction
         self.engine = PolicyEngine()
         # One lock around each state-changing operation: the MVP stores share a
         # single SQLite connection and the trace chain must not interleave.
@@ -163,7 +169,7 @@ class TrustPlane:
                 f"event type '{event_type.value}' can only be written by the gateway",
             )
         body = {**payload, "credential_id": caller.credential_id}
-        with self._lock:
+        with self._lock, self.transaction():
             self._check_credential_live(caller)
             self._check_trace_owner(trace_id, caller)
             return self.traces.append(trace_id, event_type, caller.agent.id, body)
@@ -230,8 +236,12 @@ class TrustPlane:
         policy_set_version: str | None = None,
     ) -> AuthorizationResult:
         with self._lock:
+            # Identity binding runs outside the unit of work on purpose: a
+            # rejected impersonation attempt must stay on the record even
+            # though the operation fails.
             self._bind_identity(envelope, caller)
-            return self._authorize(envelope, caller, policy_set_version)
+            with self.transaction():
+                return self._authorize(envelope, caller, policy_set_version)
 
     def _authorize(
         self, envelope: ActionEnvelope, caller: AuthenticatedAgent, policy_set_version: str | None
@@ -358,7 +368,7 @@ class TrustPlane:
         have denied, because the gateway is in shadow mode. Only the trace
         owner may report, only when the recorded decision is a shadow
         denial, and only once."""
-        with self._lock:
+        with self._lock, self.transaction():
             self._check_credential_live(caller)
             self._check_trace_owner(trace_id, caller)
             view = self.get_trace(trace_id)
@@ -418,7 +428,8 @@ class TrustPlane:
     ) -> ExecutionResult:
         with self._lock:
             self._bind_identity(envelope, caller)
-            return self._execute(envelope, grant_token, caller)
+            with self.transaction():
+                return self._execute(envelope, grant_token, caller)
 
     def _execute(
         self, envelope: ActionEnvelope, grant_token: str | None, caller: AuthenticatedAgent
@@ -518,7 +529,7 @@ class TrustPlane:
         Bound to the consumed grant: only its audience may report, only once,
         and only for a grant the gateway actually released.
         """
-        with self._lock:
+        with self._lock, self.transaction():
             self._check_credential_live(caller)
             record = self.grants.get(grant_id)
             if record is None or record.claims.agent_id != caller.agent.id:
@@ -599,7 +610,7 @@ class TrustPlane:
 
     # ---------------------------------------------------------------- replay
     def replay(self, trace_id: str, *, policy_set_version: str | None = None) -> ReplayResult:
-        with self._lock:
+        with self._lock, self.transaction():
             return self._replay(trace_id, policy_set_version)
 
     def _replay(self, trace_id: str, policy_set_version: str | None) -> ReplayResult:

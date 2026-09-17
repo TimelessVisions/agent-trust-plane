@@ -28,6 +28,7 @@ from typing import Final, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from atp_core import GrantError, ReasonCode, canonical_json, new_id, utcnow
+from atp_core.sqlite import commit_if_implicit
 
 TOKEN_VERSION: Final[Literal["atp-grant/1"]] = "atp-grant/1"
 
@@ -198,7 +199,7 @@ class SqliteGrantStore:
         self._lock = threading.RLock()
         with self._lock:
             conn.executescript(self._DDL)
-            conn.commit()
+            commit_if_implicit(conn)
 
     def issue(self, claims: GrantClaims) -> GrantRecord:
         with self._lock:
@@ -206,7 +207,7 @@ class SqliteGrantStore:
                 "INSERT INTO execution_grants (grant_id, status, claims) VALUES (?, ?, ?)",
                 (claims.grant_id, GrantStatus.ISSUED.value, claims.model_dump_json()),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
         return GrantRecord(claims=claims, status=GrantStatus.ISSUED)
 
     def get(self, grant_id: str) -> GrantRecord | None:
@@ -232,7 +233,7 @@ class SqliteGrantStore:
                 "WHERE grant_id = ? AND status = ?",
                 (GrantStatus.CONSUMED.value, now.isoformat(), grant_id, GrantStatus.ISSUED.value),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
             if cur.rowcount != 1:
                 raise _consume_failure(self.get(grant_id))
             record = self.get(grant_id)
@@ -245,7 +246,7 @@ class SqliteGrantStore:
                 "UPDATE execution_grants SET status = ? WHERE grant_id = ? AND status = ?",
                 (GrantStatus.REVOKED.value, grant_id, GrantStatus.ISSUED.value),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
             return self.get(grant_id)
 
 

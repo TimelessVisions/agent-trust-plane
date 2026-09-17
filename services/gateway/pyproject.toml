@@ -8,6 +8,7 @@ dependencies = [
   "atp-identity",
   "atp-policy",
   "atp-audit",
+  "atp-adapter-http",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.34",
   "pydantic-settings>=2.7",
@@ -23,5 +24,6 @@ packages = ["src/atp_gateway"]
 [tool.uv.sources]
 atp-audit = { workspace = true }
 atp-core = { workspace = true }
+atp-adapter-http = { workspace = true }
 atp-identity = { workspace = true }
 atp-policy = { workspace = true }

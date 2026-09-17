@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Protocol
 
 from atp_core import utcnow
+from atp_core.sqlite import commit_if_implicit
 from atp_identity.grants import DelegationGrant
 
 
@@ -68,7 +69,7 @@ class SqliteDelegationStore:
         self._lock = threading.RLock()
         with self._lock:
             conn.executescript(self._DDL)
-            conn.commit()
+            commit_if_implicit(conn)
 
     def put(self, grant: DelegationGrant) -> None:
         with self._lock:
@@ -86,7 +87,7 @@ class SqliteDelegationStore:
                 )
             except sqlite3.IntegrityError as exc:
                 raise ValueError(f"grant already exists: {grant.grant_id}") from exc
-            self._conn.commit()
+            commit_if_implicit(self._conn)
 
     def get(self, grant_id: str) -> DelegationGrant | None:
         with self._lock:
@@ -108,7 +109,7 @@ class SqliteDelegationStore:
                 "AND revoked_at IS NULL",
                 (when.isoformat(), grant_id),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
             if cur.rowcount == 0:
                 return self.get(grant_id)
         return self.get(grant_id)

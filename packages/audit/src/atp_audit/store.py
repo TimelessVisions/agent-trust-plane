@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 
 from atp_audit.events import GENESIS_HASH, EventType, IntegrityReport, TraceEvent
 from atp_core import utcnow
+from atp_core.sqlite import commit_if_implicit
 
 
 class TraceSummary(BaseModel):
@@ -166,7 +167,7 @@ class SqliteTraceStore:
         self._lock = threading.RLock()
         with self._lock:
             conn.executescript(self._DDL)
-            conn.commit()
+            commit_if_implicit(conn)
 
     def append(
         self, trace_id: str, event_type: EventType, actor: str, payload: dict[str, Any]
@@ -200,7 +201,7 @@ class SqliteTraceStore:
                     digest,
                 ),
             )
-            self._conn.commit()
+            commit_if_implicit(self._conn)
             seq = cur.lastrowid
             assert seq is not None
             return TraceEvent(

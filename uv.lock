@@ -296,6 +296,7 @@ name = "atp-gateway"
 version = "0.2.0"
 source = { editable = "services/gateway" }
 dependencies = [
+    { name = "atp-adapter-http" },
     { name = "atp-audit" },
     { name = "atp-core" },
     { name = "atp-identity" },
@@ -307,6 +308,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "atp-adapter-http", editable = "adapters/http" },
     { name = "atp-audit", editable = "packages/audit" },
     { name = "atp-core", editable = "packages/core" },
     { name = "atp-identity", editable = "packages/identity" },

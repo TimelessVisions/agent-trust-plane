@@ -165,7 +165,9 @@ def wrap(
         runtime.close()
         return 2
     session_config = config.model_copy(update={"delegation_grant_id": grant_id})
-    agent = operator.as_agent(token)
+    from atp_gateway.local import InProcessAgentClient
+
+    agent = InProcessAgentClient.from_token(runtime, token)
 
     _err(
         f"atp mcp wrap: {config.server_name} [{mode.upper()}] home={home.path} "

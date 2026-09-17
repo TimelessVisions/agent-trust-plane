@@ -34,7 +34,7 @@ _FORBIDDEN = {
 }
 
 
-def _status_for(exc: ATPError) -> int:
+def status_for(exc: ATPError) -> int:
     if exc.reason_code in _UNAUTHENTICATED:
         return 401
     if exc.reason_code in _FORBIDDEN or isinstance(exc, AuthError):
@@ -87,7 +87,7 @@ def create_app(settings: GatewaySettings | None = None, runtime: Runtime | None 
 
     @app.exception_handler(ATPError)
     async def _atp_error(_: Request, exc: ATPError) -> JSONResponse:
-        status = _status_for(exc)
+        status = status_for(exc)
         headers = {"WWW-Authenticate": "Bearer"} if status == 401 else None
         return JSONResponse(
             status_code=status,

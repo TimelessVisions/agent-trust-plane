@@ -1,6 +1,7 @@
 """HTTP client SDK for agents talking to the trust gateway."""
 
 from atp_adapter_http.client import (
+    AgentClient,
     AuthorizeResponse,
     ExecuteResponse,
     ExecutionGrant,
@@ -9,6 +10,7 @@ from atp_adapter_http.client import (
 )
 
 __all__ = [
+    "AgentClient",
     "AuthorizeResponse",
     "ExecuteResponse",
     "ExecutionGrant",

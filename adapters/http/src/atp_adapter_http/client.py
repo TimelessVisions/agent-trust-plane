@@ -11,8 +11,9 @@ exercises the real API without a network.
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
+import contextlib
+import weakref
+from typing import Any, Protocol
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -58,30 +59,68 @@ class ExecuteResponse(BaseModel):
         return self.status == "completed"
 
 
-class _SyncASGITransport(httpx.BaseTransport):
-    """Drive an ASGI app from synchronous code, one event loop per request.
+class AgentClient(Protocol):
+    """The agent-facing subset of the client, implemented over HTTP by
+    ``TrustPlaneClient`` and in-process by ``atp_gateway.local.InProcessAgentClient``.
+    Adapters (the MCP proxy) depend on this, not on a transport."""
 
-    httpx's ASGITransport is async-only; this wrapper lets the sync client
-    (and therefore the demo agent and the eval harness) talk to the gateway
-    in-process through its real routes.
+    def authorize(
+        self, envelope: ActionEnvelope, *, policy_set_version: str | None = None
+    ) -> AuthorizeResponse: ...
+
+    def execute(
+        self, envelope: ActionEnvelope, grant: ExecutionGrant | str | None
+    ) -> ExecuteResponse: ...
+
+    def report_outcome(
+        self, grant_id: str, *, succeeded: bool, summary: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+    def report_shadow_outcome(
+        self, trace_id: str, *, succeeded: bool, summary: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+
+class _SyncASGITransport(httpx.BaseTransport):
+    """Drive an ASGI app from synchronous code over one long-lived event loop.
+
+    httpx's ASGITransport is async-only. A blocking portal keeps a single
+    loop alive in a background thread for the client's lifetime, so each
+    request costs a thread hop rather than a fresh event loop (which made
+    `atp mcp wrap` slower than going over HTTP before v0.3.0).
     """
 
     def __init__(self, app: Any) -> None:
+        from anyio.from_thread import start_blocking_portal
+
         self._asgi = httpx.ASGITransport(app=app)
+        self._portal_cm = start_blocking_portal()
+        self._portal = self._portal_cm.__enter__()
+        # The portal thread is not a daemon; make sure an unclosed client
+        # cannot keep the interpreter alive.
+        weakref.finalize(self, _close_portal, self._portal_cm)
+
+    async def _run(self, request: httpx.Request) -> httpx.Response:
+        response = await self._asgi.handle_async_request(request)
+        await response.aread()
+        return response
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        async def _run() -> httpx.Response:
-            response = await self._asgi.handle_async_request(request)
-            await response.aread()
-            return response
-
-        response = asyncio.run(_run())
+        response = self._portal.call(self._run, request)
         return httpx.Response(
             status_code=response.status_code,
             headers=response.headers,
             content=response.content,
             request=request,
         )
+
+    def close(self) -> None:
+        _close_portal(self._portal_cm)
+
+
+def _close_portal(cm: Any) -> None:
+    with contextlib.suppress(Exception):
+        cm.__exit__(None, None, None)
 
 
 class TrustPlaneClient:
