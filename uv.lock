@@ -26,8 +26,19 @@ members = [
 [[package]]
 name = "agent-trust-plane"
 version = "0.2.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyyaml" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.dev-dependencies]
+dev = [
     { name = "atp-adapter-http" },
     { name = "atp-adapter-mcp" },
     { name = "atp-audit" },
@@ -38,13 +49,9 @@ dependencies = [
     { name = "atp-identity" },
     { name = "atp-policy" },
     { name = "finance-agent" },
-    { name = "notes-mcp-server" },
-]
-
-[package.dev-dependencies]
-dev = [
     { name = "httpx" },
     { name = "mypy" },
+    { name = "notes-mcp-server" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
@@ -53,6 +60,17 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "mcp", specifier = ">=2.2,<3" },
+    { name = "pydantic", specifier = ">=2.10" },
+    { name = "pydantic-settings", specifier = ">=2.7" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "atp-adapter-http", editable = "adapters/http" },
     { name = "atp-adapter-mcp", editable = "adapters/mcp" },
     { name = "atp-audit", editable = "packages/audit" },
@@ -63,13 +81,9 @@ requires-dist = [
     { name = "atp-identity", editable = "packages/identity" },
     { name = "atp-policy", editable = "packages/policy" },
     { name = "finance-agent", editable = "examples/finance-agent" },
-    { name = "notes-mcp-server", editable = "examples/notes-mcp-server" },
-]
-
-[package.metadata.requires-dev]
-dev = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "mypy", specifier = ">=1.14" },
+    { name = "notes-mcp-server", editable = "examples/notes-mcp-server" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cov", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.9" },

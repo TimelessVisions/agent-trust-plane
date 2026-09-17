@@ -113,3 +113,4 @@ class HealthView(BaseModel):
     default_policy_set: str
     grant_ttl_seconds: int
     tools: list[str]
+    enforcement_mode: str = "enforce"

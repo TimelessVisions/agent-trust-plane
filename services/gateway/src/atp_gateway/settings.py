@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +41,16 @@ class GatewaySettings(BaseSettings):
     database_path: str = Field(default="./data/atp.db", description="SQLite path or ':memory:'.")
     cors_origins: str = Field(default="http://localhost:3000")
     default_policy_set: str = Field(default="payments-v2")
+    enforcement_mode: Literal["enforce", "shadow"] = Field(
+        default="enforce",
+        description="shadow: decisions are made and recorded but a DENY does not withhold "
+        "execution by trusted executors; they report shadow_execution_* instead. "
+        "Operator-set; never selectable by a caller.",
+    )
+    policy_file: str = Field(
+        default="",
+        description="Optional YAML file of declared policy sets, loaded next to the built-ins.",
+    )
     external_tool_prefixes: str = Field(
         default="mcp.",
         description="Comma-separated tool-name prefixes executed by an external, trusted "

@@ -27,6 +27,7 @@ from atp_core import (
     DecisionOutcome,
     DelegationError,
     EffectiveAuthority,
+    EnforcementMode,
     GrantError,
     ReasonCode,
     ToolError,
@@ -124,6 +125,7 @@ class TrustPlane:
         tools: ToolRegistry,
         grant_ttl_seconds: int = 120,
         clock: Callable[[], datetime] = utcnow,
+        enforcement_mode: EnforcementMode = "enforce",
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
@@ -135,6 +137,7 @@ class TrustPlane:
         self.tools = tools
         self.grant_ttl_seconds = grant_ttl_seconds
         self.clock = clock
+        self.enforcement_mode: EnforcementMode = enforcement_mode
         self.engine = PolicyEngine()
         # One lock around each state-changing operation: the MVP stores share a
         # single SQLite connection and the trace chain must not interleave.
@@ -284,7 +287,9 @@ class TrustPlane:
             authority=authority,
             resolution_error=error,
         )
-        decision = self.engine.evaluate(policy_set, ctx)
+        decision = self.engine.evaluate(policy_set, ctx).model_copy(
+            update={"enforcement": self.enforcement_mode}
+        )
         self._record_decision(decision)
 
         grant: IssuedGrant | None = None
@@ -321,8 +326,71 @@ class TrustPlane:
                 GATEWAY_ACTOR,
                 decision.approval.model_dump(mode="json"),
             )
+        if decision.is_shadow_denial:
+            # Shadow mode: no grant is minted (the kernel invariant holds), but
+            # the record says so explicitly so nobody mistakes this for a block.
+            self.traces.append(
+                trace_id,
+                EventType.SHADOW_WOULD_DENY,
+                GATEWAY_ACTOR,
+                {
+                    "would": decision.outcome.value,
+                    "reason_code": decision.reason_code.value,
+                    "message": decision.explanation,
+                    "enforced": False,
+                },
+            )
 
         return AuthorizationResult(decision=decision, execution_grant=grant)
+
+    def report_shadow_outcome(
+        self,
+        trace_id: str,
+        caller: AuthenticatedAgent,
+        *,
+        succeeded: bool,
+        summary: dict[str, Any],
+    ) -> TraceEvent:
+        """A trusted executor reports that it ran an action the gateway would
+        have denied, because the gateway is in shadow mode. Only the trace
+        owner may report, only when the recorded decision is a shadow
+        denial, and only once."""
+        with self._lock:
+            self._check_credential_live(caller)
+            self._check_trace_owner(trace_id, caller)
+            view = self.get_trace(trace_id)
+            if view.decision is None or not view.decision.is_shadow_denial:
+                raise ATPError(
+                    ReasonCode.SHADOW_OUTCOME_NOT_APPLICABLE,
+                    "this trace has no shadow-mode denial to report an outcome for",
+                )
+            if any(
+                e.event_type
+                in (EventType.SHADOW_EXECUTION_COMPLETED, EventType.SHADOW_EXECUTION_FAILED)
+                for e in view.events
+            ):
+                raise ATPError(
+                    ReasonCode.SHADOW_OUTCOME_ALREADY_REPORTED,
+                    "a shadow outcome was already reported for this trace",
+                )
+            event_type = (
+                EventType.SHADOW_EXECUTION_COMPLETED
+                if succeeded
+                else EventType.SHADOW_EXECUTION_FAILED
+            )
+            return self.traces.append(
+                trace_id,
+                event_type,
+                caller.agent.id,
+                {
+                    "reported_by": "external_executor",
+                    "credential_id": caller.credential_id,
+                    "enforced": False,
+                    "would": view.decision.outcome.value,
+                    "reason_code": view.decision.reason_code.value,
+                    "summary": summary,
+                },
+            )
 
     def _record_decision(self, decision: Decision) -> None:
         self.traces.append(
@@ -614,6 +682,8 @@ class TrustPlane:
                 EventType.EXECUTION_RELEASED,
                 EventType.EXECUTION_COMPLETED,
                 EventType.EXECUTION_FAILED,
+                EventType.SHADOW_EXECUTION_COMPLETED,
+                EventType.SHADOW_EXECUTION_FAILED,
             ):
                 execution = {"event_type": ev.event_type.value, **ev.payload}
             elif ev.event_type is EventType.REPLAY_PERFORMED:

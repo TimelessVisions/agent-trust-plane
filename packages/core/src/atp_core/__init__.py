@@ -12,6 +12,7 @@ from atp_core.decision import (
     ConstraintEvaluation,
     Decision,
     DecisionOutcome,
+    EnforcementMode,
     PolicyEvaluation,
     PolicyRef,
 )
@@ -21,9 +22,12 @@ from atp_core.ids import new_id, new_trace_id
 from atp_core.money import Money
 from atp_core.principals import PrincipalKind, PrincipalRef
 from atp_core.reasons import ReasonCode
+from atp_core.resources import RESOURCE_PATTERN, SCOPE_PATTERN
 from atp_core.timeutil import ensure_aware, in_seconds, utcnow
 
 __all__ = [
+    "RESOURCE_PATTERN",
+    "SCOPE_PATTERN",
     "ATPError",
     "ActionEnvelope",
     "ApprovalRequirement",
@@ -35,6 +39,7 @@ __all__ = [
     "DecisionOutcome",
     "DelegationError",
     "EffectiveAuthority",
+    "EnforcementMode",
     "EnvelopeError",
     "GrantError",
     "Money",

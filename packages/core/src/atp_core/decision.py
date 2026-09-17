@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,6 +23,9 @@ class DecisionOutcome(StrEnum):
     ALLOW = "ALLOW"
     DENY = "DENY"
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
+
+
+EnforcementMode = Literal["enforce", "shadow"]
 
 
 class PolicyRef(BaseModel):
@@ -92,6 +95,12 @@ class Decision(BaseModel):
         description="Resolved authority snapshot. None when delegation resolution failed.",
     )
     approval: ApprovalRequirement | None = None
+    enforcement: EnforcementMode = Field(
+        default="enforce",
+        description="enforce: a non-ALLOW outcome withholds execution. shadow: the gateway "
+        "was configured to observe only; a DENY here means WOULD_DENY and the trusted "
+        "executor may still have run the action (recorded as shadow_execution_*).",
+    )
     replay_of: str | None = Field(
         default=None,
         description="When this decision was produced by replay, the original decision id.",
@@ -100,6 +109,18 @@ class Decision(BaseModel):
     @property
     def is_allow(self) -> bool:
         return self.outcome is DecisionOutcome.ALLOW
+
+    @property
+    def is_shadow_denial(self) -> bool:
+        return self.enforcement == "shadow" and self.outcome is not DecisionOutcome.ALLOW
+
+    @property
+    def display_outcome(self) -> str:
+        """``WOULD_DENY`` / ``WOULD_REQUIRE_APPROVAL`` in shadow mode, so the two
+        modes can never be confused in any rendering."""
+        if self.is_shadow_denial:
+            return f"WOULD_{self.outcome.value}"
+        return self.outcome.value
 
     def violations(self) -> list[PolicyEvaluation]:
         return [e for e in self.evaluations if e.outcome is not DecisionOutcome.ALLOW]

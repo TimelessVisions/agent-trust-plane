@@ -9,6 +9,7 @@ Who may call what:
 | POST /execute                    | required         |              |
 | POST /traces/{id}/events         | required         |              |
 | POST /executions/{grant}/outcome | grant audience   |              |
+| POST /traces/{id}/shadow-outcome | trace owner      |              |
 | POST /delegations                | grantor (agent)  | grantor (human) |
 | POST /delegations/{id}/revoke    | grantor (agent)  | or operator  |
 | GET  /delegations                |                  | required     |
@@ -104,6 +105,19 @@ def execute(body: ExecuteRequest, request: Request, caller: Agent) -> ExecutionR
     unexpired, be unused, be addressed to the authenticated agent, and match
     the submitted envelope's action hash."""
     return _tp(request).execute(body.envelope, body.execution_grant, caller)
+
+
+@router.post("/traces/{trace_id}/shadow-outcome", tags=["control"])
+def report_shadow_outcome(
+    trace_id: str, body: ExecutionOutcomeRequest, request: Request, caller: Agent
+) -> dict[str, Any]:
+    """In shadow mode a trusted executor reports that it ran an action the
+    gateway would have denied. Trace owner only; only for a recorded shadow
+    denial; once."""
+    event = _tp(request).report_shadow_outcome(
+        trace_id, caller, succeeded=body.succeeded, summary=body.summary
+    )
+    return event.model_dump(mode="json")
 
 
 @router.post("/executions/{grant_id}/outcome", tags=["control"])
@@ -290,6 +304,7 @@ def health(request: Request) -> HealthView:
         default_policy_set=rt.trust_plane.policy_sets.default_version,
         grant_ttl_seconds=rt.trust_plane.grant_ttl_seconds,
         tools=rt.trust_plane.tools.names(),
+        enforcement_mode=rt.trust_plane.enforcement_mode,
     )
 
 

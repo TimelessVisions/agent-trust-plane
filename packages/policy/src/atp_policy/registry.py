@@ -14,6 +14,7 @@ v2 is how you prove the fix.
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 from atp_core import Money, ReasonCode
 from atp_core.errors import ATPError
@@ -78,6 +79,27 @@ class PolicySetRegistry:
     @classmethod
     def builtin(cls) -> PolicySetRegistry:
         return cls([payments_v1(), payments_v2()], default_version="payments-v2")
+
+    @classmethod
+    def with_file(
+        cls, path: str | Path, *, default_version: str | None = None
+    ) -> PolicySetRegistry:
+        """Built-in sets plus the sets declared in a policy file. A declared
+        version may not shadow a built-in one."""
+        from atp_policy.declarative import load_policy_sets
+
+        declared = load_policy_sets(path)
+        builtin = [payments_v1(), payments_v2()]
+        taken = {s.version for s in builtin}
+        for s in declared:
+            if s.version in taken:
+                raise ValueError(f"policy set {s.version!r} shadows a built-in set")
+        return cls(builtin + declared, default_version or "payments-v2")
+
+    def add(self, policy_set: PolicySet) -> None:
+        if policy_set.version in self._sets:
+            raise ValueError(f"policy set {policy_set.version!r} is already registered")
+        self._sets[policy_set.version] = policy_set
 
     @property
     def default_version(self) -> str:

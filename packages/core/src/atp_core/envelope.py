@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from atp_core.canonical import canonical_hash, canonical_json
 from atp_core.ids import new_id, new_trace_id
 from atp_core.principals import PrincipalRef
+from atp_core.resources import RESOURCE_PATTERN
 from atp_core.timeutil import utcnow
 
 _IDENT = r"^[A-Za-z0-9._:-]+$"
@@ -105,7 +106,9 @@ class ActionEnvelope(BaseModel):
     capability: str = Field(pattern=_IDENT, max_length=128, description="e.g. pay:vendor")
     tool: str = Field(pattern=_IDENT, max_length=64)
     action: str = Field(pattern=_IDENT, max_length=64)
-    resource: str = Field(pattern=_IDENT, max_length=256, description="e.g. vendor:128")
+    resource: str = Field(
+        pattern=RESOURCE_PATTERN, max_length=320, description="e.g. vendor:128 or path:/work/a.txt"
+    )
     arguments: dict[str, Any] = Field(default_factory=dict)
 
     provenance: Provenance = Field(default_factory=Provenance)

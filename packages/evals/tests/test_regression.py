@@ -113,9 +113,10 @@ class TestFormatValidation:
 
     def test_bad_identifiers_rejected(self, tmp_path: Path) -> None:
         data = self._base()
-        data["cases"][0]["resource"] = "vendor:128; DROP TABLE"
-        with pytest.raises(ValueError):
-            load_suite(self._write(tmp_path, data))
+        for bad in ("vendor:1*", "vendor:x", "*", "no-type"):
+            data["cases"][0]["resource"] = bad
+            with pytest.raises(ValueError):
+                load_suite(self._write(tmp_path, data))
 
     def test_round_trip(self, tmp_path: Path) -> None:
         suite = load_suite(SAMPLE)

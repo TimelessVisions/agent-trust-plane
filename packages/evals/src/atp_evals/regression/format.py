@@ -19,11 +19,10 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from atp_core import DecisionOutcome, Money, PrincipalRef
+from atp_core import RESOURCE_PATTERN, SCOPE_PATTERN, DecisionOutcome, Money, PrincipalRef
 
 _ALIAS = r"^[A-Za-z0-9._-]{1,64}$"
 _IDENT = r"^[A-Za-z0-9._:-]+$"
-_SCOPE = r"^(\*|[A-Za-z0-9._-]+:(\*|[A-Za-z0-9._-]+))$"
 _DURATION = re.compile(r"^(\d+)([smhd])$")
 SUITE_VERSION = 1
 
@@ -67,7 +66,7 @@ class GrantSpec(BaseModel):
     @classmethod
     def _scopes(cls, values: tuple[str, ...]) -> tuple[str, ...]:
         for v in values:
-            if not re.fullmatch(_SCOPE, v):
+            if not re.fullmatch(SCOPE_PATTERN, v):
                 raise ValueError(f"invalid resource pattern: {v!r}")
         return values
 
@@ -119,7 +118,7 @@ class CaseSpec(BaseModel):
     capability: str = Field(pattern=_IDENT, max_length=128)
     tool: str = Field(pattern=_IDENT, max_length=64)
     action: str = Field(pattern=_IDENT, max_length=64)
-    resource: str = Field(pattern=_IDENT, max_length=256)
+    resource: str = Field(pattern=RESOURCE_PATTERN, max_length=320)
     arguments: dict[str, Any] = Field(default_factory=dict)
     expect: Expectation
     source: Source | None = None

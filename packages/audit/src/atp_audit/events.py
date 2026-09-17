@@ -26,6 +26,9 @@ class EventType(StrEnum):
     EXECUTION_COMPLETED = "execution_completed"
     EXECUTION_FAILED = "execution_failed"
     REPLAY_PERFORMED = "replay_performed"
+    SHADOW_WOULD_DENY = "shadow_would_deny"
+    SHADOW_EXECUTION_COMPLETED = "shadow_execution_completed"
+    SHADOW_EXECUTION_FAILED = "shadow_execution_failed"
 
 
 GENESIS_HASH = "0" * 64

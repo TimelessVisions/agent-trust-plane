@@ -103,9 +103,14 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     for prefix in settings.external_tool_prefix_list():
         tools.register_external_prefix(prefix)
 
-    policy_sets = PolicySetRegistry.builtin()
-    if settings.default_policy_set != policy_sets.default_version:
-        policy_sets = PolicySetRegistry(policy_sets.versions(), settings.default_policy_set)
+    if settings.policy_file:
+        policy_sets = PolicySetRegistry.with_file(
+            settings.policy_file, default_version=settings.default_policy_set
+        )
+    else:
+        policy_sets = PolicySetRegistry.builtin()
+        if settings.default_policy_set != policy_sets.default_version:
+            policy_sets = PolicySetRegistry(policy_sets.versions(), settings.default_policy_set)
 
     trust_plane = TrustPlane(
         delegations=DelegationService(delegation_store),
@@ -117,6 +122,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         vendors=vendors,
         tools=tools,
         grant_ttl_seconds=settings.grant_ttl_seconds,
+        enforcement_mode=settings.enforcement_mode,
     )
     return Runtime(
         trust_plane=trust_plane,

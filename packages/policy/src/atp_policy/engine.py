@@ -11,7 +11,6 @@ from atp_core import (
     ReasonCode,
 )
 from atp_policy.base import PolicyContext, PolicySet
-from atp_policy.policies.payments import PaymentApprovalThresholdPolicy
 
 
 class PolicyEngine:
@@ -35,11 +34,13 @@ class PolicyEngine:
                 head.policy,
             )
             explanation = head.message
+            # Any policy may carry an ``approver_role``; the engine does not
+            # know policy classes.
             approver = next(
                 (
-                    p.approver_role
+                    str(getattr(p, "approver_role", "approver"))
                     for p in policy_set.policies
-                    if isinstance(p, PaymentApprovalThresholdPolicy) and p.ref == head.policy
+                    if p.ref == head.policy
                 ),
                 "approver",
             )
