@@ -57,7 +57,7 @@ testpaths = [
   "adapters/mcp/tests",
   "examples/finance-agent/tests",
 ]
-addopts = "-q --strict-markers --import-mode=importlib"
+addopts = "-q --strict-markers --import-mode=importlib --basetemp=.pytest-tmp"
 pythonpath = [
   "packages/core/tests",
   "packages/identity/tests",

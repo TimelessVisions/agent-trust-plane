@@ -13,7 +13,10 @@ from finance_agent.scenario import (
     DOC_AGENT,
     HUMAN,
     ORCHESTRATOR,
+    AgentIdentities,
     DelegationGraph,
+    DemoSeed,
+    issue_agent_credentials,
     seed_delegation_graph,
 )
 
@@ -27,12 +30,15 @@ __all__ = [
     "ORCHESTRATOR",
     "UNDER_LIMIT_INJECTED_INVOICE",
     "AgentBrain",
+    "AgentIdentities",
     "AgentRunResult",
     "AnthropicAgent",
     "DelegationGraph",
+    "DemoSeed",
     "Invoice",
     "ProposedAction",
     "SimulatedAgent",
+    "issue_agent_credentials",
     "run_accounts_payable",
     "seed_delegation_graph",
 ]

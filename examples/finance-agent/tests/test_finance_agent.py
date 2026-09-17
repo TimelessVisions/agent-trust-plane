@@ -20,7 +20,9 @@ from finance_agent.invoices import Invoice
 
 @pytest.fixture
 def client() -> Iterator[TrustPlaneClient]:
-    with TrustPlaneClient.for_app(create_app(GatewaySettings(database_path=":memory:"))) as c:
+    """Operator client over an in-process ephemeral gateway."""
+    app = create_app(GatewaySettings(database_path=":memory:"))
+    with TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key) as c:
         yield c
 
 
@@ -48,14 +50,14 @@ class TestSimulatedAgent:
 
 class TestWorkflow:
     def test_provenance_is_recorded_before_the_decision(self, client: TrustPlaneClient) -> None:
-        graph = seed_delegation_graph(client)
+        seed = seed_delegation_graph(client)
         result = run_accounts_payable(
-            client,
+            client.as_agent(seed.identities.accounts_payable_token),
             SimulatedAgent(),
             INJECTED_INVOICE,
             principal=HUMAN,
             agent=AP_AGENT,
-            delegation_grant_id=graph.accounts_payable,
+            delegation_grant_id=seed.graph.accounts_payable,
         )
         trace = client.get_trace(result.trace_id)
         types = [e["event_type"] for e in trace["events"]]
@@ -67,14 +69,14 @@ class TestWorkflow:
         assert "following the instruction" in env["provenance"]["agent_rationale"]
 
     def test_decision_block_matches_demo_contract(self, client: TrustPlaneClient) -> None:
-        graph = seed_delegation_graph(client)
+        seed = seed_delegation_graph(client)
         result = run_accounts_payable(
-            client,
+            client.as_agent(seed.identities.accounts_payable_token),
             SimulatedAgent(),
             INJECTED_INVOICE,
             principal=HUMAN,
             agent=AP_AGENT,
-            delegation_grant_id=graph.accounts_payable,
+            delegation_grant_id=seed.graph.accounts_payable,
         )
         block = result.decision_block()
         for needle in (

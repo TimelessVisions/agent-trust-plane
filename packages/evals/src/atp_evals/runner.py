@@ -15,11 +15,14 @@ if TYPE_CHECKING:
     from atp_gateway import Runtime
 
 
-def run_scenario(scenario: EvalScenario, client: TrustPlaneClient) -> EvalResult:
-    """Each scenario gets a fresh delegation graph so evals cannot interfere."""
+def run_scenario(scenario: EvalScenario, operator: TrustPlaneClient) -> EvalResult:
+    """Each scenario gets fresh agent credentials and a fresh delegation graph
+    so evals cannot interfere. ``operator`` must hold the operator key."""
     started = time.perf_counter()
-    graph = seed_delegation_graph(client)
-    ctx = EvalContext(client=client, graph=graph, brain=SimulatedAgent())
+    seed = seed_delegation_graph(operator)
+    ctx = EvalContext(
+        operator=operator, graph=seed.graph, identities=seed.identities, brain=SimulatedAgent()
+    )
     error: str | None = None
     explanation = ""
     try:
@@ -57,11 +60,11 @@ def run_scenario(scenario: EvalScenario, client: TrustPlaneClient) -> EvalResult
 
 
 def run_suite(
-    client: TrustPlaneClient, scenarios: tuple[EvalScenario, ...] = SCENARIOS
+    operator: TrustPlaneClient, scenarios: tuple[EvalScenario, ...] = SCENARIOS
 ) -> EvalReport:
     started = utcnow()
-    health = client.health()
-    results = tuple(run_scenario(s, client) for s in scenarios)
+    health = operator.health()
+    results = tuple(run_scenario(s, operator) for s in scenarios)
     return EvalReport(
         run_id=new_id("run"),
         started_at=started,
@@ -73,7 +76,7 @@ def run_suite(
 
 def run_suite_in_process(runtime: Runtime) -> EvalReport:
     """Run the suite against an existing gateway runtime through its real
-    HTTP routes, without a network."""
+    HTTP routes, without a network. Operator tooling: uses the runtime's key."""
     from atp_gateway import create_app
 
     app = create_app(runtime.settings, runtime=runtime)

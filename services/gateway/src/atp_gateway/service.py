@@ -34,7 +34,15 @@ from atp_core import (
 )
 from atp_gateway.grants import GrantClaims, GrantSigner, GrantStore, new_grant_claims
 from atp_gateway.tools import ToolRegistry
-from atp_identity import DelegationGrant, DelegationRequest, DelegationService, ResolvedChain
+from atp_identity import (
+    AuthenticatedAgent,
+    AuthError,
+    CredentialService,
+    DelegationGrant,
+    DelegationRequest,
+    DelegationService,
+    ResolvedChain,
+)
 from atp_policy import PolicyContext, PolicyEngine, PolicySetRegistry, VendorDirectory
 
 log = logging.getLogger("atp.gateway")
@@ -107,6 +115,7 @@ class TrustPlane:
         self,
         *,
         delegations: DelegationService,
+        credentials: CredentialService,
         traces: TraceStore,
         grants: GrantStore,
         signer: GrantSigner,
@@ -117,6 +126,7 @@ class TrustPlane:
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self.delegations = delegations
+        self.credentials = credentials
         self.traces = traces
         self.grants = grants
         self.signer = signer
@@ -132,26 +142,60 @@ class TrustPlane:
 
     # ------------------------------------------------------------ provenance
     def record_event(
-        self, trace_id: str, event_type: EventType, actor: str, payload: dict[str, Any]
+        self,
+        trace_id: str,
+        event_type: EventType,
+        caller: AuthenticatedAgent,
+        payload: dict[str, Any],
     ) -> TraceEvent:
+        """Agent-side provenance. The actor is always the authenticated agent;
+        callers cannot name a different actor."""
         if event_type not in AGENT_WRITABLE_EVENTS:
             raise ATPError(
                 ReasonCode.EVENT_TYPE_RESERVED,
                 f"event type '{event_type.value}' can only be written by the gateway",
             )
-        if actor.strip().lower() == GATEWAY_ACTOR:
-            raise ATPError(ReasonCode.EVENT_ACTOR_RESERVED, f"actor '{GATEWAY_ACTOR}' is reserved")
-        return self.traces.append(trace_id, event_type, actor, payload)
+        body = {**payload, "credential_id": caller.credential_id}
+        with self._lock:
+            return self.traces.append(trace_id, event_type, caller.agent.id, body)
+
+    # -------------------------------------------------------------- identity
+    def _bind_identity(self, envelope: ActionEnvelope, caller: AuthenticatedAgent) -> None:
+        """The authenticated agent must be the envelope's acting agent. A
+        mismatch with a *valid* credential is recorded: it is an authenticated
+        party attempting to act as someone else."""
+        if caller.agent != envelope.agent:
+            self.traces.append(
+                envelope.trace_id,
+                EventType.IDENTITY_REJECTED,
+                GATEWAY_ACTOR,
+                {
+                    "authenticated_agent": caller.agent.model_dump(mode="json"),
+                    "credential_id": caller.credential_id,
+                    "claimed_agent": envelope.agent.model_dump(mode="json"),
+                    "envelope_id": envelope.envelope_id,
+                    "reason_code": ReasonCode.AGENT_IDENTITY_MISMATCH.value,
+                },
+            )
+            raise AuthError(
+                ReasonCode.AGENT_IDENTITY_MISMATCH,
+                f"authenticated as {caller.agent} but the envelope claims to be {envelope.agent}",
+            )
 
     # ------------------------------------------------------------- authorize
     def authorize(
-        self, envelope: ActionEnvelope, *, policy_set_version: str | None = None
+        self,
+        envelope: ActionEnvelope,
+        caller: AuthenticatedAgent,
+        *,
+        policy_set_version: str | None = None,
     ) -> AuthorizationResult:
         with self._lock:
-            return self._authorize(envelope, policy_set_version)
+            self._bind_identity(envelope, caller)
+            return self._authorize(envelope, caller, policy_set_version)
 
     def _authorize(
-        self, envelope: ActionEnvelope, policy_set_version: str | None
+        self, envelope: ActionEnvelope, caller: AuthenticatedAgent, policy_set_version: str | None
     ) -> AuthorizationResult:
         now = self.clock()
         policy_set = self.policy_sets.get(policy_set_version)
@@ -161,7 +205,11 @@ class TrustPlane:
             trace_id,
             EventType.ACTION_PROPOSED,
             envelope.agent.id,
-            {"envelope": envelope.model_dump(mode="json"), "action_hash": envelope.action_hash},
+            {
+                "envelope": envelope.model_dump(mode="json"),
+                "action_hash": envelope.action_hash,
+                "credential_id": caller.credential_id,
+            },
         )
 
         authority: EffectiveAuthority | None = None
@@ -261,11 +309,16 @@ class TrustPlane:
         )
 
     # --------------------------------------------------------------- execute
-    def execute(self, envelope: ActionEnvelope, grant_token: str | None) -> ExecutionResult:
+    def execute(
+        self, envelope: ActionEnvelope, grant_token: str | None, caller: AuthenticatedAgent
+    ) -> ExecutionResult:
         with self._lock:
-            return self._execute(envelope, grant_token)
+            self._bind_identity(envelope, caller)
+            return self._execute(envelope, grant_token, caller)
 
-    def _execute(self, envelope: ActionEnvelope, grant_token: str | None) -> ExecutionResult:
+    def _execute(
+        self, envelope: ActionEnvelope, grant_token: str | None, caller: AuthenticatedAgent
+    ) -> ExecutionResult:
         now = self.clock()
         trace_id = envelope.trace_id
         self.traces.append(
@@ -276,10 +329,16 @@ class TrustPlane:
                 "envelope_id": envelope.envelope_id,
                 "action_hash": envelope.action_hash,
                 "grant_presented": grant_token is not None,
+                "credential_id": caller.credential_id,
             },
         )
         try:
             claims = self._verify_grant(envelope, grant_token, now)
+            if claims.agent_id != caller.agent.id:
+                raise GrantError(
+                    ReasonCode.GRANT_AUDIENCE_MISMATCH,
+                    "execution grant was issued to a different agent",
+                )
             # Authority can be revoked between authorize and execute; check again.
             self.delegations.resolve(
                 envelope.delegation_grant_id,
@@ -467,10 +526,14 @@ class TrustPlane:
 
     # ----------------------------------------------------------- delegations
     def issue_delegation(self, request: DelegationRequest) -> DelegationGrant:
-        return self.delegations.issue(request, now=self.clock())
+        with self._lock:
+            return self.delegations.issue(request, now=self.clock())
 
     def revoke_delegation(self, grant_id: str) -> DelegationGrant:
-        return self.delegations.revoke(grant_id, now=self.clock())
+        # Under the same lock as execute so a revocation cannot land between
+        # the delegation re-check and the grant consumption.
+        with self._lock:
+            return self.delegations.revoke(grant_id, now=self.clock())
 
     def get_delegation(self, grant_id: str) -> DelegationGrant:
         grant = self.delegations.store.get(grant_id)

@@ -2,6 +2,7 @@
 
 Sequence for one task:
 
+0. the client is authenticated as the agent (bearer credential)
 1. record ``task_received``
 2. open the invoice and record ``external_content_ingested`` (untrusted, hashed)
 3. ask the brain for a proposal
@@ -108,7 +109,6 @@ def run_accounts_payable(
     client.record_event(
         trace_id,
         "task_received",
-        agent.id,
         {"task_id": task_id, "task": task, "principal": principal.model_dump(mode="json")},
     )
 
@@ -123,7 +123,6 @@ def run_accounts_payable(
     client.record_event(
         trace_id,
         "external_content_ingested",
-        agent.id,
         {"source": source.model_dump(mode="json"), "characters": len(invoice.raw_text)},
     )
 

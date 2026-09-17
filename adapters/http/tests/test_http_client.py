@@ -10,7 +10,9 @@ from atp_gateway import GatewaySettings, create_app
 
 @pytest.fixture
 def client() -> Iterator[TrustPlaneClient]:
-    with TrustPlaneClient.for_app(create_app(GatewaySettings(database_path=":memory:"))) as c:
+    """Operator client over an in-process ephemeral gateway."""
+    app = create_app(GatewaySettings(database_path=":memory:"))
+    with TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key) as c:
         yield c
 
 

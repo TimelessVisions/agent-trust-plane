@@ -19,9 +19,13 @@ from atp_gateway.tools import (
     ToolRegistry,
 )
 from atp_identity import (
+    CredentialService,
+    CredentialStore,
     DelegationService,
     DelegationStore,
+    InMemoryCredentialStore,
     InMemoryDelegationStore,
+    SqliteCredentialStore,
     SqliteDelegationStore,
 )
 from atp_policy import InMemoryVendorDirectory, PolicySetRegistry, Vendor
@@ -68,6 +72,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     delegation_store: DelegationStore
     trace_store: TraceStore
     grant_store: GrantStore
+    credential_store: CredentialStore
     ledger: PaymentLedger
     reports: EvalReportStore
 
@@ -76,6 +81,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         delegation_store = InMemoryDelegationStore()
         trace_store = InMemoryTraceStore()
         grant_store = InMemoryGrantStore()
+        credential_store = InMemoryCredentialStore()
         ledger = InMemoryPaymentLedger()
         reports = InMemoryEvalReportStore()
     else:
@@ -87,6 +93,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         delegation_store = SqliteDelegationStore(conn)
         trace_store = SqliteTraceStore(conn)
         grant_store = SqliteGrantStore(conn)
+        credential_store = SqliteCredentialStore(conn)
         ledger = SqlitePaymentLedger(conn)
         reports = SqliteEvalReportStore(conn)
 
@@ -100,6 +107,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
 
     trust_plane = TrustPlane(
         delegations=DelegationService(delegation_store),
+        credentials=CredentialService(credential_store),
         traces=trace_store,
         grants=grant_store,
         signer=GrantSigner(settings.signing_key_bytes()),

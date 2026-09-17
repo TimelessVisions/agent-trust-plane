@@ -91,26 +91,66 @@ class TrustPlaneClient:
         *,
         timeout: float = 10.0,
         operator_key: str | None = None,
+        agent_token: str | None = None,
     ) -> None:
         self._http = httpx.Client(base_url=base_url, timeout=timeout)
         self._operator_key = operator_key
+        self._agent_token = agent_token
 
     @classmethod
-    def for_app(cls, app: Any, *, operator_key: str | None = None) -> TrustPlaneClient:
+    def for_app(
+        cls, app: Any, *, operator_key: str | None = None, agent_token: str | None = None
+    ) -> TrustPlaneClient:
         """In-process client over an ASGI app (no sockets, real routing)."""
         client = cls.__new__(cls)
         client._http = httpx.Client(
             transport=_SyncASGITransport(app), base_url="http://trust-plane"
         )
         client._operator_key = operator_key
+        client._agent_token = agent_token
         return client
 
     @classmethod
-    def from_http(cls, http: httpx.Client, *, operator_key: str | None = None) -> TrustPlaneClient:
+    def from_http(
+        cls, http: httpx.Client, *, operator_key: str | None = None, agent_token: str | None = None
+    ) -> TrustPlaneClient:
         client = cls.__new__(cls)
         client._http = http
         client._operator_key = operator_key
+        client._agent_token = agent_token
         return client
+
+    def as_agent(self, agent_token: str) -> TrustPlaneClient:
+        """A client sharing this transport but authenticating as an agent.
+        Operator privileges are deliberately not carried over."""
+        client = TrustPlaneClient.__new__(TrustPlaneClient)
+        client._http = self._http
+        client._operator_key = None
+        client._agent_token = agent_token
+        return client
+
+    def as_operator(self, operator_key: str) -> TrustPlaneClient:
+        client = TrustPlaneClient.__new__(TrustPlaneClient)
+        client._http = self._http
+        client._operator_key = operator_key
+        client._agent_token = None
+        return client
+
+    def with_operator(self, operator_key: str) -> TrustPlaneClient:
+        """Keep the agent identity and add operator privileges (operator tooling only)."""
+        client = TrustPlaneClient.__new__(TrustPlaneClient)
+        client._http = self._http
+        client._operator_key = operator_key
+        client._agent_token = self._agent_token
+        return client
+
+    @property
+    def agent_token(self) -> str | None:
+        return self._agent_token
+
+    @property
+    def operator_key(self) -> str | None:
+        return self._operator_key
 
     def close(self) -> None:
         self._http.close()
@@ -123,7 +163,12 @@ class TrustPlaneClient:
 
     # ---------------------------------------------------------------- helpers
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        response = self._http.request(method, path, **kwargs)
+        headers: dict[str, str] = dict(kwargs.pop("headers", None) or {})
+        if self._agent_token:
+            headers.setdefault("Authorization", f"Bearer {self._agent_token}")
+        if self._operator_key:
+            headers.setdefault("X-ATP-Operator-Key", self._operator_key)
+        response = self._http.request(method, path, headers=headers, **kwargs)
         if response.status_code >= 400:
             try:
                 body = response.json()
@@ -141,17 +186,8 @@ class TrustPlaneClient:
         self, envelope: ActionEnvelope, *, policy_set_version: str | None = None
     ) -> AuthorizeResponse:
         params = {"policy_set_version": policy_set_version} if policy_set_version else None
-        headers = (
-            {"X-ATP-Operator-Key": self._operator_key}
-            if policy_set_version and self._operator_key
-            else None
-        )
         data = self._request(
-            "POST",
-            "/authorize",
-            json=envelope.model_dump(mode="json"),
-            params=params,
-            headers=headers,
+            "POST", "/authorize", json=envelope.model_dump(mode="json"), params=params
         )
         return AuthorizeResponse.model_validate(data)
 
@@ -167,13 +203,30 @@ class TrustPlaneClient:
         return ExecuteResponse.model_validate(data)
 
     def record_event(
-        self, trace_id: str, event_type: str, actor: str, payload: dict[str, Any]
+        self, trace_id: str, event_type: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
+        """Record provenance as the authenticated agent."""
         result: dict[str, Any] = self._request(
             "POST",
             f"/traces/{trace_id}/events",
-            json={"event_type": event_type, "actor": actor, "payload": payload},
+            json={"event_type": event_type, "payload": payload},
         )
+        return result
+
+    # ----------------------------------------------------------- credentials
+    def issue_credential(
+        self, agent: dict[str, str], label: str, expires_at: str | None = None
+    ) -> dict[str, Any]:
+        """Operator-only. The returned token is shown once."""
+        result: dict[str, Any] = self._request(
+            "POST",
+            f"/agents/{agent['id']}/credentials",
+            json={"agent": agent, "label": label, "expires_at": expires_at},
+        )
+        return result
+
+    def revoke_credential(self, credential_id: str) -> dict[str, Any]:
+        result: dict[str, Any] = self._request("POST", f"/credentials/{credential_id}/revoke")
         return result
 
     def get_trace(self, trace_id: str) -> dict[str, Any]:
@@ -196,6 +249,10 @@ class TrustPlaneClient:
 
     def revoke_delegation(self, grant_id: str) -> dict[str, Any]:
         result: dict[str, Any] = self._request("POST", f"/delegations/{grant_id}/revoke")
+        return result
+
+    def run_evals(self) -> dict[str, Any]:
+        result: dict[str, Any] = self._request("POST", "/evals/run")
         return result
 
     def ledger(self) -> list[dict[str, Any]]:

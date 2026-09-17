@@ -12,6 +12,7 @@ from atp_core import ATPError, DelegationError, GrantError, ReasonCode
 from atp_gateway.api import router
 from atp_gateway.settings import GatewaySettings
 from atp_gateway.wiring import Runtime, build_runtime
+from atp_identity import AuthError
 
 _NOT_FOUND = {
     ReasonCode.TRACE_NOT_FOUND,
@@ -20,12 +21,29 @@ _NOT_FOUND = {
 }
 
 
+_UNAUTHENTICATED = {
+    ReasonCode.AGENT_CREDENTIAL_MISSING,
+    ReasonCode.AGENT_CREDENTIAL_INVALID,
+    ReasonCode.AGENT_CREDENTIAL_REVOKED,
+    ReasonCode.AGENT_CREDENTIAL_EXPIRED,
+}
+_FORBIDDEN = {
+    ReasonCode.AGENT_IDENTITY_MISMATCH,
+    ReasonCode.OPERATOR_KEY_REQUIRED,
+    ReasonCode.POLICY_SET_OVERRIDE_FORBIDDEN,
+}
+
+
 def _status_for(exc: ATPError) -> int:
+    if exc.reason_code in _UNAUTHENTICATED:
+        return 401
+    if exc.reason_code in _FORBIDDEN or isinstance(exc, AuthError):
+        return 403
     if exc.reason_code in _NOT_FOUND:
         return 404
     if isinstance(exc, DelegationError):
         return 422
-    if isinstance(exc, GrantError) or exc.reason_code is ReasonCode.POLICY_SET_OVERRIDE_FORBIDDEN:
+    if isinstance(exc, GrantError):
         return 403
     return 409
 
@@ -69,9 +87,12 @@ def create_app(settings: GatewaySettings | None = None, runtime: Runtime | None 
 
     @app.exception_handler(ATPError)
     async def _atp_error(_: Request, exc: ATPError) -> JSONResponse:
+        status = _status_for(exc)
+        headers = {"WWW-Authenticate": "Bearer"} if status == 401 else None
         return JSONResponse(
-            status_code=_status_for(exc),
+            status_code=status,
             content={"reason_code": exc.reason_code.value, "message": exc.message},
+            headers=headers,
         )
 
     app.include_router(router)

@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from atp_adapter_http import TrustPlaneClient
+from atp_adapter_http import GatewayError, TrustPlaneClient
 from atp_evals.runner import format_report, run_suite
 
 
@@ -38,7 +38,16 @@ def main() -> None:
         client = TrustPlaneClient.for_app(app, operator_key=app.state.runtime.operator_key)
 
     with client:
-        report = run_suite(client)
+        try:
+            report = run_suite(client)
+        except GatewayError as exc:
+            if exc.reason_code in {"OPERATOR_KEY_REQUIRED", "POLICY_SET_OVERRIDE_FORBIDDEN"}:
+                sys.exit(
+                    "The eval suite is operator tooling: it issues agent credentials and "
+                    "selects policy sets. Pass --operator-key or set ATP_OPERATOR_KEY to the "
+                    f"gateway's key. ({exc})"
+                )
+            raise
 
     print(format_report(report))
     if args.report:

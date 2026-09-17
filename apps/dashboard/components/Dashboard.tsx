@@ -41,6 +41,25 @@ export default function Dashboard() {
   const [replayVersion, setReplayVersion] = useState<string>("");
   const [replaying, setReplaying] = useState(false);
   const [replay, setReplay] = useState<ReplayResult | null>(null);
+  // Operator key lives in this tab only (sessionStorage); it is never sent
+  // anywhere except as a header on operator-only calls.
+  const [operatorKey, setOperatorKeyState] = useState<string>("");
+  const setOperatorKey = useCallback((v: string) => {
+    setOperatorKeyState(v);
+    try {
+      sessionStorage.setItem("atp.operatorKey", v);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("atp.operatorKey");
+      if (saved) setOperatorKeyState(saved);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
 
   const loadTraces = useCallback(async () => {
     try {
@@ -90,7 +109,7 @@ export default function Dashboard() {
   const runEvals = useCallback(async () => {
     setRunning(true);
     try {
-      const rep = await api.runEvals();
+      const rep = await api.runEvals(operatorKey);
       setReport(rep);
       const primary = rep.results.find((r) => r.eval_id === PRIMARY_EVAL)?.primary_trace_id;
       if (primary) await selectTrace(primary);
@@ -101,7 +120,7 @@ export default function Dashboard() {
     } finally {
       setRunning(false);
     }
-  }, [loadTraces, selectTrace]);
+  }, [loadTraces, selectTrace, operatorKey]);
 
   const onSelectEval = useCallback(
     (r: EvalResult) => {
@@ -142,6 +161,8 @@ export default function Dashboard() {
           onRun={runEvals}
           selectedTraceId={selectedId}
           onSelect={onSelectEval}
+          operatorKey={operatorKey}
+          onOperatorKey={setOperatorKey}
         />
         <div className="grid">
           <div className="stack">

@@ -12,6 +12,7 @@ from atp_core import canonical_hash
 class EventType(StrEnum):
     TASK_RECEIVED = "task_received"
     EXTERNAL_CONTENT_INGESTED = "external_content_ingested"
+    IDENTITY_REJECTED = "identity_rejected"
     ACTION_PROPOSED = "action_proposed"
     DELEGATION_RESOLVED = "delegation_resolved"
     DELEGATION_RESOLUTION_FAILED = "delegation_resolution_failed"

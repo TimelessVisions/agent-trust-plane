@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atp_audit import EventType
-from atp_core import ActionEnvelope, PolicyRef
+from atp_core import ActionEnvelope, PolicyRef, PrincipalRef
 
 
 class ExecuteRequest(BaseModel):
@@ -29,11 +30,45 @@ class ReplayRequest(BaseModel):
 
 
 class TraceEventRequest(BaseModel):
+    """Agent-side provenance. There is no ``actor`` field: the actor is the
+    authenticated agent, always."""
+
     model_config = ConfigDict(extra="forbid")
 
     event_type: EventType
-    actor: str = Field(min_length=1, max_length=128)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class CredentialIssueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent: PrincipalRef
+    label: str = Field(min_length=1, max_length=200)
+    expires_at: datetime | None = None
+
+
+class CredentialIssued(BaseModel):
+    """Returned exactly once. The token is not stored and cannot be retrieved."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    credential_id: str
+    agent: PrincipalRef
+    label: str
+    issued_at: datetime
+    expires_at: datetime | None
+    token: str
+
+
+class CredentialView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    credential_id: str
+    agent: PrincipalRef
+    label: str
+    issued_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
 
 
 class PolicySetView(BaseModel):

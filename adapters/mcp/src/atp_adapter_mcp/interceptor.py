@@ -87,6 +87,9 @@ class AgentContext(BaseModel):
 
 
 class McpInterceptor:
+    """``client`` must be authenticated as the agent named in ``AgentContext``;
+    the gateway rejects the call otherwise."""
+
     def __init__(self, client: TrustPlaneClient, mappings: list[ToolMapping]) -> None:
         self._client = client
         self._mappings = {m.mcp_tool: m for m in mappings}

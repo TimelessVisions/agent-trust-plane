@@ -59,14 +59,19 @@ def main() -> None:
     args = parser.parse_args()
 
     client = _make_client(args.gateway)
-    graph = seed_delegation_graph(client)
+    seed = seed_delegation_graph(client)
+    # The agent acts with its own credential only. A policy-set override is an
+    # operator action, so it is the one case where the operator key rides along.
+    agent_client = client.as_agent(seed.identities.accounts_payable_token)
+    if args.policy_set and client.operator_key:
+        agent_client = agent_client.with_operator(client.operator_key)
     result = run_accounts_payable(
-        client,
+        agent_client,
         _make_brain(args.brain),
         SCENARIOS[args.scenario],
         principal=HUMAN,
         agent=AP_AGENT,
-        delegation_grant_id=graph.accounts_payable,
+        delegation_grant_id=seed.graph.accounts_payable,
         policy_set_version=args.policy_set,
     )
     if args.json:

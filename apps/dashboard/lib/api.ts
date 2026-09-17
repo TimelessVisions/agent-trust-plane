@@ -237,7 +237,12 @@ export const api = {
   trace: (id: string) => request<TraceView>(`/traces/${id}`),
   ledger: () => request<Record<string, unknown>[]>("/ledger/payments"),
   evalResults: () => request<EvalReport | { status: "never_run"; results: [] }>("/evals/results"),
-  runEvals: () => request<EvalReport>("/evals/run", { method: "POST" }),
+  /** Operator-only. The key is sent as a header and never stored server-side or logged. */
+  runEvals: (operatorKey: string) =>
+    request<EvalReport>("/evals/run", {
+      method: "POST",
+      headers: { "X-ATP-Operator-Key": operatorKey },
+    }),
   replay: (id: string, policySetVersion: string | null) =>
     request<ReplayResult>(`/replay/${id}`, {
       method: "POST",

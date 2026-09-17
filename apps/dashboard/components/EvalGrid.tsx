@@ -17,12 +17,16 @@ export default function EvalGrid({
   onRun,
   selectedTraceId,
   onSelect,
+  operatorKey,
+  onOperatorKey,
 }: {
   report: EvalReport | null;
   running: boolean;
   onRun: () => void;
   selectedTraceId: string | null;
   onSelect: (result: EvalResult) => void;
+  operatorKey: string;
+  onOperatorKey: (v: string) => void;
 }) {
   const byId = new Map((report?.results ?? []).map((r) => [r.eval_id, r]));
   const passed = report ? report.results.filter((r) => r.status === "PASS").length : 0;
@@ -37,7 +41,16 @@ export default function EvalGrid({
               ? `${passed}/${report.results.length} passed · run ${report.run_id.slice(-8)}`
               : "never run against this gateway"}
           </span>
-          <button className="primary" onClick={onRun} disabled={running}>
+          <input
+            className="key-input"
+            type="password"
+            autoComplete="off"
+            placeholder="operator key (ATP_OPERATOR_KEY)"
+            value={operatorKey}
+            onChange={(e) => onOperatorKey(e.target.value)}
+            aria-label="Operator key"
+          />
+          <button className="primary" onClick={onRun} disabled={running || !operatorKey}>
             {running ? "Running…" : "Run eval suite"}
           </button>
         </div>
