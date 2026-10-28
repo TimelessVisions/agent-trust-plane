@@ -3,6 +3,7 @@
 A separate process polls the existing append-only trace store. It does not
 participate in authorize/execute and never changes the decision or grants.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,8 +70,7 @@ class AlertJournal:
         """Atomic claim for a single trace, even with two active watchers."""
         with self._conn:
             cur = self._conn.execute(
-                "INSERT OR IGNORE INTO photon_attempts (trace_id, status) "
-                "VALUES (?, 'unknown')",
+                "INSERT OR IGNORE INTO photon_attempts (trace_id, status) VALUES (?, 'unknown')",
                 (trace_id,),
             )
         return cur.rowcount == 1
