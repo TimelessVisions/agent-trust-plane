@@ -558,7 +558,6 @@ def _cmd_mcp_wrap(args: argparse.Namespace) -> int:
     )
 
 
-
 def _cmd_photon_notify(args: argparse.Namespace) -> int:
     """Send one explicit, read-only alert; never modify authorization state."""
     from atp_cli.photon import (
@@ -568,15 +567,13 @@ def _cmd_photon_notify(args: argparse.Namespace) -> int:
         denial_alert,
     )
 
+    from atp_core import ATPError
+
     runtime = _open_home(args.home)
     try:
         try:
             view = runtime.trust_plane.get_trace(args.trace)
-        except Exception as exc:
-            from atp_core import ATPError
-
-            if not isinstance(exc, ATPError):
-                raise
+        except ATPError as exc:
             raise UsageError(f"trace {args.trace}: {exc.message}") from exc
         try:
             message = denial_alert(view)
