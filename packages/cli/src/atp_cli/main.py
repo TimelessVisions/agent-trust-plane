@@ -558,6 +558,50 @@ def _cmd_mcp_wrap(args: argparse.Namespace) -> int:
     )
 
 
+
+def _cmd_photon_notify(args: argparse.Namespace) -> int:
+    """Send one explicit, read-only alert; never modify authorization state."""
+    from atp_cli.photon import (
+        PhotonAlertError,
+        PhotonClient,
+        PhotonCredentials,
+        denial_alert,
+    )
+
+    runtime = _open_home(args.home)
+    try:
+        try:
+            view = runtime.trust_plane.get_trace(args.trace)
+        except Exception as exc:
+            from atp_core import ATPError
+
+            if not isinstance(exc, ATPError):
+                raise
+            raise UsageError(f"trace {args.trace}: {exc.message}") from exc
+        try:
+            message = denial_alert(view)
+        except PhotonAlertError as exc:
+            raise UsageError(str(exc)) from exc
+    finally:
+        runtime.close()
+
+    if args.dry_run:
+        print("DRY RUN (no Photon request)\n" + message)
+        return 0
+
+    credentials = PhotonCredentials(
+        project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
+        api_key=os.environ.get("PHOTON_API_KEY", ""),
+        agent_user_id=os.environ.get("PHOTON_AGENT_USER_ID", ""),
+    )
+    try:
+        message_id = PhotonClient(credentials).send_denial(args.to, args.trace, message)
+    except PhotonAlertError as exc:
+        raise UsageError(str(exc)) from exc
+    print(f"Photon accepted message {message_id}; delivery is not yet confirmed")
+    return 0
+
+
 # ---------------------------------------------------------------- parser
 def _home_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--home", help="ATP home directory (default: $ATP_HOME or ./.atp)")
@@ -720,6 +764,15 @@ def build_parser() -> argparse.ArgumentParser:
     evf = esub.add_parser("verify")
     evf.add_argument("file")
     evf.set_defaults(func=_cmd_evidence_verify)
+
+    photon = sub.add_parser("photon", help="read-only Photon iMessage denial notifications")
+    photon_sub = photon.add_subparsers(dest="photon_command", required=True)
+    pn = photon_sub.add_parser("notify", help="send a verified enforced DENY trace to iMessage")
+    pn.add_argument("trace", help="trace identifier in the local ATP store")
+    pn.add_argument("--to", required=True, help="destination E.164 phone number")
+    pn.add_argument("--dry-run", action="store_true", help="preview without credentials or network")
+    _home_arg(pn)
+    pn.set_defaults(func=_cmd_photon_notify)
 
     s = sub.add_parser("serve", help="run a persistent HTTP gateway (needs .env keys)")
     s.add_argument("--host", default="127.0.0.1")
