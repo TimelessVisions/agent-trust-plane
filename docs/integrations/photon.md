@@ -24,15 +24,15 @@ https://photon.codes/blog/introducing-photon-2.0
 PowerShell, from the root of the ATP repository:
 
 ```powershell
-uv run atp demo wrap
-uv run atp trace list
+uv run atp demo wrap --out photon-demo
+uv run atp trace list --home photon-demo/.atp
 ```
 
 Choose an actual enforced DENY trace from the list (not ALLOW or WOULD_DENY).
 Substitute its ID. The dry run **does not need** any Photon credentials.
 
 ```powershell
-uv run atp photon notify TRACE_ID --to +12125550123 --dry-run
+uv run atp photon notify TRACE_ID --to +12125550123 --home photon-demo/.atp --dry-run
 ```
 
 Once the privacy-limited preview is correct, set the following process
@@ -43,7 +43,7 @@ copying their real values into chat, screenshots, or version control:
 $env:PHOTON_PROJECT_ID = "YOUR_PHOTON_PROJECT_ID"
 $env:PHOTON_API_KEY = "YOUR_SERVER_SIDE_PROJECT_KEY"
 $env:PHOTON_AGENT_USER_ID = "YOUR_IMESSAGE_AGENT_USER_ID"
-uv run atp photon notify TRACE_ID --to +12125550123
+uv run atp photon notify TRACE_ID --to +12125550123 --home photon-demo/.atp
 ```
 
 The command creates or resolves the recipient User and conversation Space and
