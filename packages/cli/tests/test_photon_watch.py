@@ -35,10 +35,7 @@ class StubPlane:
         )
 
     def list_traces(self, limit: int = 500) -> list[Any]:
-        return [
-            SimpleNamespace(trace_id=trace_id)
-            for trace_id in list(self.traces)[-limit:][::-1]
-        ]
+        return [SimpleNamespace(trace_id=trace_id) for trace_id in list(self.traces)[-limit:][::-1]]
 
     def get_trace(self, trace_id: str) -> Any:
         return self.traces[trace_id]
@@ -126,11 +123,17 @@ def test_ambiguous_send_is_never_retried(tmp_path: Path) -> None:
         plane.add("trc_uncertain1")
         client = StubClient(fail=True)
         assert process_new_denials(
-            plane, journal, client, "+12125550123"  # type: ignore[arg-type]
+            plane,
+            journal,
+            client,
+            "+12125550123",  # type: ignore[arg-type]
         ) == (0, 1)
         assert journal.status("trc_uncertain1") == "unknown"
         assert process_new_denials(
-            plane, journal, client, "+12125550123"  # type: ignore[arg-type]
+            plane,
+            journal,
+            client,
+            "+12125550123",  # type: ignore[arg-type]
         ) == (0, 0)
         assert client.sent == ["trc_uncertain1"]
     finally:
