@@ -129,7 +129,10 @@ class PhotonClient:
                 "platform": "imessage",
                 "participantIds": [self.credentials.agent_user_id, customer_id],
             },
-            request_key=f"atp:{self.credentials.project_id}:space:{self.credentials.agent_user_id}:{customer_id}",
+            request_key=(
+                f"atp:{self.credentials.project_id}:space:"
+                f"{self.credentials.agent_user_id}:{customer_id}"
+            ),
         )
         space_id = space.get("id")
         if not isinstance(space_id, str) or not ID_RE.fullmatch(space_id):
