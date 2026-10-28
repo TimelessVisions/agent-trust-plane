@@ -598,6 +598,40 @@ def _cmd_photon_notify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_photon_watch(args: argparse.Namespace) -> int:
+    """Opt-in watcher: alert on *new* integrity-verified enforced denials."""
+    from atp_cli.home import AtpHome
+    from atp_cli.photon import PhotonAlertError, PhotonClient, PhotonCredentials
+    from atp_cli.photon_watch import watch
+
+    credentials = PhotonCredentials(
+        project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
+        api_key=os.environ.get("PHOTON_API_KEY", ""),
+        agent_user_id=os.environ.get("PHOTON_AGENT_USER_ID", ""),
+    )
+    try:
+        client = PhotonClient(credentials)
+    except PhotonAlertError as exc:
+        raise UsageError(str(exc)) from exc
+    home = AtpHome(args.home)
+    runtime = _open_home(args.home)
+    try:
+        try:
+            watch(
+                trust_plane=runtime.trust_plane,
+                home=home.path,
+                client=client,
+                recipient=args.to,
+                poll_seconds=args.poll_seconds,
+                once=args.once,
+            )
+        except PhotonAlertError as exc:
+            raise UsageError(str(exc)) from exc
+    finally:
+        runtime.close()
+    return 0
+
+
 # ---------------------------------------------------------------- parser
 def _home_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--home", help="ATP home directory (default: $ATP_HOME or ./.atp)")
@@ -769,6 +803,14 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("--dry-run", action="store_true", help="preview without credentials or network")
     _home_arg(pn)
     pn.set_defaults(func=_cmd_photon_notify)
+
+
+    pw = photon_sub.add_parser("watch", help="alert on new denials (opt-in, outbound only)")
+    pw.add_argument("--to", required=True, help="destination E.164 phone number")
+    pw.add_argument("--poll-seconds", type=float, default=3.0)
+    pw.add_argument("--once", action="store_true", help="scan once, then exit")
+    _home_arg(pw)
+    pw.set_defaults(func=_cmd_photon_watch)
 
     s = sub.add_parser("serve", help="run a persistent HTTP gateway (needs .env keys)")
     s.add_argument("--host", default="127.0.0.1")
