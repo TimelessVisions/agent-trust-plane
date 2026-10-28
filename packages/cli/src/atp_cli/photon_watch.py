@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from atp_cli.photon import PhotonAlertError, PhotonClient, denial_alert
+from atp_cli.photon import PHONE_RE, PhotonAlertError, PhotonClient, denial_alert
 
 
 class AlertJournal:
@@ -55,7 +55,8 @@ class AlertJournal:
                     "INSERT INTO photon_meta (key, value) VALUES ('target', ?)", (target,)
                 )
                 self._conn.executemany(
-                    "INSERT OR IGNORE INTO photon_attempts (trace_id, status) VALUES (?, 'baseline')",
+                    "INSERT OR IGNORE INTO photon_attempts "
+                    "(trace_id, status) VALUES (?, 'baseline')",
                     [(trace_id,) for trace_id in traces],
                 )
             self._conn.commit()
@@ -128,6 +129,8 @@ def watch(
     once: bool = False,
 ) -> None:
     """Start from *now*, not from historic denials. Ctrl+C stops the process."""
+    if not PHONE_RE.fullmatch(recipient):
+        raise PhotonAlertError("recipient must be a valid E.164 phone number")
     if not 1.0 <= poll_seconds <= 60.0:
         raise PhotonAlertError("poll interval must be between 1 and 60 seconds")
     home.mkdir(parents=True, exist_ok=True)
