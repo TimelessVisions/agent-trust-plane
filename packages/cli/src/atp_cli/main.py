@@ -804,7 +804,6 @@ def build_parser() -> argparse.ArgumentParser:
     _home_arg(pn)
     pn.set_defaults(func=_cmd_photon_notify)
 
-
     pw = photon_sub.add_parser("watch", help="alert on new denials (opt-in, outbound only)")
     pw.add_argument("--to", required=True, help="destination E.164 phone number")
     pw.add_argument("--poll-seconds", type=float, default=3.0)
