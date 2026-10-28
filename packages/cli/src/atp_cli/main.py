@@ -566,7 +566,6 @@ def _cmd_photon_notify(args: argparse.Namespace) -> int:
         PhotonCredentials,
         denial_alert,
     )
-
     from atp_core import ATPError
 
     runtime = _open_home(args.home)
