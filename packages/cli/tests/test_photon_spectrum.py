@@ -90,7 +90,7 @@ def test_telegram_client_sends_to_numeric_user_id(
 
     monkeypatch.setattr(sdk.subprocess, "run", fake_run)
     client = sdk.SpectrumClient(channel="telegram")
-    assert client.credentials.project_id.endswith(":spectrum:telegram")
+    assert client.credentials.project_id.endswith(":telegram")
     assert client.send_denial("123456789", "trc_test123", "approved alert") == (
         "spectrum-request-trc_test123"
     )
