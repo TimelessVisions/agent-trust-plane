@@ -10,6 +10,77 @@ blocks, executes, or audits tool calls.
 Photon 2.0 uses a project-scoped API with Users, Spaces, and Messages:
 https://photon.codes/blog/introducing-photon-2.0
 
+## Mac / Spectrum Cloud: verified first-device delivery
+
+The initial source-branch Spectrum SDK sender successfully delivered one
+privacy-minimal enforced-denial test notification to a registered iPhone.
+The next milestone is **automatic** delivery through the opt-in watcher.
+
+This uses `SPECTRUM_PROJECT_ID` and `SPECTRUM_PROJECT_SECRET` (the two
+credentials displayed in Spectrum > Configure), **not** the REST
+`PHOTON_API_KEY`. Do not paste the project secret into chat or commit it.
+On the Free plan, a registered user can receive messages over a shared
+iMessage number; a paid dedicated line is not required.
+
+In macOS Terminal/zsh, using the existing ATP source checkout and the same
+Terminal session where the Spectrum environment variables were exported:
+
+```bash
+cd ~/Projects/agent-trust-plane
+git pull --ff-only origin feat/photon-denial-alerts
+
+# Confirm credentials are present without printing their values.
+[[ -n "$SPECTRUM_PROJECT_ID" && -n "$SPECTRUM_PROJECT_SECRET" ]] \
+  && echo "Spectrum credentials ready"
+
+# Existing verified DENY trace; this command only previews.
+uv run --python 3.12 atp photon notify 972d18d90f9e \
+  --to +12125550123 --home photon-demo/.atp --dry-run
+```
+
+Replace the example number and trace ID with a permitted recipient and a
+real verified trace in your own local home. To send an alert explicitly,
+remove `--dry-run`; sending may be duplicated if you repeat it manually.
+
+### Automatic local demonstration (two terminal windows)
+
+Window A, after exporting your Spectrum credentials to that shell:
+
+```bash
+cd ~/Projects/agent-trust-plane
+uv run --python 3.12 atp photon watch \
+  --transport spectrum \
+  --to +12125550123 \
+  --home photon-demo/.atp
+```
+
+On first initialization it prints that existing traces are skipped. Leave
+the watcher running. Now open window B and generate a **new** denial in the
+same ATP home by rerunning the deterministic MCP demo:
+
+```bash
+cd ~/Projects/agent-trust-plane
+uv run --python 3.12 atp demo wrap --out photon-demo
+uv run --python 3.12 atp trace list --home photon-demo/.atp
+```
+
+The watcher should attempt exactly one alert for each new, verified,
+**enforced** DENY within its polling window. Check both the terminal
+output and actual receipt on your phone. A "request completed" message
+is not proof of carrier delivery. Stop the watcher with Ctrl+C.
+
+The current watcher is a single-host, low-volume prototype. It polls the
+latest 500 traces and durably claims each attempt *before* network I/O.
+After a crash or ambiguous failure it will not retry automatically. It
+does not handle inbound text, approval, or executing actions and must
+not be used as a production authorization mechanism.
+
+The Python commands now default to `--transport spectrum`. The prior
+standalone REST adapter remains selectable via `--transport rest`, but
+requires a distinct REST Project API key and agent User ID.
+
+## Separate REST Project API integration (optional)
+
 ## Prerequisites (operator actions)
 
 1. Create a Photon 2.0 project in its dashboard, provision an iMessage-capable
