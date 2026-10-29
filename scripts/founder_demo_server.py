@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local, event-ready visual wrapper around the real ``atp demo wrap`` flow.
+"""Local, event-ready visual wrapper around the real ``atp demo photon`` flow.
 
 The browser is presentation only. A run always executes the repository's real
 MCP demo, then reads the resulting ATP trace store. It cannot approve actions,
@@ -135,7 +135,7 @@ def run_demo(out_dir: Path) -> dict[str, Any]:
         "-m",
         "atp_cli.main",
         "demo",
-        "wrap",
+        "photon",
         "--out",
         str(out_dir),
     ]

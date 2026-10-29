@@ -132,10 +132,10 @@ The implementation is in separate draft PR #3, but real delivery is unverified. 
 If it can reach or launch the upstream tool directly, yes. Production deployment must make ATP the enforced network/process boundary and deny alternate paths. The demo states this limitation explicitly.
 
 **Is this production-ready?**
-No. It is a credible working proof of concept. Production work includes service hardening, TLS/KMS and separated credentials, scalable event delivery, monitoring, recovery procedures, bypass-resistant topology, and dependency remediation.
+No. It is a credible working proof of concept. Production work includes service hardening, TLS/KMS and separated credentials, scalable event delivery, monitoring, recovery procedures, bypass-resistant topology, and keeping dependency audits clean.
 
-**What are the known security blockers?**
-Issue #2 tracks locked Python advisories. Issue #4 tracks the Spectrum SDK’s transitive npm findings and calls for a reproducible lockfile, compatible upgrades, and explicit risk review. Neither should be suppressed merely to make CI green.
+**What happened to the dependency blockers?**
+The committed branch lockfiles now pass strict `pip-audit` with no known findings and `npm audit` with zero findings. Issues #2 and #4 should remain visible until maintainers review and close the remediation. This clears the known dependency findings; it does not make the local watcher or the overall system production-ready.
 
 **How big is adoption?**
 No user, revenue, or usage metric is claimed in this demo. The evidence is technical: reproducible enforcement, tests, traces, CI, and two real-device iMessage confirmations.
@@ -144,7 +144,7 @@ No user, revenue, or usage metric is claimed in this demo. The evidence is techn
 
 1. **Wi-Fi fails:** run the core demo normally; it is local. Say: “The enforcement and evidence path is live; the event transport is unavailable. The same automatic iMessage path was previously confirmed on a real iPhone.”
 2. **Photon is unavailable:** show Terminal 1 honestly. “Accepted” means the provider accepted the request; it is not device-delivery proof. If uncertain, say so and do not retry automatically.
-3. **Visual UI fails:** run `uv run --frozen --python 3.12 atp demo wrap --out photon-demo` in a large terminal. Narrate the ALLOW, enforced DENY, unchanged note, policy explanation, and passing regression.
+3. **Visual UI fails:** run `uv run --frozen --python 3.12 atp demo photon --out photon-demo` in a large terminal. Narrate the ALLOW, enforced DENY, unchanged note, valid trace, passing regression, and dry-run alert text.
 4. **Local run fails:** use the prepared screenshot and recorded terminal transcript, explicitly labeled “recorded fallback,” then return to the architecture and Q&A. Never present recorded output as a current live run.
 
 ## Readiness boundary
@@ -154,6 +154,6 @@ No user, revenue, or usage metric is claimed in this demo. The evidence is techn
 | Enforced allow/deny on a real MCP server | Bypass-resistant deployment topology |
 | Hash-chained local evidence and regression pinning | Hardened service, TLS, KMS, credential separation |
 | Manual and automatic iMessage receipt confirmed on one real device | Delivery monitoring, reconciliation, scale and recovery |
-| At-most-one-attempt local alert journal | Resolve Python issue #2 and npm issue #4 |
+| Committed Python and npm lockfiles audit clean | Review/close #2 and #4; keep audits in CI |
 | Outbound-only alerts; no text approvals | Formal operational/security review |
 | Telegram clearly labeled unverified beta | Real Telegram device acceptance before any claim |

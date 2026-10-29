@@ -21,9 +21,10 @@ regression test's, then the dry run's (0). Live delivery is separate:
 
 ## Founder event walkthrough — ATP × Photon
 
-The visual walkthrough runs Demo D unchanged, then reads the real local trace
-store and presents its ALLOW, enforced DENY, evidence integrity and regression
-result in a mobile-friendly browser view:
+The visual walkthrough runs the network-free Photon rehearsal, then reads the
+real local trace store and presents its ALLOW, enforced DENY, evidence
+integrity, regression result and outbound-alert state in a mobile-friendly
+browser view:
 
 ```bash
 uv run --frozen --python 3.12 python scripts/founder_demo_server.py --out photon-demo

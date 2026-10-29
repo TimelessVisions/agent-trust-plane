@@ -16,10 +16,11 @@ anything. ATP authorization does not wait on Photon.
 |---|---|
 | `uv run atp demo photon` (this runbook's rehearsal) | Runs in CI. No network. |
 | Manual send through `integrations/photon-spectrum/send.mjs` | One message confirmed on a real iPhone, 2026-10-28. |
-| Automatic delivery via `atp photon watch` | Not verified on a device. Needs the owner's Mac and phone. |
+| Automatic delivery via `atp photon watch` | Confirmed on a real iPhone, 2026-10-28. |
 
-Keep the pull request a draft until that watcher delivery has been seen on
-the phone. A green CI run does not prove carrier delivery.
+Keep the pull request a draft while the integration receives production
+security and operational review. A green CI run still does not prove carrier
+delivery for a new request; confirm each live event on the device.
 
 ## Prerequisites
 

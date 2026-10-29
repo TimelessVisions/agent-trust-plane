@@ -104,7 +104,13 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
         env={**get_default_environment(), **up.env},
         cwd=up.cwd,
     )
-    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+    # MCP's default errlog is captured when its module is imported. Test runners
+    # and embedding hosts can replace sys.stderr with an object that has no
+    # usable file descriptor, which prevents the child process from starting.
+    async with (
+        stdio_client(params, errlog=sys.__stderr__) as (read, write),
+        ClientSession(read, write) as session,
+    ):
         init = await session.initialize()
         listed = await session.list_tools()
         yield Upstream(

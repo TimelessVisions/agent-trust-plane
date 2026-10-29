@@ -268,7 +268,10 @@ def demo_mcp(out_dir: Path | None = None) -> int:
             return "".join(c.text for c in r.content if isinstance(c, types.TextContent))
 
         async def session_body() -> dict[str, Any]:
-            async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
+            async with (
+                stdio_client(params, errlog=sys.__stderr__) as (r, w),
+                ClientSession(r, w) as s,
+            ):
                 await s.initialize()
                 tools = sorted(t.name for t in (await s.list_tools()).tools)
                 write = await s.call_tool("write_note", {"id": "todo", "text": "buy milk"})
@@ -356,7 +359,7 @@ def demo_wrap(out_dir: Path | None = None) -> int:
         return "".join(c.text for c in r.content if isinstance(c, types.TextContent))
 
     async def body() -> dict[str, Any]:
-        async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
+        async with stdio_client(params, errlog=sys.__stderr__) as (r, w), ClientSession(r, w) as s:
             await s.initialize()
             tools = sorted(t.name for t in (await s.list_tools()).tools)
             write = await s.call_tool("write_note", {"id": "todo", "text": "buy milk"})
