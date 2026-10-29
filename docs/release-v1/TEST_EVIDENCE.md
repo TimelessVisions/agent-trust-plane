@@ -93,9 +93,22 @@ at 2026-10-29T15:35:53Z, after the proof suite:
 | `uv run atp test examples/regression-suite/accounts-payable.yaml --quiet` | Exit 0. |
 | `uv run python scripts/check_links.py` (after `git add`, 78 tracked markdown files) | Exit 0. 0 broken relative links. |
 
-Not re-run after the patch: demos, dashboard, `uv build`, pip-audit (the
-lockfile did not change), Windows, macOS, Python 3.13, Python 3.14,
-`ATP_E2E_NPX=1`.
+## GitHub Actions on this PR
+
+Run https://github.com/TimelessVisions/agent-trust-plane/actions/runs/40903300097
+for commit `cfb325d224c438d24f4169039fffd0d9dbd2e47c`, finished about
+2026-10-29T15:38Z.
+
+| Job | Result |
+|---|---|
+| backend ubuntu-latest Python 3.12 | Pass (ruff, mypy, pytest, evals, doctor, demos, sample suite, links) |
+| backend ubuntu-latest Python 3.13 | Pass, same steps |
+| backend windows-latest Python 3.13 | Pass, same steps |
+| dashboard (Node 22 typecheck and build) | Pass |
+| package | **Fail** at `dependency audit (advisories in the locked set)`. Wheel build, `scripts/check_dist.py`, and the isolated `uvx` smoke steps had already passed. SBOM did not run. |
+
+Not run: macOS, Python 3.14, `ATP_E2E_NPX=1`, publish workflow. Demos and
+the dashboard were not re-run on this VM after the patch; CI ran them.
 
 ## What was not verified
 
@@ -109,6 +122,7 @@ lockfile did not change), Windows, macOS, Python 3.13, Python 3.14,
 - The third-party Node filesystem server.
 - Photon or Telegram delivery.
 - Whether the advisories in B1 are exploitable through `atp`.
-- GitHub Actions on this branch (it had not been pushed when the suite
-  was run).
+- The numeric pytest count inside GitHub Actions. The jobs below
+  exited 0 on the pytest step; the “445 passed, 1 skipped” line is the
+  local 3.12 run only.
 - An independent re-run from a clean checkout by a different worker.

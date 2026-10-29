@@ -27,7 +27,7 @@ fix.
 | B2 | No independent reviewer has re-run this proof from the PR SHA. | This branch’s tests were written and run by the same worker. | A different worker, clean checkout, the commands in `TEST_EVIDENCE.md`. |
 | B3 | A client that can start or reach the upstream MCP server bypasses the proxy. | Existing `test_direct_upstream_access_is_not_protected`. `docs/security/enforcing-the-boundary.md`. | Keep this inside the developer-use scope. Do not describe the proxy as universal protection. |
 | B4 | `2026-07-28` is not a supported product revision. | `SCOPE.md`. A modern stdio client can complete `tools/call` and the delete was still not journaled. The rest of that revision was not implemented or measured. | Do not document or demo it as supported. |
-| B5 | This VM did not run the CI matrix. | Only CPython 3.12.3 on Linux. Workflow also lists 3.13 and Windows. Python 3.14 and macOS are outside CI. `docs/integrations/compatibility.md` cites Actions run 35234834560 for an older commit; that run was not re-checked here and is not this SHA. | CI on the PR SHA. 3.14 and macOS stay unverified until someone runs them. |
+| B5 | Python 3.14 and macOS are still unmeasured. The PR CI matrix did run. | Actions run [40903300097](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/40903300097) on `cfb325d`. Backend jobs passed: ubuntu 3.12, ubuntu 3.13, windows 3.13 (each includes pytest, evals, demos, the sample suite). Dashboard passed. **Package failed** in `uvx pip-audit` (B1). SBOM did not run because that step failed first. The numeric “445 passed” count is from the local 3.12 run, not copied out of the CI log. | Keep 3.14 and macOS out of the supported list. Do not treat the red package job as a test failure. |
 
 ## P2
 

@@ -54,7 +54,7 @@ providing that surface.
 | `@modelcontextprotocol/server-filesystem` | Opt-in test, **not run** (`ATP_E2E_NPX` unset). | Not run. |
 | Claude Desktop, Claude Code, Cursor, VS Code, OpenAI Agents SDK, LangGraph, CrewAI, AutoGen | **Not verified.** | **Not verified.** |
 | Python 3.12 Linux | **Measured** (this VM). | Partial stdio note above only. |
-| Python 3.13, Windows (CI matrix) | **Not measured on this SHA.** The compatibility doc cites an older Actions run; that run was not re-checked here. | Not measured. |
+| Python 3.13 (ubuntu and Windows) | **CI job passed** on `cfb325d` (run 40903300097), including pytest. The local pass/skip count was not copied from the CI log. | Not measured. |
 | Python 3.14, macOS | **Not in CI. Not measured.** | Not measured. |
 
 ## Out of scope
@@ -89,7 +89,9 @@ providing that surface.
 
 - Supply-chain gate (`BLOCKERS.md` B1).
 - Independent re-run (B2).
-- CI on this SHA for 3.12, 3.13, and Windows (B5).
+- A green package job. Run 40903300097 passed the three backend jobs and
+  the dashboard, and failed `pip-audit` (B1). Python 3.14 and macOS remain
+  unmeasured (B5).
 - Any wording that the proxy stops a caller who never uses the proxy (B3).
 - Any wording that `2026-07-28` is supported (B4).
 

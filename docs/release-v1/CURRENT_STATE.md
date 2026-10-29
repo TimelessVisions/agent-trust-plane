@@ -141,4 +141,7 @@ formatted) and mypy (76 files) passed after the edit. On commit
 `c65ead064e5aa15158c307b8a5daac1ee90d922b`, at 2026-10-29T15:35:53Z,
 `python -m atp_evals` was 8/8 and the accounts-payable regression suite
 exited 0. Demos, the dashboard, and the package job were not re-run
-after the patch.
+on this VM after the patch. GitHub Actions run
+[40903300097](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/40903300097)
+on `cfb325d224c438d24f4169039fffd0d9dbd2e47c`: three backend jobs and the
+dashboard passed; the package job failed at `pip-audit` (blocker B1).
