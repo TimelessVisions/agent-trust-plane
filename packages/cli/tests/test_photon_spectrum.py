@@ -112,12 +112,16 @@ def test_telegram_cli_parses_channel() -> None:
     parser = cli.build_parser()
     notify = parser.parse_args(
         [
-            "photon", "notify", "trc_test123", "--channel", "telegram",
-            "--to", "123456789", "--dry-run",
+            "photon",
+            "notify",
+            "trc_test123",
+            "--channel",
+            "telegram",
+            "--to",
+            "123456789",
+            "--dry-run",
         ]
     )
-    watcher = parser.parse_args(
-        ["photon", "watch", "--channel", "telegram", "--to", "123456789"]
-    )
+    watcher = parser.parse_args(["photon", "watch", "--channel", "telegram", "--to", "123456789"])
     assert notify.channel == watcher.channel == "telegram"
     assert watcher.transport == "spectrum"
