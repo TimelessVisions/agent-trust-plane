@@ -803,7 +803,9 @@ def build_parser() -> argparse.ArgumentParser:
     pn.add_argument("trace", help="trace identifier in the local ATP store")
     pn.add_argument("--to", required=True, help="destination E.164 phone number")
     pn.add_argument(
-        "--transport", choices=["spectrum", "rest"], default="spectrum",
+        "--transport",
+        choices=["spectrum", "rest"],
+        default="spectrum",
         help="Spectrum project secret (default) or separate REST Project API",
     )
     pn.add_argument("--dry-run", action="store_true", help="preview without credentials or network")
@@ -813,7 +815,9 @@ def build_parser() -> argparse.ArgumentParser:
     pw = photon_sub.add_parser("watch", help="alert on new denials (opt-in, outbound only)")
     pw.add_argument("--to", required=True, help="destination E.164 phone number")
     pw.add_argument(
-        "--transport", choices=["spectrum", "rest"], default="spectrum",
+        "--transport",
+        choices=["spectrum", "rest"],
+        default="spectrum",
         help="Spectrum project secret (default) or separate REST Project API",
     )
     pw.add_argument("--poll-seconds", type=float, default=3.0)
