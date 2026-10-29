@@ -138,7 +138,9 @@ def watch(
     if not 1.0 <= poll_seconds <= 60.0:
         raise PhotonAlertError("poll interval must be between 1 and 60 seconds")
     home.mkdir(parents=True, exist_ok=True)
-    journal = AlertJournal(home / "photon-alerts.db")
+    channel = getattr(client, "channel", "imessage")
+    journal_file = "photon-alerts-telegram.db" if channel == "telegram" else "photon-alerts.db"
+    journal = AlertJournal(home / journal_file)
     try:
         initial = [s.trace_id for s in trust_plane.list_traces(limit=500)]
         fresh = journal.initialize(initial, client.credentials.project_id, recipient)
