@@ -60,6 +60,20 @@ def _safe_action(name: str) -> str:
     return cleaned or "unnamed"
 
 
+def _negotiated_protocol(init: object) -> str | None:
+    """Protocol revision from an ``initialize`` result.
+
+    The SDK model field is ``protocol_version`` (camelCase alias
+    ``protocolVersion`` on the wire). Reading only the alias attribute
+    recorded ``protocol unknown`` on every trace.
+    """
+    for attr in ("protocol_version", "protocolVersion"):
+        value = getattr(init, attr, None)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 @dataclass
 class Upstream:
     """A live session to the upstream MCP server."""
@@ -94,7 +108,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
                 session=session,
                 tools=list(listed.tools),
                 transport="http",
-                protocol_version=getattr(init, "protocolVersion", None),
+                protocol_version=_negotiated_protocol(init),
             )
         return
     assert up.command is not None
@@ -111,7 +125,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
             session=session,
             tools=list(listed.tools),
             transport="stdio",
-            protocol_version=getattr(init, "protocolVersion", None),
+            protocol_version=_negotiated_protocol(init),
         )
 
 

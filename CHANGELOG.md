@@ -6,6 +6,17 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+### Fixed
+- MCP proxy traces record the upstream `initialize` protocol revision. The
+  proxy was reading the camelCase alias attribute, so every trace said
+  `protocol unknown`.
+
+### Tests
+- A sandbox MCP server journals each tool name before any file change. New
+  tests require an allowed write to be received, an unauthorized delete to
+  be absent from that journal, the denial to be explainable, and a policy
+  edit to fail the pinned regression check. Version is unchanged at 0.3.2.
+
 ## [0.3.2] - 2026-09-17
 
 PyPI / distribution-readiness patch release. No product features; the
