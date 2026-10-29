@@ -558,14 +558,26 @@ def _cmd_mcp_wrap(args: argparse.Namespace) -> int:
     )
 
 
+def _photon_client(transport: str) -> Any:
+    """Build the selected outbound client without exposing its credentials."""
+    from atp_cli.photon import PhotonClient, PhotonCredentials
+    from atp_cli.photon_spectrum import SpectrumClient
+
+    if transport == "spectrum":
+        return SpectrumClient()
+    if transport == "rest":
+        credentials = PhotonCredentials(
+            project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
+            api_key=os.environ.get("PHOTON_API_KEY", ""),
+            agent_user_id=os.environ.get("PHOTON_AGENT_USER_ID", ""),
+        )
+        return PhotonClient(credentials)
+    raise UsageError("Unsupported Photon transport")
+
+
 def _cmd_photon_notify(args: argparse.Namespace) -> int:
     """Send one explicit, read-only alert; never modify authorization state."""
-    from atp_cli.photon import (
-        PhotonAlertError,
-        PhotonClient,
-        PhotonCredentials,
-        denial_alert,
-    )
+    from atp_cli.photon import PhotonAlertError, denial_alert
     from atp_core import ATPError
 
     runtime = _open_home(args.home)
@@ -585,32 +597,22 @@ def _cmd_photon_notify(args: argparse.Namespace) -> int:
         print("DRY RUN (no Photon request)\n" + message)
         return 0
 
-    credentials = PhotonCredentials(
-        project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
-        api_key=os.environ.get("PHOTON_API_KEY", ""),
-        agent_user_id=os.environ.get("PHOTON_AGENT_USER_ID", ""),
-    )
     try:
-        message_id = PhotonClient(credentials).send_denial(args.to, args.trace, message)
+        message_id = _photon_client(args.transport).send_denial(args.to, args.trace, message)
     except PhotonAlertError as exc:
         raise UsageError(str(exc)) from exc
-    print(f"Photon accepted message {message_id}; delivery is not yet confirmed")
+    print(f"Photon {args.transport} request completed ({message_id}); verify on your device")
     return 0
 
 
 def _cmd_photon_watch(args: argparse.Namespace) -> int:
     """Opt-in watcher: alert on *new* integrity-verified enforced denials."""
     from atp_cli.home import AtpHome
-    from atp_cli.photon import PhotonAlertError, PhotonClient, PhotonCredentials
+    from atp_cli.photon import PhotonAlertError
     from atp_cli.photon_watch import watch
 
-    credentials = PhotonCredentials(
-        project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
-        api_key=os.environ.get("PHOTON_API_KEY", ""),
-        agent_user_id=os.environ.get("PHOTON_AGENT_USER_ID", ""),
-    )
     try:
-        client = PhotonClient(credentials)
+        client = _photon_client(args.transport)
     except PhotonAlertError as exc:
         raise UsageError(str(exc)) from exc
     home = AtpHome(args.home)
@@ -800,12 +802,20 @@ def build_parser() -> argparse.ArgumentParser:
     pn = photon_sub.add_parser("notify", help="send a verified enforced DENY trace to iMessage")
     pn.add_argument("trace", help="trace identifier in the local ATP store")
     pn.add_argument("--to", required=True, help="destination E.164 phone number")
+    pn.add_argument(
+        "--transport", choices=["spectrum", "rest"], default="spectrum",
+        help="Spectrum project secret (default) or separate REST Project API",
+    )
     pn.add_argument("--dry-run", action="store_true", help="preview without credentials or network")
     _home_arg(pn)
     pn.set_defaults(func=_cmd_photon_notify)
 
     pw = photon_sub.add_parser("watch", help="alert on new denials (opt-in, outbound only)")
     pw.add_argument("--to", required=True, help="destination E.164 phone number")
+    pw.add_argument(
+        "--transport", choices=["spectrum", "rest"], default="spectrum",
+        help="Spectrum project secret (default) or separate REST Project API",
+    )
     pw.add_argument("--poll-seconds", type=float, default=3.0)
     pw.add_argument("--once", action="store_true", help="scan once, then exit")
     _home_arg(pw)
