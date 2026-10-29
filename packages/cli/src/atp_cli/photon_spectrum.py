@@ -35,8 +35,10 @@ class SpectrumClient:
             raise PhotonAlertError("SPECTRUM_PROJECT_ID and SPECTRUM_PROJECT_SECRET are required")
         if channel == "telegram" and not os.environ.get("SPECTRUM_TELEGRAM_BOT_TOKEN"):
             raise PhotonAlertError("SPECTRUM_TELEGRAM_BOT_TOKEN is required")
-        # Isolate watcher journals by transport+platform to prevent cross-channel collision.
-        self.credentials = SpectrumCredentials(project_id=f"{project_id}:spectrum:{channel}")
+        # Preserve the existing iMessage journal binding. Telegram gets its own journal.
+        self.credentials = SpectrumCredentials(
+            project_id=project_id if channel == "imessage" else f"{project_id}:telegram"
+        )
         if shutil.which("node") is None:
             raise PhotonAlertError("Node.js is required to run the Spectrum bridge")
         if not BRIDGE.is_file():
