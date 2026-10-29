@@ -19,7 +19,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import yaml
 
@@ -41,6 +41,10 @@ from finance_agent import (
     run_accounts_payable,
     seed_delegation_graph,
 )
+
+
+def _process_errlog() -> TextIO:
+    return sys.__stderr__ if sys.__stderr__ is not None else sys.stderr
 
 
 def _section(title: str) -> None:
@@ -269,7 +273,7 @@ def demo_mcp(out_dir: Path | None = None) -> int:
 
         async def session_body() -> dict[str, Any]:
             async with (
-                stdio_client(params, errlog=sys.__stderr__) as (r, w),
+                stdio_client(params, errlog=_process_errlog()) as (r, w),
                 ClientSession(r, w) as s,
             ):
                 await s.initialize()
@@ -359,7 +363,10 @@ def demo_wrap(out_dir: Path | None = None) -> int:
         return "".join(c.text for c in r.content if isinstance(c, types.TextContent))
 
     async def body() -> dict[str, Any]:
-        async with stdio_client(params, errlog=sys.__stderr__) as (r, w), ClientSession(r, w) as s:
+        async with (
+            stdio_client(params, errlog=_process_errlog()) as (r, w),
+            ClientSession(r, w) as s,
+        ):
             await s.initialize()
             tools = sorted(t.name for t in (await s.list_tools()).tools)
             write = await s.call_tool("write_note", {"id": "todo", "text": "buy milk"})

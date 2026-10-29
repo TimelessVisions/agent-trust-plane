@@ -33,7 +33,7 @@ import re
 import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TextIO
 
 import anyio
 from mcp import ClientSession, StdioServerParameters, types
@@ -53,6 +53,10 @@ log = logging.getLogger("atp.mcp-proxy")
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._:-]")
 PROXY_VERSION = "0.3.2"
+
+
+def _process_errlog() -> TextIO:
+    return sys.__stderr__ if sys.__stderr__ is not None else sys.stderr
 
 
 def _safe_action(name: str) -> str:
@@ -108,7 +112,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
     # and embedding hosts can replace sys.stderr with an object that has no
     # usable file descriptor, which prevents the child process from starting.
     async with (
-        stdio_client(params, errlog=sys.__stderr__) as (read, write),
+        stdio_client(params, errlog=_process_errlog()) as (read, write),
         ClientSession(read, write) as session,
     ):
         init = await session.initialize()
