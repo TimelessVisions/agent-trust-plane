@@ -1,9 +1,41 @@
 # Demos — exact reproduction
 
-All four run with `uv sync` done (or via `uv run`, which syncs), no API keys,
-no Docker, no services. A/B use the deterministic `SimulatedAgent`; C/D drive
-a real MCP client session over stdio; money only ever moves in a local
-SQLite table.
+These run with `uv sync` done (or via `uv run`, which syncs), no API keys,
+no Docker, no services. A/B use the deterministic `SimulatedAgent`; C/D and
+the Photon rehearsal drive a real MCP client session over stdio; money only
+ever moves in a local SQLite table. The Photon rehearsal does not send a
+message. The presenter runbook is [demo-photon.md](demo-photon.md).
+
+## Photon rehearsal — denial, trace, regression, alert text
+
+```bash
+uv run atp demo photon               # temp dir; --out DIR to keep the files
+```
+
+What happens: the wrap loop above (denied `delete_note`, policy explain,
+regression test), then `atp trace show` (integrity valid) and
+`atp photon notify TRACE --dry-run`. The dry run prints the exact iMessage
+body and does not call Photon, Spectrum, or the network. Exit code is the
+regression test's, then the dry run's (0). Live delivery is separate:
+[demo-photon.md](demo-photon.md).
+
+## Founder event walkthrough — ATP × Photon
+
+The visual walkthrough runs the network-free Photon rehearsal, then reads the
+real local trace store and presents its ALLOW, enforced DENY, evidence
+integrity, regression result and outbound-alert state in a mobile-friendly
+browser view:
+
+```bash
+uv run --frozen --python 3.12 python scripts/founder_demo_server.py --out photon-demo
+# open http://127.0.0.1:8765
+```
+
+The browser cannot authorize an action, change a grant or policy, or send a
+message. Photon notification remains a separate outbound-only watcher. See
+`docs/demo/founder/RUNBOOK.md` for the event setup, rehearsable scripts, Q&A,
+trust boundaries, and fallback ladder. Telegram is a separate unverified beta
+and is not part of this walkthrough.
 
 ## Demo D — wrap (the loop in one command; the README transcript)
 

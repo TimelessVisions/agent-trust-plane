@@ -1,0 +1,19 @@
+{
+  "name": "@timelessvisions/atp-photon-spectrum",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Spectrum Cloud outbound iMessage transport for verified ATP alerts",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "spectrum-ts": "12.14.0"
+  },
+  "overrides": {
+    "@opentelemetry/core": ">=2.8.0 <3"
+  },
+  "scripts": {
+    "check": "node --check send.mjs"
+  }
+}

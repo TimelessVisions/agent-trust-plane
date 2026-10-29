@@ -6,6 +6,24 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+### Security
+- Floor the locked runtime set so `pip-audit --strict` passes without
+  ignores or suppressions (issue #2): `certifi` 2026.10.23
+  (PYSEC-2026-4320, fixed in 2026.10.19), `opentelemetry-api` 1.45.1
+  (CVE-2026-114603), `pyjwt` 2.15.1 (PYSEC-2026-4141 and PYSEC-2026-4183,
+  fixed in 2.15.0). Constraints live in `tool.uv.constraint-dependencies`.
+- Spectrum bridge: `spectrum-ts` stays at 12.14.0 (latest). Nested
+  `@opentelemetry/core` 2.7.1 (GHSA-8988-4f7v-96qf, fixed in 2.8.0) is
+  overridden to `>=2.8.0 <3` and locked at 2.12.0. `npm audit` on
+  `integrations/photon-spectrum/package-lock.json` reports no
+  vulnerabilities. The audit's suggested downgrade to `spectrum-ts` 12.2.0
+  was not applied.
+
+### Added
+- `atp demo photon`: network-free rehearsal of a denied MCP call, the
+  verified trace, the regression test, and the exact dry-run alert text.
+  Presenter runbook: `docs/demo-photon.md`.
+
 ## [0.3.2] - 2026-09-17
 
 PyPI / distribution-readiness patch release. No product features; the

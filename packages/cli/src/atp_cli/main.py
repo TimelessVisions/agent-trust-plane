@@ -138,6 +138,8 @@ def _cmd_demo(args: argparse.Namespace) -> int:
         return demos.demo_regression(Path(args.out) if args.out else None)
     if args.which == "wrap":
         return demos.demo_wrap(Path(args.out) if args.out else None)
+    if args.which == "photon":
+        return demos.demo_photon(Path(args.out) if args.out else None)
     return demos.demo_mcp(Path(args.out) if args.out else None)
 
 
@@ -558,6 +560,82 @@ def _cmd_mcp_wrap(args: argparse.Namespace) -> int:
     )
 
 
+def _photon_client(transport: str) -> Any:
+    """Build the selected outbound client without exposing its credentials."""
+    from atp_cli.photon import PhotonClient, PhotonCredentials
+    from atp_cli.photon_spectrum import SpectrumClient
+
+    if transport == "spectrum":
+        return SpectrumClient()
+    if transport == "rest":
+        credentials = PhotonCredentials(
+            project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
+            api_key=os.environ.get("PHOTON_API_KEY", ""),
+            agent_user_id=os.environ.get("PHOTON_AGENT_USER_ID", ""),
+        )
+        return PhotonClient(credentials)
+    raise UsageError("Unsupported Photon transport")
+
+
+def _cmd_photon_notify(args: argparse.Namespace) -> int:
+    """Send one explicit, read-only alert; never modify authorization state."""
+    from atp_cli.photon import PhotonAlertError, denial_alert
+    from atp_core import ATPError
+
+    runtime = _open_home(args.home)
+    try:
+        try:
+            view = runtime.trust_plane.get_trace(args.trace)
+        except ATPError as exc:
+            raise UsageError(f"trace {args.trace}: {exc.message}") from exc
+        try:
+            message = denial_alert(view)
+        except PhotonAlertError as exc:
+            raise UsageError(str(exc)) from exc
+    finally:
+        runtime.close()
+
+    if args.dry_run:
+        print("DRY RUN (no Photon request)\n" + message)
+        return 0
+
+    try:
+        message_id = _photon_client(args.transport).send_denial(args.to, args.trace, message)
+    except PhotonAlertError as exc:
+        raise UsageError(str(exc)) from exc
+    print(f"Photon {args.transport} request completed ({message_id}); verify on your device")
+    return 0
+
+
+def _cmd_photon_watch(args: argparse.Namespace) -> int:
+    """Opt-in watcher: alert on *new* integrity-verified enforced denials."""
+    from atp_cli.home import AtpHome
+    from atp_cli.photon import PhotonAlertError
+    from atp_cli.photon_watch import watch
+
+    try:
+        client = _photon_client(args.transport)
+    except PhotonAlertError as exc:
+        raise UsageError(str(exc)) from exc
+    home = AtpHome(args.home)
+    runtime = _open_home(args.home)
+    try:
+        try:
+            watch(
+                trust_plane=runtime.trust_plane,
+                home=home.path,
+                client=client,
+                recipient=args.to,
+                poll_seconds=args.poll_seconds,
+                once=args.once,
+            )
+        except PhotonAlertError as exc:
+            raise UsageError(str(exc)) from exc
+    finally:
+        runtime.close()
+    return 0
+
+
 # ---------------------------------------------------------------- parser
 def _home_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--home", help="ATP home directory (default: $ATP_HOME or ./.atp)")
@@ -578,7 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
     d.set_defaults(func=_cmd_doctor)
 
     demo = sub.add_parser("demo", help="run a documented demo")
-    demo.add_argument("which", choices=["injection", "regression", "mcp", "wrap"])
+    demo.add_argument("which", choices=["injection", "regression", "mcp", "wrap", "photon"])
     demo.add_argument("--out", help="where to write generated files")
     demo.set_defaults(func=_cmd_demo)
 
@@ -720,6 +798,34 @@ def build_parser() -> argparse.ArgumentParser:
     evf = esub.add_parser("verify")
     evf.add_argument("file")
     evf.set_defaults(func=_cmd_evidence_verify)
+
+    photon = sub.add_parser("photon", help="read-only Photon iMessage denial notifications")
+    photon_sub = photon.add_subparsers(dest="photon_command", required=True)
+    pn = photon_sub.add_parser("notify", help="send a verified enforced DENY trace to iMessage")
+    pn.add_argument("trace", help="trace identifier in the local ATP store")
+    pn.add_argument("--to", required=True, help="destination E.164 phone number")
+    pn.add_argument(
+        "--transport",
+        choices=["spectrum", "rest"],
+        default="spectrum",
+        help="Spectrum project secret (default) or separate REST Project API",
+    )
+    pn.add_argument("--dry-run", action="store_true", help="preview without credentials or network")
+    _home_arg(pn)
+    pn.set_defaults(func=_cmd_photon_notify)
+
+    pw = photon_sub.add_parser("watch", help="alert on new denials (opt-in, outbound only)")
+    pw.add_argument("--to", required=True, help="destination E.164 phone number")
+    pw.add_argument(
+        "--transport",
+        choices=["spectrum", "rest"],
+        default="spectrum",
+        help="Spectrum project secret (default) or separate REST Project API",
+    )
+    pw.add_argument("--poll-seconds", type=float, default=3.0)
+    pw.add_argument("--once", action="store_true", help="scan once, then exit")
+    _home_arg(pw)
+    pw.set_defaults(func=_cmd_photon_watch)
 
     s = sub.add_parser("serve", help="run a persistent HTTP gateway (needs .env keys)")
     s.add_argument("--host", default="127.0.0.1")

@@ -105,6 +105,34 @@ def test_console_script_is_installed() -> None:
     assert proc.returncode == 0 and "atp" in proc.stdout
 
 
+def test_demo_photon_rehearsal_prints_the_alert_without_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """Stage path: denial, verified trace, regression, and dry-run alert text."""
+    monkeypatch.chdir(tmp_path)
+    for name in (
+        "ATP_HOME",
+        "PHOTON_PROJECT_ID",
+        "PHOTON_API_KEY",
+        "PHOTON_AGENT_USER_ID",
+        "SPECTRUM_PROJECT_ID",
+        "SPECTRUM_PROJECT_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    assert _run("demo", "photon", "--out", "reports/photon-demo") == 0
+    out = capfd.readouterr().out
+    assert "delete_note -> DENY" in out
+    assert "CAPABILITY_NOT_GRANTED" in out
+    assert "integrity: valid" in out
+    alert = out.split("DRY RUN (no Photon request)", 1)[1]
+    assert "Decision: DENY (enforced)" in alert
+    assert "Reason: CAPABILITY_NOT_GRANTED" in alert
+    assert "Text replies cannot approve actions" in alert
+    assert "buy milk" not in alert
+    assert "request completed" not in out
+    assert (tmp_path / "reports" / "photon-demo" / "atp-regression.yaml").is_file()
+
+
 def test_demo_wrap_accepts_a_relative_out_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

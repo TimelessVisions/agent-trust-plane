@@ -41,7 +41,7 @@ uv run mypy                               # strict
 uv run pytest -p no:warnings              # ~2 min; includes property tests and MCP e2e
 ATP_E2E_NPX=1 uv run pytest adapters/mcp/tests/test_proxy_third_party.py   # needs node/npx
 uv run python -m atp_evals                # 8 adversarial evals
-uv run atp demo wrap && uv run atp demo injection && uv run atp demo regression && uv run atp demo mcp
+uv run atp demo wrap && uv run atp demo injection && uv run atp demo regression && uv run atp demo mcp && uv run atp demo photon
 uv run python scripts/check_links.py
 uv run python benchmarks/authz_overhead.py --n 300 --out docs/benchmarks.md
 uv build && uvx --isolated --from dist/*.whl atp doctor

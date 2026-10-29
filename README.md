@@ -41,7 +41,7 @@ git clone <this repository> && cd agent-trust-plane
 uv run atp demo wrap          # syncs the workspace on first run; 37 s cold on the maintainer machine
 ```
 
-The same commands work in PowerShell. `uv run atp doctor` explains anything missing. Other demos: `atp demo injection` (an injected invoice tries to pay $12,500 on a $1,000 delegation), `atp demo regression` (a permitted payment reveals a policy hole; replay under the fix flips it), `atp demo mcp` (the proxy against a remote-style gateway) — [docs/demos.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/demos.md).
+The same commands work in PowerShell. `uv run atp doctor` explains anything missing. Other demos: `atp demo injection` (an injected invoice tries to pay $12,500 on a $1,000 delegation), `atp demo regression` (a permitted payment reveals a policy hole; replay under the fix flips it), `atp demo mcp` (the proxy against a remote-style gateway), `atp demo photon` (that denied MCP call, then the exact read-only alert text, with no phone) — [docs/demos.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/demos.md).
 
 ## Wrap your own MCP server
 
@@ -80,6 +80,14 @@ uv run atp mutate 457328bdd4ef                          # perturb the recorded a
 ```
 
 A suite is YAML: principals, a delegation graph, cases with the expected outcome / reason / policy. Runs use an ephemeral in-process gateway and call only `/authorize` — a spy on `execute` sees zero calls. CI example without secrets: [examples/regression-suite](https://github.com/TimelessVisions/agent-trust-plane/tree/main/examples/regression-suite/) and a copy-in [composite action](https://github.com/TimelessVisions/agent-trust-plane/tree/main/examples/github-action/). Guide: [docs/regression/regression-testing.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/regression/regression-testing.md).
+
+## Photon alerts (experimental)
+
+```bash
+uv run atp demo photon          # denied delete, verified trace, regression test, alert text; no network
+```
+
+`atp photon watch` can send that same text over iMessage. It is opt-in, outbound, and read-only: the message is the enforced DENY status, the trace ID, and the reason code. Replies cannot approve an action or change a grant. The rehearsal above does not need a phone. Automatic delivery from the watcher has not been verified on a device; one manual send was. Runbook: [docs/demo-photon.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/demo-photon.md).
 
 ## Architecture
 

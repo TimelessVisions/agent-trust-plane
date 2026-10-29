@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Agent Trust Plane × Photon — Live Trust Boundary</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <main>
+      <nav>
+        <div class="wordmark"><span class="mark">ATP</span><span>×</span><span>PHOTON</span></div>
+        <div class="proof-dot"><i></i> Real-device proof established</div>
+      </nav>
+
+      <section class="hero">
+        <p class="eyebrow">THE CONTROL LAYER FOR AGENT ACTIONS</p>
+        <h1>Agents can act.<br /><span>Trust must be enforced.</span></h1>
+        <p class="lede">
+          The model proposes. Agent Trust Plane checks delegated authority before the tool runs,
+          records evidence, and makes enforced denials visible to a human in real time.
+        </p>
+        <div class="status-row">
+          <div class="status verified"><b>VERIFIED</b><span>Manual + automatic iMessage reached a real iPhone</span></div>
+          <div class="status"><b>LOCAL</b><span>No LLM · no payment · no cloud gateway</span></div>
+          <div class="status beta"><b>BETA</b><span>Telegram delivery not yet verified</span></div>
+        </div>
+      </section>
+
+      <section class="stage" aria-live="polite">
+        <div class="stage-top">
+          <div>
+            <p class="eyebrow">LIVE MCP WALKTHROUGH</p>
+            <h2>One allowed write. One blocked delete.</h2>
+          </div>
+          <button id="run" type="button"><span>Run the trust boundary</span><kbd>↵</kbd></button>
+        </div>
+
+        <div id="progress" class="progress" hidden>
+          <span></span><p>Running the real MCP server, gateway, policy engine, and regression check…</p>
+        </div>
+        <div id="error" class="error" hidden></div>
+
+        <div class="moments">
+          <article id="write-card" class="moment neutral">
+            <div class="moment-number">01</div>
+            <div class="moment-copy"><p>AGENT REQUEST</p><h3>Write “buy milk”</h3><span>Requires <code>notes:write</code></span></div>
+            <div class="verdict" id="write-verdict">READY</div>
+          </article>
+          <article id="delete-card" class="moment neutral">
+            <div class="moment-number">02</div>
+            <div class="moment-copy"><p>AGENT REQUEST</p><h3>Delete the note</h3><span>Requires <code>notes:destroy</code></span></div>
+            <div class="verdict" id="delete-verdict">READY</div>
+          </article>
+          <article id="evidence-card" class="moment neutral">
+            <div class="moment-number">03</div>
+            <div class="moment-copy"><p>INDEPENDENT EVIDENCE</p><h3 id="evidence-title">Trace + policy reason</h3><span id="trace">Waiting for a live run</span></div>
+            <div class="verdict" id="evidence-verdict">READY</div>
+          </article>
+          <article id="phone-card" class="moment neutral">
+            <div class="moment-number">04</div>
+            <div class="moment-copy"><p>HUMAN VISIBILITY</p><h3>Automatic security alert</h3><span id="phone-detail">Start the Photon watcher separately; confirm delivery on device</span></div>
+            <div class="verdict" id="phone-verdict">OPTIONAL</div>
+          </article>
+        </div>
+
+        <div id="facts" class="facts" hidden>
+          <div><b id="event-count">—</b><span>hash-chained events</span></div>
+          <div><b id="note-state">—</b><span>note after delete attempt</span></div>
+          <div><b id="regression-state">—</b><span>regression pinned</span></div>
+          <div><b>ENFORCED</b><span>not shadow mode</span></div>
+        </div>
+      </section>
+
+      <section class="architecture">
+        <div class="section-head"><p class="eyebrow">TRUTHFUL ARCHITECTURE</p><h2>The alert observes the decision. It never changes it.</h2></div>
+        <div class="flow">
+          <div class="node"><small>UNTRUSTED</small><b>AI agent</b><span>proposes action</span></div>
+          <div class="arrow">→</div>
+          <div class="boundary">
+            <div class="boundary-label">ENFORCEMENT BOUNDARY</div>
+            <div class="node core"><small>CONTROL PLANE</small><b>ATP proxy + gateway</b><span>identity · delegation · policy</span></div>
+            <div class="fork"><span class="allow">ALLOW → tool</span><span class="deny">DENY ⊣ stopped</span></div>
+          </div>
+          <div class="arrow">→</div>
+          <div class="node"><small>EVIDENCE</small><b>Hash-chained trace</b><span>reason + integrity</span></div>
+          <div class="arrow">→</div>
+          <div class="node photon"><small>OUTBOUND ONLY</small><b>Photon → iMessage</b><span>visibility, not approval</span></div>
+        </div>
+        <div class="guardrails">
+          <span>✓ Enforced DENY</span><span>✓ Replies cannot authorize</span><span>✓ No real payment</span><span>✓ No phone numbers shown</span><span>✓ No secrets in browser</span>
+        </div>
+      </section>
+
+      <details class="terminal"><summary>Technical evidence <span>expand</span></summary><pre id="transcript">Run the demo to capture a redacted local transcript.</pre></details>
+
+      <footer><span>Agent Trust Plane × Photon</span><span>Demo-ready proof of concept · not production-ready</span></footer>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
