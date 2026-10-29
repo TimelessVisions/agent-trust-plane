@@ -7,6 +7,7 @@ participate in authorize/execute and never changes the decision or grants.
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -129,7 +130,10 @@ def watch(
     once: bool = False,
 ) -> None:
     """Start from *now*, not from historic denials. Ctrl+C stops the process."""
-    if not PHONE_RE.fullmatch(recipient):
+    if getattr(client, "channel", "imessage") == "telegram":
+        if not re.fullmatch(r"[1-9][0-9]{4,19}", recipient):
+            raise PhotonAlertError("Telegram recipient must be a numeric user ID")
+    elif not PHONE_RE.fullmatch(recipient):
         raise PhotonAlertError("recipient must be a valid E.164 phone number")
     if not 1.0 <= poll_seconds <= 60.0:
         raise PhotonAlertError("poll interval must be between 1 and 60 seconds")
