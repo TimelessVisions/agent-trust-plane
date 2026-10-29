@@ -1,5 +1,8 @@
-"""The three documented demos. Each one runs against real gateway code paths
+"""Documented demos. Each one runs against real gateway code paths
 with no API keys, no Docker and no external services.
+
+The Photon rehearsal adds the dry-run denial alert on top of the wrap loop.
+It does not contact Photon or Spectrum.
 
 A — injection:  untrusted invoice content makes the simulated agent propose an
                 unauthorized payment; the gateway blocks it before execution.
@@ -407,3 +410,82 @@ def demo_wrap(out_dir: Path | None = None) -> int:
     print("limits: stdio served; one upstream; a client that launches the notes server itself")
     print("bypasses the proxy (docs/security/enforcing-the-boundary.md)")
     return rc
+
+
+def _print_atp(root: Path, argv: tuple[str, ...]) -> int:
+    import shlex
+    import subprocess
+
+    cmd = [sys.executable, "-m", "atp_cli.main", *argv]
+    print(f"$ atp {shlex.join(argv)}")
+    proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, encoding="utf-8")
+    for line in (proc.stdout or "").rstrip().splitlines():
+        print(f"  {line}")
+    if proc.returncode not in (0, 1):
+        print(f"  (stderr) {(proc.stderr or '').strip()[:500]}")
+    return proc.returncode
+
+
+def _enforced_denial_trace(home: Path) -> str:
+    """Newest integrity-verified enforced DENY recorded in this home."""
+    from atp_cli.home import AtpHome
+    from atp_cli.photon import PhotonAlertError, denial_alert
+
+    runtime = AtpHome(home).open()
+    try:
+        for summary in runtime.trust_plane.list_traces(50):
+            view = runtime.trust_plane.get_trace(summary.trace_id)
+            try:
+                denial_alert(view)
+            except PhotonAlertError:
+                continue
+            return str(view.trace_id)
+    finally:
+        runtime.close()
+    raise RuntimeError("no integrity-verified enforced denial in the demo home")
+
+
+# ------------------------------------------------------- Photon rehearsal
+def demo_photon(out_dir: Path | None = None) -> int:
+    """Network-free rehearsal: denied MCP call, verified trace, regression, alert text.
+
+    Uses the same dry-run path as ``atp photon notify --dry-run``. No Photon
+    credentials, no Spectrum process, and no network.
+    """
+    print("DEMO PHOTON - rehearsal: denied MCP call, verified trace, regression, alert text")
+    print("transport: dry-run   credentials: none   network: none   iMessage: not sent")
+    root = (out_dir or Path(tempfile.mkdtemp(prefix="atp-photon-demo-"))).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    rc = demo_wrap(root)
+    if rc != 0:
+        return rc
+    try:
+        trace_id = _enforced_denial_trace(root / ".atp")
+    except (OSError, RuntimeError) as exc:
+        print(f"rehearsal stopped: {exc}")
+        return 1
+
+    _section("5. verified trace")
+    show = _print_atp(root, ("trace", "show", trace_id, "--home", str(root / ".atp")))
+    if show != 0:
+        return show
+    _section("6. exact alert text that would be sent (dry run)")
+    print("recipient +12125550123 is an example number; nothing is transmitted")
+    notify = _print_atp(
+        root,
+        (
+            "photon",
+            "notify",
+            trace_id,
+            "--to",
+            "+12125550123",
+            "--home",
+            str(root / ".atp"),
+            "--dry-run",
+        ),
+    )
+    print()
+    print("The alert is read-only: enforced DENY status, trace ID, and reason code.")
+    print("Text replies cannot approve, grant, or execute. This rehearsal did not")
+    print("contact Photon or Spectrum. Live delivery: docs/demo-photon.md")
+    return notify

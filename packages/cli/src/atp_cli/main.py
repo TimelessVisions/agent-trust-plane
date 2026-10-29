@@ -138,6 +138,8 @@ def _cmd_demo(args: argparse.Namespace) -> int:
         return demos.demo_regression(Path(args.out) if args.out else None)
     if args.which == "wrap":
         return demos.demo_wrap(Path(args.out) if args.out else None)
+    if args.which == "photon":
+        return demos.demo_photon(Path(args.out) if args.out else None)
     return demos.demo_mcp(Path(args.out) if args.out else None)
 
 
@@ -654,7 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
     d.set_defaults(func=_cmd_doctor)
 
     demo = sub.add_parser("demo", help="run a documented demo")
-    demo.add_argument("which", choices=["injection", "regression", "mcp", "wrap"])
+    demo.add_argument("which", choices=["injection", "regression", "mcp", "wrap", "photon"])
     demo.add_argument("--out", help="where to write generated files")
     demo.set_defaults(func=_cmd_demo)
 

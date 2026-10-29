@@ -11,6 +11,7 @@ uv run atp demo injection | Out-Null
 uv run atp demo regression | Out-Null
 uv run atp demo wrap | Out-Null
 uv run atp demo mcp | Out-Null
+uv run atp demo photon | Out-Null
 uv run atp test examples/regression-suite/accounts-payable.yaml --quiet
 Push-Location apps/dashboard
 npm run typecheck

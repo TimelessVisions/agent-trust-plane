@@ -10,6 +10,20 @@ blocks, executes, or audits tool calls.
 Photon 2.0 uses a project-scoped API with Users, Spaces, and Messages:
 https://photon.codes/blog/introducing-photon-2.0
 
+## Presenter path
+
+Stage rehearsal, with no phone, credentials, or network:
+
+```bash
+uv run atp demo photon --out photon-demo
+```
+
+Commands, what the audience should see, the live Spectrum watcher, and the
+fallback if iMessage does not arrive are in
+[the presenter runbook](../demo-photon.md). A manual Spectrum send was
+confirmed on a real iPhone on 2026-10-28. Automatic delivery through
+`atp photon watch` has not been verified on a device.
+
 ## Mac / Spectrum Cloud: verified first-device delivery
 
 The initial source-branch Spectrum SDK sender successfully delivered one
@@ -22,12 +36,21 @@ credentials displayed in Spectrum > Configure), **not** the REST
 On the Free plan, a registered user can receive messages over a shared
 iMessage number; a paid dedicated line is not required.
 
+Install the pinned Spectrum bridge before a live send. `spectrum-ts` is
+12.14.0. The lockfile overrides `@opentelemetry/core` to `>=2.8.0 <3`
+(resolved 2.12.0) so the tree does not include GHSA-8988-4f7v-96qf
+(`@opentelemetry/core` versions before 2.8.0, moderate, unbounded memory
+allocation in W3C baggage propagation). `npm audit` on this lockfile reports no
+vulnerabilities. Do not downgrade `spectrum-ts` to 12.2.0; that is what
+`npm audit fix --force` suggests, and it is not a fix.
+
 In macOS Terminal/zsh, using the existing ATP source checkout and the same
 Terminal session where the Spectrum environment variables were exported:
 
 ```bash
 cd ~/Projects/agent-trust-plane
 git pull --ff-only origin feat/photon-denial-alerts
+npm ci --prefix integrations/photon-spectrum
 
 # Confirm credentials are present without printing their values.
 [[ -n "$SPECTRUM_PROJECT_ID" && -n "$SPECTRUM_PROJECT_SECRET" ]] \
