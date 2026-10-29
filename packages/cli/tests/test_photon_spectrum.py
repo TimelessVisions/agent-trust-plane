@@ -76,3 +76,48 @@ def test_missing_secret_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SPECTRUM_PROJECT_SECRET", raising=False)
     with pytest.raises(PhotonAlertError, match="SPECTRUM_PROJECT"):
         sdk.SpectrumClient()
+
+
+def test_telegram_client_sends_to_numeric_user_id(
+    configured_bridge: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SPECTRUM_TELEGRAM_BOT_TOKEN", "test-bot-token")
+    captured: list[object] = []
+
+    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.append((args, kwargs))
+        return subprocess.CompletedProcess(["node"], 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(sdk.subprocess, "run", fake_run)
+    client = sdk.SpectrumClient(channel="telegram")
+    assert client.credentials.project_id.endswith(":spectrum:telegram")
+    assert client.send_denial("123456789", "trc_test123", "approved alert") == (
+        "spectrum-request-trc_test123"
+    )
+    args, kwargs = captured[0]  # type: ignore[misc]
+    assert args[0] == ["node", str(configured_bridge), "telegram", "123456789"]
+    assert kwargs["input"] == "approved alert"
+    assert "test-bot-token" not in str(captured)
+    with pytest.raises(PhotonAlertError, match="numeric user ID"):
+        client.send_denial("+12125550123", "trc_test123", "approved alert")
+
+
+def test_telegram_needs_bot_token(configured_bridge: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SPECTRUM_TELEGRAM_BOT_TOKEN", raising=False)
+    with pytest.raises(PhotonAlertError, match="SPECTRUM_TELEGRAM_BOT_TOKEN"):
+        sdk.SpectrumClient(channel="telegram")
+
+
+def test_telegram_cli_parses_channel() -> None:
+    parser = cli.build_parser()
+    notify = parser.parse_args(
+        [
+            "photon", "notify", "trc_test123", "--channel", "telegram",
+            "--to", "123456789", "--dry-run",
+        ]
+    )
+    watcher = parser.parse_args(
+        ["photon", "watch", "--channel", "telegram", "--to", "123456789"]
+    )
+    assert notify.channel == watcher.channel == "telegram"
+    assert watcher.transport == "spectrum"
