@@ -600,7 +600,9 @@ def _cmd_photon_notify(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        message_id = _photon_client(args.transport, args.channel).send_denial(args.to, args.trace, message)
+        message_id = _photon_client(args.transport, args.channel).send_denial(
+            args.to, args.trace, message
+        )
     except PhotonAlertError as exc:
         raise UsageError(str(exc)) from exc
     print(f"Photon {args.transport} request completed ({message_id}); verify on your device")
