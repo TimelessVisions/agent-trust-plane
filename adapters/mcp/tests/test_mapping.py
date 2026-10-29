@@ -133,3 +133,70 @@ class TestConfig:
         cfg = ProxyConfig(server_name="notes", upstream=UpstreamConfig(command="p"))
         assert cfg.agent_ref.id == "notes-agent"
         assert cfg.principal.id == "local-user"
+
+    def test_refuses_to_give_gateway_credentials_to_the_upstream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ATP_OPERATOR_KEY", "operator-secret-value")
+        with pytest.raises(ValueError, match="gateway credentials"):
+            ProxyConfig(
+                server_name="notes",
+                upstream=UpstreamConfig(command="python", env={"ATP_OPERATOR_KEY": "x"}),
+            )
+        with pytest.raises(ValueError, match="ATP_AGENT_TOKEN"):
+            ProxyConfig(
+                server_name="notes",
+                upstream=UpstreamConfig(
+                    url="http://127.0.0.1/mcp",
+                    headers_env={"Authorization": "ATP_AGENT_TOKEN"},
+                ),
+            )
+        with pytest.raises(ValueError, match="header:Authorization"):
+            ProxyConfig(
+                server_name="notes",
+                upstream=UpstreamConfig(
+                    url="https://mcp.example.test/mcp",
+                    headers={"Authorization": "operator-secret-value"},
+                ),
+            )
+        # An upstream API token that only the proxy holds is the supported placement.
+        ProxyConfig(
+            server_name="notes",
+            upstream=UpstreamConfig(command="python", env={"UPSTREAM_TOKEN": "only-the-proxy"}),
+        )
+
+    def test_shared_upstream_warning_is_only_for_non_loopback(self) -> None:
+        from atp_adapter_mcp.config import shared_upstream_warning
+
+        assert shared_upstream_warning("http://127.0.0.1:9/mcp") is None
+        assert shared_upstream_warning("https://localhost/mcp") is None
+        assert shared_upstream_warning("https://[::1]/mcp") is None
+        text = shared_upstream_warning("https://mcp.example.test/mcp")
+        assert text is not None and "only client" in text
+
+    def test_connect_warns_before_dialing_a_shared_upstream(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import anyio
+
+        from atp_adapter_mcp.proxy import connect_upstream
+
+        def do_not_dial(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("do not dial")
+
+        monkeypatch.setattr("atp_adapter_mcp.proxy.streamable_http_client", do_not_dial)
+        cfg = ProxyConfig(
+            server_name="notes",
+            upstream=UpstreamConfig(url="https://mcp.example.test/mcp"),
+        )
+
+        async def run() -> None:
+            async with connect_upstream(cfg):
+                return
+
+        with (
+            caplog.at_level("WARNING", logger="atp.mcp-proxy"),
+            pytest.raises(RuntimeError, match="do not dial"),
+        ):
+            anyio.run(run)
+        assert "only client" in caplog.text

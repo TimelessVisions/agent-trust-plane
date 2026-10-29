@@ -152,6 +152,35 @@ class ProxyConfig(BaseModel):
             seen.add(m.mcp_tool)
         return self
 
+    @model_validator(mode="after")
+    def _gateway_credentials_stay_out_of_the_upstream(self) -> ProxyConfig:
+        """Refuse a config that hands the proxy's own secrets to the upstream.
+
+        Upstream API tokens belong in ``upstream.env`` / ``headers_env``.
+        The operator key, grant signing key, and agent credential do not:
+        a process that can read the upstream's environment can then call
+        the gateway as the operator or the agent. The proxy cannot see
+        whether some other process can also spawn the upstream command.
+        """
+        forbidden = gateway_credential_env_names(self.agent_token_env)
+        leaked = sorted(set(self.upstream.env).intersection(forbidden))
+        leaked += [
+            f"headers_env:{var}" for var in self.upstream.headers_env.values() if var in forbidden
+        ]
+        for header, value in self.upstream.headers.items():
+            for var in forbidden:
+                secret = os.environ.get(var, "")
+                if secret and value == secret:
+                    leaked.append(f"header:{header}=${var}")
+        if leaked:
+            raise ValueError(
+                "refusing to start: gateway credentials would be given to the upstream "
+                f"({', '.join(leaked)}). Keep ATP_OPERATOR_KEY, ATP_GRANT_SIGNING_KEY, "
+                f"and ${self.agent_token_env} out of upstream.env, upstream.headers, "
+                "and upstream.headers_env."
+            )
+        return self
+
     @property
     def envelope_tool(self) -> str:
         return f"mcp.{self.server_name}"
@@ -171,6 +200,40 @@ class ProxyConfig(BaseModel):
 
     def mapping_for(self, tool_name: str) -> ToolMapping | None:
         return next((m for m in self.tools if m.mcp_tool == tool_name), None)
+
+
+_GATEWAY_CREDENTIAL_ENV = ("ATP_OPERATOR_KEY", "ATP_GRANT_SIGNING_KEY")
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+
+def gateway_credential_env_names(agent_token_env: str) -> frozenset[str]:
+    return frozenset({*_GATEWAY_CREDENTIAL_ENV, agent_token_env})
+
+
+def url_host(url: str) -> str:
+    rest = url.split("//", 1)[1].split("/", 1)[0]
+    if rest.startswith("["):
+        end = rest.find("]")
+        return rest[: end + 1] if end != -1 else rest
+    return rest.split(":", 1)[0]
+
+
+def shared_upstream_warning(url: str) -> str | None:
+    """Warn when an HTTP upstream is not loopback.
+
+    Plain HTTP off localhost is already refused. HTTPS to any other host
+    is allowed, and the proxy cannot see a firewall, so this is a warning
+    rather than a refusal. Loopback is not proof of isolation either: any
+    other process on the host can still connect.
+    """
+    if url_host(url) in _LOOPBACK_HOSTS:
+        return None
+    return (
+        "upstream is not loopback; the proxy cannot prove it is the only client. "
+        "Anything that can open this URL bypasses authorization unless the "
+        "upstream accepts connections only from the proxy and the proxy alone "
+        "holds the upstream credential."
+    )
 
 
 def load_config(path: str | Path) -> ProxyConfig:

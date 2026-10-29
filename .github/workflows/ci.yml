@@ -37,7 +37,9 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy
-      - run: uv run pytest -p no:warnings
+      # Do not pass -p no:warnings. That disables pytest's warnings plugin,
+      # which is what applies filterwarnings = error::DeprecationWarning:atp_.*
+      - run: uv run pytest
       - name: adversarial evals (in-process gateway)
         run: uv run python -m atp_evals --report eval-reports/ci.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -111,3 +113,35 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  # The reference filesystem server is opt-in (ATP_E2E_NPX=1) because it
+  # downloads an npm package. This job does not install it and does not
+  # treat a skip as a pass. GitHub marks a skipped *job* as success, so
+  # this job runs and reports NOT_MEASURED instead of being skipped.
+  third-party-mcp:
+    name: "NOT_MEASURED third-party MCP filesystem server"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Report the opt-in server test as not measured
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${ATP_E2E_NPX:-}" = "1" ]; then
+            echo "::error title=NOT_MEASURED::ATP_E2E_NPX=1 is set, but CI must not download @modelcontextprotocol/server-filesystem. Unset it and measure locally."
+            exit 1
+          fi
+          grep -q 'ATP_E2E_NPX' adapters/mcp/tests/test_proxy_third_party.py
+          grep -q 'pytest.mark.skipif' adapters/mcp/tests/test_proxy_third_party.py
+          {
+            echo "### Third-party MCP server"
+            echo ""
+            echo "NOT_MEASURED: \`adapters/mcp/tests/test_proxy_third_party.py\` (\`@modelcontextprotocol/server-filesystem\`)."
+            echo ""
+            echo "CI does not set \`ATP_E2E_NPX\` and does not install that server."
+            echo "A green backend job is not a measurement of it."
+            echo "Local measurement: \`ATP_E2E_NPX=1 uv run pytest adapters/mcp/tests/test_proxy_third_party.py\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=NOT_MEASURED::adapters/mcp/tests/test_proxy_third_party.py was not executed. CI did not contact @modelcontextprotocol/server-filesystem."
