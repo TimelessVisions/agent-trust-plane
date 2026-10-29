@@ -58,9 +58,11 @@ class SpectrumClient:
             raise PhotonAlertError("Missing ATP trace ID")
         try:
             result = subprocess.run(
-                ["node", str(BRIDGE), *(
-                    ["telegram", recipient] if self.channel == "telegram" else [recipient]
-                )],
+                [
+                    "node",
+                    str(BRIDGE),
+                    *(["telegram", recipient] if self.channel == "telegram" else [recipient]),
+                ],
                 input=message,
                 text=True,
                 capture_output=True,
