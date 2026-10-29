@@ -137,7 +137,8 @@ Same VM, still version `0.3.2`. `uv run pytest -p no:warnings` finished
 2026-10-29T15:32:36Z: **445 passed, 1 skipped in 36.10s**, exit 0.
 `--collect-only -q` sums to 446 tests. The six new tests are in
 `adapters/mcp/tests/test_deny_before_upstream.py`. ruff (192 files
-formatted) and mypy (76 files) passed after the edit. Evals, demos, the
-dashboard, and the package job were not re-run after the patch; the patch
-does not change them. Evals were 8/8 on the baseline SHA earlier the same
-day.
+formatted) and mypy (76 files) passed after the edit. On commit
+`c65ead064e5aa15158c307b8a5daac1ee90d922b`, at 2026-10-29T15:35:53Z,
+`python -m atp_evals` was 8/8 and the accounts-payable regression suite
+exited 0. Demos, the dashboard, and the package job were not re-run
+after the patch.

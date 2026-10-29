@@ -84,10 +84,18 @@ not a mock of the proxy.
 
 Delta from the baseline: +6 passed, skip unchanged (439+6=445, 440+6=446).
 
-Not re-run after the patch: evals, demos, dashboard, `uv build`,
-pip-audit (the lockfile did not change), link check (run again after
-these docs are committed if the script only sees tracked files),
-Windows, macOS, Python 3.13, Python 3.14, `ATP_E2E_NPX=1`.
+Re-run on the committed tree `c65ead064e5aa15158c307b8a5daac1ee90d922b`
+at 2026-10-29T15:35:53Z, after the proof suite:
+
+| Command | Result |
+|---|---|
+| `uv run python -m atp_evals` | Exit 0. 8/8 passed. |
+| `uv run atp test examples/regression-suite/accounts-payable.yaml --quiet` | Exit 0. |
+| `uv run python scripts/check_links.py` (after `git add`, 78 tracked markdown files) | Exit 0. 0 broken relative links. |
+
+Not re-run after the patch: demos, dashboard, `uv build`, pip-audit (the
+lockfile did not change), Windows, macOS, Python 3.13, Python 3.14,
+`ATP_E2E_NPX=1`.
 
 ## What was not verified
 
