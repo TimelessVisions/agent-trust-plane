@@ -558,14 +558,16 @@ def _cmd_mcp_wrap(args: argparse.Namespace) -> int:
     )
 
 
-def _photon_client(transport: str) -> Any:
+def _photon_client(transport: str, channel: str = "imessage") -> Any:
     """Build the selected outbound client without exposing its credentials."""
     from atp_cli.photon import PhotonClient, PhotonCredentials
     from atp_cli.photon_spectrum import SpectrumClient
 
     if transport == "spectrum":
-        return SpectrumClient()
+        return SpectrumClient(channel=channel)
     if transport == "rest":
+        if channel != "imessage":
+            raise UsageError("REST transport only supports iMessage in this integration")
         credentials = PhotonCredentials(
             project_id=os.environ.get("PHOTON_PROJECT_ID", ""),
             api_key=os.environ.get("PHOTON_API_KEY", ""),
@@ -598,7 +600,9 @@ def _cmd_photon_notify(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        message_id = _photon_client(args.transport).send_denial(args.to, args.trace, message)
+        message_id = _photon_client(args.transport, args.channel).send_denial(
+            args.to, args.trace, message
+        )
     except PhotonAlertError as exc:
         raise UsageError(str(exc)) from exc
     print(f"Photon {args.transport} request completed ({message_id}); verify on your device")
@@ -612,7 +616,7 @@ def _cmd_photon_watch(args: argparse.Namespace) -> int:
     from atp_cli.photon_watch import watch
 
     try:
-        client = _photon_client(args.transport)
+        client = _photon_client(args.transport, args.channel)
     except PhotonAlertError as exc:
         raise UsageError(str(exc)) from exc
     home = AtpHome(args.home)
@@ -801,7 +805,8 @@ def build_parser() -> argparse.ArgumentParser:
     photon_sub = photon.add_subparsers(dest="photon_command", required=True)
     pn = photon_sub.add_parser("notify", help="send a verified enforced DENY trace to iMessage")
     pn.add_argument("trace", help="trace identifier in the local ATP store")
-    pn.add_argument("--to", required=True, help="destination E.164 phone number")
+    pn.add_argument("--to", required=True, help="E.164 number or numeric Telegram user ID")
+    pn.add_argument("--channel", choices=["imessage", "telegram"], default="imessage")
     pn.add_argument(
         "--transport",
         choices=["spectrum", "rest"],
@@ -813,7 +818,8 @@ def build_parser() -> argparse.ArgumentParser:
     pn.set_defaults(func=_cmd_photon_notify)
 
     pw = photon_sub.add_parser("watch", help="alert on new denials (opt-in, outbound only)")
-    pw.add_argument("--to", required=True, help="destination E.164 phone number")
+    pw.add_argument("--to", required=True, help="E.164 number or numeric Telegram user ID")
+    pw.add_argument("--channel", choices=["imessage", "telegram"], default="imessage")
     pw.add_argument(
         "--transport",
         choices=["spectrum", "rest"],
