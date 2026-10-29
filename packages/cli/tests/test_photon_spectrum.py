@@ -11,9 +11,7 @@ from atp_cli.photon import PhotonAlertError
 
 
 @pytest.fixture
-def configured_bridge(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> Path:
+def configured_bridge(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     bridge = tmp_path / "send.mjs"
     bridge.write_text("// test-only bridge\n", encoding="utf-8")
     (tmp_path / "node_modules" / "spectrum-ts").mkdir(parents=True)
@@ -51,8 +49,7 @@ def test_spectrum_client_sends_only_given_message(
         "Read-only notification. Text replies cannot approve actions."
     )
     assert (
-        client.send_denial("+12125550123", "trc_test123", message)
-        == "spectrum-request-trc_test123"
+        client.send_denial("+12125550123", "trc_test123", message) == "spectrum-request-trc_test123"
     )
     args, kwargs = seen[0]  # type: ignore[misc]
     assert args[0] == ["node", str(configured_bridge), "+12125550123"]
