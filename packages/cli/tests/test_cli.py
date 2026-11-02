@@ -115,3 +115,34 @@ def test_demo_wrap_accepts_a_relative_out_dir(
     assert _run("demo", "wrap", "--out", "reports/wrap-demo") == 0
     assert (tmp_path / "reports" / "wrap-demo" / "atp-regression.yaml").exists()
     assert (tmp_path / "reports" / "wrap-demo" / ".atp" / "atp.db").exists()
+
+
+def test_generated_keys_never_start_with_a_dash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A key starting with "-" cannot be passed as `--operator-key KEY`: argparse
+    reads it as another option. token_urlsafe draws one about 1 time in 64."""
+    import secrets
+
+    from atp_cli.home import AtpHome
+    from atp_gateway.__main__ import keygen
+    from atp_gateway.settings import GatewaySettings
+
+    real = secrets.token_urlsafe
+    draws = iter(["-" + real(48)[1:], real(48)] * 8)
+    monkeypatch.setattr(secrets, "token_urlsafe", lambda n=None: next(draws))
+
+    home = AtpHome(tmp_path / "home").ensure()
+    keygen([])
+    settings = GatewaySettings(
+        _env_file=None, database_path=":memory:", operator_key="", grant_signing_key=""
+    )
+    lines = (
+        home.keys_path.read_text(encoding="utf-8").splitlines()
+        + capsys.readouterr().out.splitlines()
+    )
+    values = [line.split("=", 1)[1] for line in lines if line.startswith("ATP_")]
+    values += [settings.operator_key_value(), settings.signing_key_bytes().decode("utf-8")]
+
+    assert len(values) == 6
+    assert not [v for v in values if v.startswith("-")]

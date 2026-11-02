@@ -19,7 +19,7 @@ from atp_core.decision import (
 from atp_core.envelope import ActionEnvelope, ContentSource, ContentTrust, Provenance
 from atp_core.errors import ATPError, DelegationError, EnvelopeError, GrantError, ToolError
 from atp_core.files import MAX_INPUT_BYTES, read_bounded_text
-from atp_core.ids import new_id, new_trace_id
+from atp_core.ids import new_id, new_secret_key, new_trace_id
 from atp_core.money import Money
 from atp_core.principals import PrincipalKind, PrincipalRef
 from atp_core.reasons import ReasonCode
@@ -57,6 +57,7 @@ __all__ = [
     "ensure_aware",
     "in_seconds",
     "new_id",
+    "new_secret_key",
     "new_trace_id",
     "read_bounded_text",
     "sha256_hex",
