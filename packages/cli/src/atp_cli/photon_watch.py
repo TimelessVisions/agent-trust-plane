@@ -7,6 +7,7 @@ participate in authorize/execute and never changes the decision or grants.
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -129,12 +130,17 @@ def watch(
     once: bool = False,
 ) -> None:
     """Start from *now*, not from historic denials. Ctrl+C stops the process."""
-    if not PHONE_RE.fullmatch(recipient):
+    if getattr(client, "channel", "imessage") == "telegram":
+        if not re.fullmatch(r"[1-9][0-9]{4,19}", recipient):
+            raise PhotonAlertError("Telegram recipient must be a numeric user ID")
+    elif not PHONE_RE.fullmatch(recipient):
         raise PhotonAlertError("recipient must be a valid E.164 phone number")
     if not 1.0 <= poll_seconds <= 60.0:
         raise PhotonAlertError("poll interval must be between 1 and 60 seconds")
     home.mkdir(parents=True, exist_ok=True)
-    journal = AlertJournal(home / "photon-alerts.db")
+    channel = getattr(client, "channel", "imessage")
+    journal_file = "photon-alerts-telegram.db" if channel == "telegram" else "photon-alerts.db"
+    journal = AlertJournal(home / journal_file)
     try:
         initial = [s.trace_id for s in trust_plane.list_traces(limit=500)]
         fresh = journal.initialize(initial, client.credentials.project_id, recipient)
