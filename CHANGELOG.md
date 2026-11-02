@@ -6,7 +6,23 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+### Security
+- Lockfile pins the lowest releases that clear PYSEC-2026-4320
+  (`certifi==2026.10.19`), CVE-2026-114603 (`opentelemetry-api==1.45.1`),
+  and PYSEC-2026-4141 / PYSEC-2026-4183 (`pyjwt==2.15.0`). Product version
+  stays 0.3.2. Reachability is recorded in
+  `docs/release-v1/REUSE_DECISIONS.md`.
+- The MCP proxy refuses a config that copies `ATP_OPERATOR_KEY`,
+  `ATP_GRANT_SIGNING_KEY`, or the agent token into the upstream. A
+  non-loopback HTTP upstream logs a warning. The proxy still cannot
+  detect an agent that launches the upstream itself. See
+  `docs/release-v1/SECURITY_AND_LIMITS.md`.
+
 ### Fixed
+- CI runs pytest with the warnings plugin enabled, so
+  `DeprecationWarning` from `atp_*` fails the job. The opt-in third-party
+  filesystem server is reported as NOT_MEASURED instead of disappearing
+  inside a green test run.
 - MCP proxy traces record the upstream `initialize` protocol revision. The
   proxy was reading the camelCase alias attribute, so every trace said
   `protocol unknown`.

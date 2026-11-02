@@ -112,3 +112,85 @@ diffs (Photon PR changes `proxy.py`, the CLI, and `uv.lock` relative to
 |---|---|
 | Merge or rebase onto the alert branches | Rejected for this proof. They are experimental notification channels, not the authorization decision. |
 | **Leave them open and independent.** | Chosen. An alert channel can be considered later, with its own tests, and must not be described as confirmed device delivery unless a device receipt is shown for that run. |
+
+## Decision 4 — bump three locked transitive versions, nothing else
+
+### Requirement and gap
+
+`pip-audit` 2.10.1 on the locked runtime set (`uv export --no-hashes
+--no-emit-project --no-dev`, then `--disable-pip --no-deps --strict`)
+exited 1 at 2026-10-29T15:44:19Z on `18d910e`:
+
+| Package | Locked before | Advisory | Fix version named by the audit |
+|---|---|---|---|
+| certifi | 2026.7.22 | PYSEC-2026-4320 | 2026.10.18 and 2026.10.19 |
+| opentelemetry-api | 1.44.0 | CVE-2026-114603 | 1.45.1 |
+| pyjwt | 2.14.0 | PYSEC-2026-4141, PYSEC-2026-4183 | 2.15.0 |
+
+None of the three is a direct dependency of this repository. `mcp==2.2.0`
+requires `opentelemetry-api>=1.28.0` and `pyjwt[crypto]>=2.10.1`.
+`certifi` is pulled in by the HTTP stacks. Product version stays 0.3.2.
+
+### Reachable here, or not
+
+Checked against installed mcp 2.2.0 and this repository’s source on
+2026-10-29. This is call-graph evidence, not an exploit and not a
+statement that the advisory is harmless in general.
+
+**certifi PYSEC-2026-4320.** The advisory describes the emSign ECC Root
+CA G3 in the bundled trust store, with compromised intermediate keys, and
+says an on-path attacker who holds one of those keys can impersonate TLS
+hosts. Certifi 2026.10.18 is still listed in the affected version set that
+was read with the advisory; 2026.10.19 is the release the advisory text
+tells clients to install (it restores the unaffected emSign roots). This
+repository does not import `certifi`. `httpx` / `httpx2` do, and the proxy
+builds an `httpx2` client for a Streamable HTTP upstream
+(`adapters/mcp/src/atp_adapter_mcp/proxy.py`). The stdio notes path does
+not open TLS. An HTTPS upstream or an HTTPS gateway URL uses that CA
+bundle. So the bad root is on the TLS path this program can take, and it
+is not on the stdio demo path. The pin is `certifi==2026.10.19`, the
+lowest version that covers both fix lines the audit printed. PyPI’s
+latest on this date was 2026.10.23; that was not taken.
+
+**opentelemetry-api CVE-2026-114603.** `TraceState.from_header` can spend
+quadratic time on a `tracestate` value that is a long run of spaces or
+tabs. mcp’s `Server` installs `OpenTelemetryMiddleware` by default
+(`mcp/server/lowlevel/server.py`). That middleware calls
+`extract_trace_context(ctx.meta)` on the inbound message
+(`mcp/server/_otel.py`), and `extract_trace_context` calls
+`opentelemetry.propagate.extract` (`mcp/shared/_otel.py`). `ctx.meta` is
+taken from the request `_meta`. The proxy uses that `Server`. A client of
+the proxy can therefore put a `tracestate` value on a message the
+middleware extracts, on the stdio server path, before the tool handler
+runs. No exporter is required for the parse. **Reachable on the proxy’s
+request path.** The pin is `opentelemetry-api==1.45.1`, which is also the
+newest release published on this date. This change does not add a test
+that sends a hostile `tracestate`.
+
+**PyJWT PYSEC-2026-4141.** Deeply nested JSON in a token payload can raise
+`RecursionError` from `jwt.decode` / `PyJWKClient.get_signing_key_from_jwt`
+when signature verification is off. The only `import jwt` in installed
+mcp 2.2.0 is `mcp/client/auth/extensions/client_credentials.py`, and the
+call there is `jwt.encode` for a private-key JWT client-credentials
+grant. This repository does not import `jwt`, `PyJWKClient`, or that
+extension. **Not reachable on the gateway, CLI, or proxy paths that this
+tree executes.**
+
+**PyJWT PYSEC-2026-4183.** From 2.1.0 until 2.15.0, `OKPAlgorithm.from_jwk`
+does not check that an OKP private JWK’s `x` matches the public key
+derived from `d` (OSV, CVSS 3.1 8.2, fixed in 2.15.0). The described
+attack also needs an integration that accepts private-key parameters from
+a proof header. This tree does not call `from_jwk`. **Not reachable on
+the paths this tree executes.** The same pin, `pyjwt==2.15.0`, is the
+lowest release the audit names for both PyJWT ids. PyPI’s latest on this
+date was 2.15.1; that was not taken.
+
+### Options
+
+| Option | Result |
+|---|---|
+| Leave the lockfile and accept a red `package` job | Rejected for this branch. The director asked for the minimum bump in a draft PR. |
+| Upgrade mcp, or float every dependency | Rejected. `uv lock` changed three versions and left the package count at 71. |
+| **Exact constraints at the minimum fix versions, regenerate `uv.lock`.** | Chosen. `[tool.uv] constraint-dependencies` pins `certifi==2026.10.19`, `opentelemetry-api==1.45.1`, `pyjwt==2.15.0`. |
+
+Merging the lockfile is an owner decision. This PR does not merge.

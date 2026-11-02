@@ -45,7 +45,7 @@ from mcp.server.stdio import stdio_server
 from mcp.shared._httpx_utils import create_mcp_http_client
 
 from atp_adapter_http import AgentClient, GatewayError, TrustPlaneClient
-from atp_adapter_mcp.config import ProxyConfig
+from atp_adapter_mcp.config import ProxyConfig, shared_upstream_warning
 from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY
 from atp_core import ActionEnvelope, Provenance, canonical_json, new_trace_id
 
@@ -92,6 +92,10 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
     up = config.upstream
     if up.url:
         import httpx2
+
+        warning = shared_upstream_warning(up.url)
+        if warning:
+            log.warning("%s", warning)
 
         http = create_mcp_http_client(
             headers=up.resolved_headers(),

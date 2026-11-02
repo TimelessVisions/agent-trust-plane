@@ -110,6 +110,20 @@ for commit `cfb325d224c438d24f4169039fffd0d9dbd2e47c`, finished about
 Not run: macOS, Python 3.14, `ATP_E2E_NPX=1`, publish workflow. Demos and
 the dashboard were not re-run on this VM after the patch; CI ran them.
 
+## B2 lockfile and warnings plugin (local)
+
+Branch `release/v1/B2-supply-chain-and-false-green`, still product version
+0.3.2. Python 3.12.3.
+
+| UTC | Command | Result |
+|---|---|---|
+| 2026-10-29T15:44:19Z | `pip-audit -r` locked runtime set, `--strict --disable-pip --no-deps`, before the bump | Exit 1. Five findings in certifi 2026.7.22, opentelemetry-api 1.44.0, pyjwt 2.14.0. |
+| 2026-10-29T15:48:32Z (35.25s) | `uv run pytest` (warnings plugin on; no `-p no:warnings`) | Exit 0. **448 passed, 1 skipped, 1 warning.** The skip is the opt-in filesystem test. The warning is Starlette’s `anyio.abc.BlockingPortal` deprecation, not an `atp_*` warning, so the filter did not fail the run. `--collect-only -q` sums to 449. |
+| 2026-10-29T15:47:41Z | same `pip-audit` command after `uv lock` | Exit 0. `No known vulnerabilities found`. Exported pins: `certifi==2026.10.19`, `opentelemetry-api==1.45.1`, `pyjwt==2.15.0`. |
+| 2026-10-29T15:48:41Z | `uv run python -m atp_evals`; `uv run atp test examples/regression-suite/accounts-payable.yaml --quiet` | Exit 0. Evals 8/8. Sample suite exit 0. |
+
+`uv lock` changed only those three versions (71 packages before and after).
+
 ## What was not verified
 
 - That a `2026-07-28` client speaks stateless HTTP to this proxy. The
