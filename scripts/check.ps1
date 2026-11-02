@@ -4,7 +4,7 @@ Set-Location (Join-Path $PSScriptRoot "..")
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy
-uv run pytest -p no:warnings
+uv run pytest
 uv run python -m atp_evals
 uv run atp doctor --port 1
 uv run atp demo injection | Out-Null
