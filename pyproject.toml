@@ -107,6 +107,15 @@ dev = [
 # machine) from the same tag is byte-identical: the backend version is
 # written into the wheel's WHEEL file.
 build-constraint-dependencies = ["hatchling==1.32.0"]
+# Lowest releases that clear the locked-set advisories (see
+# docs/release-v1/REUSE_DECISIONS.md). Exact pins so a later `uv lock`
+# does not float these three. They stay transitive; this is not a new
+# product dependency and not a version bump of agent-trust-plane.
+constraint-dependencies = [
+  "certifi==2026.10.19",
+  "opentelemetry-api==1.45.1",
+  "pyjwt==2.15.0",
+]
 
 [tool.uv.workspace]
 members = [
