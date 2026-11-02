@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from atp_core import new_secret_key
 
 log = logging.getLogger("atp.gateway")
 
@@ -77,7 +78,7 @@ class GatewaySettings(BaseSettings):
             return value
         if self.ephemeral:
             log.info("%s not set; ephemeral in-memory gateway, generating a per-process key", name)
-            return secrets.token_urlsafe(48)
+            return new_secret_key()
         raise InsecureConfigurationError(
             f"{name} is not set. A persistent gateway will not start with generated keys. "
             "Run: python -m atp_gateway keygen  and put the output in .env"
