@@ -129,7 +129,7 @@ def main() -> int:
         check_metadata(z.read(f"{info}/METADATA").decode("utf-8"), version)
         if f"{info}/licenses/LICENSE" not in names:
             fail("LICENSE not in the wheel")
-        if "Copyright (c) 2026 George Gakravyi" not in z.read(f"{info}/licenses/LICENSE").decode(
+        if "Copyright (c) 2026 Timeless Visions" not in z.read(f"{info}/licenses/LICENSE").decode(
             "utf-8"
         ):
             fail("LICENSE copyright line missing")

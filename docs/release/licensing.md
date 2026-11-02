@@ -11,6 +11,12 @@
   `george@agentcommercegateway.com` and `georgegarkavyi@gmail.com`; 28+
   commits, 2026-09-16 onward), no other contributors, no `Co-Authored-By`
   trailers naming another person, no CLA.
+- **Holder changed 2026-11-02** (owner decision): the copyright line is now
+  `Copyright (c) 2026 Timeless Visions`, aligned across the four Timeless
+  Visions repositories. The license stays MIT. Releases up to and including
+  v0.3.2 shipped with `Copyright (c) 2026 George Gakravyi` and keep it;
+  `docs/release/verification.md` is the record of what v0.3.2 shipped and is
+  left unchanged.
 - Metadata: root `pyproject.toml` uses the PEP 639 form `license = "MIT"`
   with `license-files = ["LICENSE"]` and an `authors` entry; every
   workspace member `pyproject.toml` declares `license = "MIT"`; the
