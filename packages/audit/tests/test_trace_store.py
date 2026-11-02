@@ -14,6 +14,7 @@ from atp_audit import (
     TraceStore,
     verify_events,
 )
+from atp_core import utcnow
 
 
 @pytest.fixture(params=["memory", "sqlite"])
@@ -88,3 +89,18 @@ def test_store_has_no_mutation_api(store: TraceStore) -> None:
 def test_empty_trace_verifies_to_genesis(store: TraceStore) -> None:
     report = store.verify("nothing")
     assert report.valid and report.event_count == 0 and report.head_hash == GENESIS_HASH
+
+
+def test_list_traces_orders_newest_first_when_timestamps_tie(
+    store: TraceStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows clocks often return the same value for back-to-back calls, so
+    # recency must come from append order, not from the timestamp alone.
+    frozen = utcnow()
+    monkeypatch.setattr("atp_audit.store.utcnow", lambda: frozen)
+    store.append("t1", EventType.TASK_RECEIVED, "a", {})
+    store.append("t2", EventType.TASK_RECEIVED, "a", {})
+    store.append("t3", EventType.TASK_RECEIVED, "a", {})
+    store.append("t1", EventType.DECISION_MADE, "gateway", {})
+    assert [s.trace_id for s in store.list_traces()] == ["t3", "t2", "t1"]
+    assert [s.trace_id for s in store.list_traces(limit=2)] == ["t3", "t2"]

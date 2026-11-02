@@ -138,9 +138,10 @@ class InMemoryTraceStore:
                 last_event_type=evs[-1].event_type,
                 head_hash=evs[-1].hash,
             )
-            for tid, evs in by_trace.items()
+            # Newest first by first-event seq, matching SqliteTraceStore.
+            # Timestamps can tie on coarse clocks, so they cannot order traces.
+            for tid, evs in sorted(by_trace.items(), key=lambda kv: kv[1][0].seq, reverse=True)
         ]
-        summaries.sort(key=lambda s: s.started_at, reverse=True)
         return summaries[:limit]
 
     def verify(self, trace_id: str) -> IntegrityReport:
