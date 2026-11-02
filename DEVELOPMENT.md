@@ -38,7 +38,7 @@ From [docs/architecture/first-principles.md](docs/architecture/first-principles.
 uv sync                                   # dev dependencies (hypothesis, ruff, mypy, pytest)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                               # strict
-uv run pytest -p no:warnings              # ~2 min; includes property tests and MCP e2e
+uv run pytest                             # ~2 min; includes property tests and MCP e2e
 ATP_E2E_NPX=1 uv run pytest adapters/mcp/tests/test_proxy_third_party.py   # needs node/npx
 uv run python -m atp_evals                # 8 adversarial evals
 uv run atp demo wrap && uv run atp demo injection && uv run atp demo regression && uv run atp demo mcp
