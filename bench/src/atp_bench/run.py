@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from contextlib import ExitStack
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -42,6 +43,7 @@ class PairResult:
     reached: list[str] = field(default_factory=list)
     harmful: bool | None = None
     utility: bool | None = None
+    detail: str = ""
 
 
 def _num(task_id: str) -> int:
@@ -57,10 +59,16 @@ def _pct(rate: float | None) -> str:
     return "n/a" if rate is None else f"{rate * 100:.1f}%"
 
 
+def _norm(args: dict[str, Any]) -> dict[str, Any]:
+    """Ground-truth args as the journal sees them: after a JSON round trip (tuples -> lists)."""
+    return json.loads(json.dumps(args, default=str))
+
+
 def _take(pool: list[Call], call: Call) -> bool:
-    """Remove one occurrence of ``call`` from ``pool``; True if there was one."""
+    """Consume one journal entry matching ``call`` (order-insensitive multiset match)."""
+    want = _norm(call.args)
     for i, c in enumerate(pool):
-        if c.function == call.function and c.args == call.args:
+        if c.function == call.function and c.args == want:
             del pool[i]
             return True
     return False
@@ -151,31 +159,35 @@ class Summary:
 
 def _run_session(
     layer: Layer, suite, annotation, injection: str | None, workdir: Path, phases: list[list[Call]]
-) -> tuple[bool, list[Call], int]:
-    """One fresh server and journal. Returns (inconclusive, journal, first_phase_journal_len).
+) -> tuple[str | None, list[Call], int]:
+    """One fresh server and journal. Returns (error, journal, first_phase_journal_len).
 
-    A layer that cannot start (RuntimeError and friends) is INCONCLUSIVE, never DENIED.
+    ``error`` is None on success. Any Exception while opening the layer, entering it, or
+    replaying makes the item INCONCLUSIVE (never DENIED) and carries type and message; the
+    context manager is exited with the real exception info and the run continues.
     """
     if workdir.exists():
         shutil.rmtree(workdir)
     workdir.mkdir(parents=True)
     journal = workdir / "journal.jsonl"
-    cm = layer.open(suite, annotation, injection, journal, workdir)
+    error: str | None = None
+    first_len = 0
     try:
-        session = cm.__enter__()
-    except (RuntimeError, TimeoutError, OSError):
-        return True, [], 0
-    inconclusive, first_len = False, 0
+        with ExitStack() as stack:
+            session = stack.enter_context(layer.open(suite, annotation, injection, journal, workdir))
+            for i, phase in enumerate(phases):
+                for call in phase:
+                    outcome = session.call(call)
+                    if outcome.status == "INCONCLUSIVE" and error is None:
+                        error = f"INCONCLUSIVE {call.function}: {outcome.detail}"[:300]
+                if i == 0:
+                    first_len = len(read_journal(journal))
+    except Exception as exc:  # noqa: BLE001 - one bad item must not abort the run
+        error = f"{type(exc).__name__}: {exc}"[:300]
     try:
-        for i, phase in enumerate(phases):
-            for call in phase:
-                if session.call(call).status == "INCONCLUSIVE":
-                    inconclusive = True
-            if i == 0:
-                first_len = len(read_journal(journal))
-    finally:
-        cm.__exit__(None, None, None)
-    return inconclusive, read_journal(journal), first_len
+        return error, read_journal(journal), first_len
+    except Exception:  # noqa: BLE001
+        return error, [], first_len
 
 
 def run_benchmark(
@@ -239,11 +251,13 @@ def run_benchmark(
             for t in na_tasks:
                 results.append(PairResult(suite_name, t, None, layer.name, "NOT_APPLICABLE"))
             for t in applicable:
-                inconc, journal, _ = _run_session(
+                err, journal, _ = _run_session(
                     layer, suite, annotations[t], None, base / t / "utility", [clean_gt[t]]
                 )
-                if inconc:
-                    results.append(PairResult(suite_name, t, None, layer.name, "INCONCLUSIVE"))
+                if err:
+                    results.append(PairResult(
+                        suite_name, t, None, layer.name, "INCONCLUSIVE", detail=err
+                    ))  # fmt: skip
                 else:
                     pool = list(journal)
                     reached = [c.function for c in clean_gt[t] if _take(pool, c)]
@@ -253,18 +267,19 @@ def run_benchmark(
                         reached=reached, utility=ok,
                     ))  # fmt: skip
                 for inj, inj_calls in inj_gt.items():
-                    inconc, journal, split = _run_session(
+                    err, journal, split = _run_session(
                         layer, suite, annotations[t], inj, base / t / inj,
                         [pair_gt[(t, inj)], inj_calls],
                     )  # fmt: skip
-                    if inconc:
-                        results.append(PairResult(suite_name, t, inj, layer.name, "INCONCLUSIVE"))
+                    if err:
+                        results.append(PairResult(
+                            suite_name, t, inj, layer.name, "INCONCLUSIVE", detail=err
+                        ))  # fmt: skip
                         continue
-                    pool = journal[split:]  # only what the injection phase let through
+                    # Function name only: a call that reached upstream is harm whatever its
+                    # argument representation. Post-split: only the injection phase counts.
                     reached_inj = [
-                        c.function
-                        for c in inj_calls
-                        if is_state_changing(suite_name, c.function) and _take(pool, c)
+                        c.function for c in journal[split:] if is_state_changing(suite_name, c.function)
                     ]
                     results.append(PairResult(
                         suite_name, t, inj, layer.name,

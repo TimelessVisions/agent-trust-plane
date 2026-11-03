@@ -101,7 +101,44 @@ def test_open_layer_utility_is_100_and_harm_is_100(tmp_path):
 def test_injection_ground_truth_uses_pre_environment(tmp_path, monkeypatch):
     root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
     layer = FakeLayer()
-    seen: dict = {}
+    real_load = run_mod.load_suite
+    gt_envs: list[tuple[str, str]] = []  # (kind, env json), in call order
+
+    class Proxy:
+        def __init__(self, inner):
+            self._inner = inner
+            self.name = inner.name
+
+        def __getattr__(self, item):
+            return getattr(self._inner, item)
+
+        def injection_ground_truth(self, task, env):
+            layer.events.append("gt_inj")
+            gt_envs.append(("inj", env.model_dump_json()))
+            return self._inner.injection_ground_truth(task, env)
+
+        def user_ground_truth(self, task, env):
+            layer.events.append("gt_user")
+            gt_envs.append(("user", env.model_dump_json()))
+            return self._inner.user_ground_truth(task, env)
+
+    monkeypatch.setattr(run_mod, "load_suite", lambda n: Proxy(real_load(n)))
+    run([layer], tmp_path, root, slice_n=1, injections_per_task=1)
+    suite = load_suite("banking")
+    injected = suite.env_with_injection("injection_task_0").model_dump_json()
+    clean = suite.default_env().model_dump_json()
+    assert injected != clean
+    # Every ground truth was computed before ANY session opened or replayed anything.
+    first_open = layer.events.index("open")
+    assert all(e not in ("gt_user", "gt_inj") for e in layer.events[first_open:])
+    assert layer.events.count("gt_inj") == 1
+    # The injection ground truth saw the injected pre-environment, and so did the pair's user GT.
+    assert ("inj", injected) in gt_envs
+    assert gt_envs.count(("user", injected)) == 1 and gt_envs.count(("user", clean)) == 1
+
+
+def test_harm_counts_function_name_not_argument_representation(tmp_path, monkeypatch):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
     real_load = run_mod.load_suite
 
     class Proxy:
@@ -113,18 +150,91 @@ def test_injection_ground_truth_uses_pre_environment(tmp_path, monkeypatch):
             return getattr(self._inner, item)
 
         def injection_ground_truth(self, task, env):
-            seen["inj_env"] = env.model_dump_json()
-            seen["inj_events"] = list(layer.events)
-            return self._inner.injection_ground_truth(task, env)
+            calls = self._inner.injection_ground_truth(task, env)
+            return [Call(c.function, {**c.args, "extra": (1, 2)}) for c in calls]  # tuple
 
     monkeypatch.setattr(run_mod, "load_suite", lambda n: Proxy(real_load(n)))
-    run([layer], tmp_path, root, slice_n=1, injections_per_task=1)
-    suite = load_suite("banking")
-    expected = suite.env_with_injection("injection_task_0").model_dump_json()
-    assert seen["inj_env"] == expected  # carries the injection goal
-    assert expected != suite.default_env().model_dump_json()
-    # Computed before the pair's session replayed anything (earlier sessions are utility rows).
-    assert seen["inj_events"].count("call") == 0 or seen["inj_events"][-1] != "call"
+    summary = run([FakeLayer()], tmp_path, root, slice_n=1, injections_per_task=1)
+    assert summary.rates("fake")["harm_rate"] == 1.0
+
+
+def test_utility_matches_tuple_valued_ground_truth_args(tmp_path, monkeypatch):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    real_load = run_mod.load_suite
+
+    class Proxy:
+        def __init__(self, inner):
+            self._inner = inner
+            self.name = inner.name
+
+        def __getattr__(self, item):
+            return getattr(self._inner, item)
+
+        def user_ground_truth(self, task, env):
+            return [Call(c.function, {**c.args, "extra": (1, 2)}) for c in
+                    self._inner.user_ground_truth(task, env)]  # fmt: skip
+
+    monkeypatch.setattr(run_mod, "load_suite", lambda n: Proxy(real_load(n)))
+    summary = run([FakeLayer()], tmp_path, root, slice_n=1, injections_per_task=0)
+    assert summary.utility_status("banking", "user_task_0", "fake") == "PASS"
+
+
+class RaisingLayer(FakeLayer):
+    """Raises for user_task_0 (at open, at enter, or mid-replay); behaves for the rest."""
+
+    def __init__(self, where):
+        super().__init__("raising")
+        self.where = where
+
+    def open(self, suite, annotation, injection_task, journal, workdir):
+        if annotation.user_task == "user_task_0":
+            if self.where == "open":
+                raise ValueError("open blew up")
+            if self.where == "enter":
+                raise ExceptionGroup("startup", [KeyError("x")])
+            if self.where == "call":
+                inner = super().open(suite, annotation, injection_task, journal, workdir)
+
+                @contextmanager
+                def cm():
+                    with inner as session:
+                        class Boom:
+                            def call(self, call):
+                                raise OSError("pipe broke mid-replay")
+
+                        yield Boom()
+
+                return cm()
+        return super().open(suite, annotation, injection_task, journal, workdir)
+
+
+@pytest.mark.parametrize("where", ["open", "enter", "call"])
+def test_any_exception_is_inconclusive_and_run_continues(tmp_path, where):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0", "user_task_1"])
+    summary = run([RaisingLayer(where)], tmp_path, root, slice_n=2, injections_per_task=1)
+    assert summary.utility_status("banking", "user_task_0", "raising") == "INCONCLUSIVE"
+    assert summary.utility_status("banking", "user_task_1", "raising") == "PASS"
+    rates = summary.rates("raising")
+    assert rates["inconclusive"] == 2  # task_0 utility + task_0 pair
+    assert rates["n_pairs"] == 1 and rates["harm_rate"] == 1.0
+    details = [r.detail for r in summary.results if r.status == "INCONCLUSIVE"]
+    assert all(details), details
+
+
+def test_atp_config_render_failure_is_inconclusive(tmp_path, monkeypatch):
+    from atp_bench.layers import atp_layer
+    from atp_bench.layers.atp_layer import AtpLayer
+
+    def boom(*a, **k):
+        raise ValueError("bad annotation rule")
+
+    monkeypatch.setattr(atp_layer, "render_atp_config", boom)
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    other = FakeLayer()
+    summary = run([AtpLayer(), other], tmp_path, root, slice_n=1, injections_per_task=0)
+    assert summary.utility_status("banking", "user_task_0", "atp") == "INCONCLUSIVE"
+    assert "bad annotation rule" in summary.results[0].detail
+    assert summary.utility_status("banking", "user_task_0", "fake") == "PASS"
 
 
 def test_not_applicable_excluded_for_all_layers(tmp_path):
