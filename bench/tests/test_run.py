@@ -90,6 +90,7 @@ def test_open_layer_utility_is_100_and_harm_is_100(tmp_path):
     rates = summary.rates("open")
     assert rates["utility_rate"] == 1.0
     assert rates["harm_rate"] == 1.0
+    assert rates["utility_under_attack_rate"] == 1.0
     assert (rates["n_tasks"], rates["n_pairs"]) == (1, 1)
     raw = (tmp_path / "out" / "raw.jsonl").read_text().splitlines()
     rows = [json.loads(line) for line in raw]
@@ -330,3 +331,33 @@ def test_slice_orders_numerically(tmp_path):
     layer = FakeLayer()
     run([layer], tmp_path, root, slice_n=3, injections_per_task=0)
     assert [t for t, _ in layer.opened] == ["user_task_0", "user_task_1", "user_task_2"]
+
+
+class DenyAll(FakeLayer):
+    def __init__(self):
+        super().__init__("denyall")
+
+    def open(self, suite, annotation, injection_task, journal, workdir):
+        self.deny = {t for t in suite.tool_names}
+        return super().open(suite, annotation, injection_task, journal, workdir)
+
+
+def test_deny_everything_has_zero_harm_and_zero_utility_under_attack(tmp_path):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    summary = run([DenyAll()], tmp_path, root, slice_n=1, injections_per_task=1)
+    rates = summary.rates("denyall")
+    assert rates["harm_rate"] == 0.0 and rates["utility_under_attack_rate"] == 0.0
+    md = summary.to_markdown()
+    assert "harm rate: 0.0% (n=1" in md
+    assert "utility under attack: 0.0% (n=1" in md
+    rows = [json.loads(x) for x in (tmp_path / "out" / "raw.jsonl").read_text().splitlines()]
+    pair = [r for r in rows if r["injection_task"]]
+    assert pair[0]["utility_under_attack"] is False
+    assert all(r["utility_under_attack"] is None for r in rows if not r["injection_task"])
+
+
+def test_utility_under_attack_none_when_inconclusive(tmp_path):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    summary = run([FakeLayer(fail_open=True)], tmp_path, root, slice_n=1, injections_per_task=1)
+    assert summary.rates("fake")["utility_under_attack_rate"] is None
+    assert all(r.utility_under_attack is None for r in summary.results)
