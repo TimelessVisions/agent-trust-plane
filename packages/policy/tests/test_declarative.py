@@ -470,6 +470,16 @@ def test_subset_malformed_shapes_deny_as_invalid() -> None:
         assert d.reason_code is ReasonCode.ARGUMENT_INVALID, arg
 
 
+def test_subset_malformed_multibyte_does_not_raise() -> None:
+    # canonical JSON keeps non-ASCII; 150 two-byte chars straddle the 200-byte mark.
+    for arg in ({"k": "é" * 150}, [{"k": "é" * 150}], [["é" * 150]]):
+        d = _subset_decide(["a@x"], arg)
+        assert d.outcome is DecisionOutcome.DENY, arg
+        assert d.reason_code is ReasonCode.ARGUMENT_INVALID, arg
+        ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
+        assert len(ev.constraints[0].requested) <= 200
+
+
 def test_subset_deny_message_is_bounded() -> None:
     values = [f"v{n}@x" for n in range(500)]
     d = _subset_decide(values, ["evil@y"])

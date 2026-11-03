@@ -343,7 +343,7 @@ class DeclaredRule(Policy):
             if any(type(i) not in (str, int, bool) for i in items):
                 c = ConstraintEvaluation(
                     name=name,
-                    requested=canonical_json(value)[:200].decode(),
+                    requested=canonical_json(value).decode()[:200],
                     limit="list of str/int/bool, or one such scalar",
                     satisfied=False,
                 )
