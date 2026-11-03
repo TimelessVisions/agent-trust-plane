@@ -17,7 +17,7 @@ KNOWN_UTILITY_FAILURES: dict[tuple[str, str], str] = {}
 
 def _params():
     out = []
-    for suite, task in ok_annotations(["banking", "slack"]):
+    for suite, task in ok_annotations(["banking", "slack", "workspace", "travel"]):
         reason = KNOWN_UTILITY_FAILURES.get((suite, task))
         marks = [pytest.mark.xfail(reason=reason, strict=True)] if reason else []
         out.append(pytest.param(suite, task, marks=marks, id=f"{suite}-{task}"))
