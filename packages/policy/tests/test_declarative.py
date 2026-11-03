@@ -498,6 +498,37 @@ def test_allowed_values_multibyte_dict_argument_denies_without_raising() -> None
     assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
 
 
+_NULL_RULES: dict[str, dict[str, Any]] = {
+    "argument_subset_of": {"values": ["a"]},
+    "argument_allowed_values": {"values": ["a"]},
+    "argument_max": {"max": 10},
+    "argument_min": {"min": 1},
+    "argument_max_length": {"max_length": 2},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_NULL_RULES))
+def test_explicit_null_is_absent_only_when_optional(kind: str) -> None:
+    def decide(optional: bool) -> Any:
+        rule = {
+            "id": "r",
+            "applies_to": {"tool": "*"},
+            "kind": kind,
+            "argument": "x",
+            "optional": optional,
+            **_NULL_RULES[kind],
+        }
+        ps = build_policy_set(
+            PolicyFile.model_validate(
+                {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+            ).policy_sets[0]
+        )
+        return PolicyEngine().evaluate(ps, ctx(arguments={"x": None}))
+
+    assert decide(True).outcome is DecisionOutcome.ALLOW
+    assert decide(False).outcome is DecisionOutcome.DENY
+
+
 def test_subset_deny_message_is_bounded() -> None:
     values = [f"v{n}@x" for n in range(500)]
     d = _subset_decide(values, ["evil@y"])

@@ -27,6 +27,10 @@ changes may land in minor versions and are called out).
   `docs/release-v1/SECURITY_AND_LIMITS.md`.
 
 ### Fixed
+- Declarative `argument_*` rules with `optional: true` now treat an argument
+  sent as an explicit `null` like an absent one (pass). Previously
+  `argument_subset_of` and `argument_allowed_values` denied it. Without
+  `optional`, `null` is denied as before.
 - `argument_allowed_values` no longer raises `UnicodeDecodeError` when the
   argument is a dict or list whose canonical JSON has a multibyte character
   at byte 200; it denies with `ARGUMENT_NOT_ALLOWED` as intended.

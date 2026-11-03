@@ -283,7 +283,8 @@ class DeclaredRule(Policy):
 
         assert spec.argument is not None
         name = spec.argument
-        if name not in args:
+        # With `optional: true`, an explicit null is the same as an absent argument.
+        if name not in args or (spec.optional and args[name] is None):
             c = ConstraintEvaluation(
                 name=name, requested=None, limit=self._limit_text(), satisfied=spec.optional
             )

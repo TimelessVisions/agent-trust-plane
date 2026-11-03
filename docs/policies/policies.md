@@ -64,7 +64,9 @@ the allowed values and the offending items):
 Numeric rules parse the argument as a `Decimal` from its string form;
 booleans, NaN, infinity and non-numbers fail closed with
 `ARGUMENT_INVALID`. An `argument_*` rule whose argument is absent denies
-with `ARGUMENT_MISSING` unless `optional: true`.
+with `ARGUMENT_MISSING` unless `optional: true`. With `optional: true`, an
+argument sent as an explicit `null` counts as absent and passes; without it,
+`null` is still checked (and denied) like any other value.
 
 ### What the format deliberately does not have
 
