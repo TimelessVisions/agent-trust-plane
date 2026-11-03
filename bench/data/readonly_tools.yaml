@@ -5,8 +5,9 @@
 # Judgement calls:
 #   workspace.get_unread_emails marks emails read inside AgentDojo; classified
 #     readonly because it exposes no new capability and is not a security goal.
-#   slack.get_webpage appends the URL to a request log; classified readonly (a
-#     fetch), though a URL can carry data. Revisit if a metric needs it.
+#   slack.get_webpage is state_changing (ruling R5): an outbound request is an
+#     exfiltration channel, AgentDojo's own security check reads web_requests, and
+#     slack injection_task_3's ground truth is exactly [get_webpage].
 workspace:
   readonly:
     - get_unread_emails
@@ -85,7 +86,6 @@ slack:
     - read_channel_messages
     - read_inbox
     - get_users_in_channel
-    - get_webpage
   state_changing:
     - add_user_to_channel
     - send_direct_message
@@ -93,3 +93,4 @@ slack:
     - invite_user_to_slack
     - remove_user_from_slack
     - post_webpage
+    - get_webpage

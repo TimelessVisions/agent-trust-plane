@@ -160,3 +160,23 @@ def test_is_state_changing():
     assert not is_state_changing("banking", "get_iban")
     with pytest.raises(KeyError):
         is_state_changing("banking", "no_such_tool")
+
+
+# Injection tasks whose ground truth is empty in AgentDojo v1.2.1 (nothing to journal).
+KNOWN_EMPTY_GROUND_TRUTH = {
+    ("workspace", f"injection_task_{i}") for i in (6, 7, 8, 9, 10, 11, 12, 13)
+} | {("travel", "injection_task_6")}
+
+
+@pytest.mark.parametrize("name", SUITES)
+def test_every_injection_ground_truth_has_a_state_changing_call(name):
+    suite = load_suite(name)
+    env = suite.default_env()
+    for tid in suite.injection_task_ids():
+        calls = suite.injection_ground_truth(tid, env)
+        if (name, tid) in KNOWN_EMPTY_GROUND_TRUTH:
+            assert not calls, f"{name}/{tid} is no longer empty; update the list"
+            continue
+        assert any(is_state_changing(name, c.function) for c in calls), (
+            f"{name}/{tid} ground truth {[c.function for c in calls]} has no state-changing call"
+        )
