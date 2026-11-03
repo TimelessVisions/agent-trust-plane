@@ -27,6 +27,9 @@ changes may land in minor versions and are called out).
   `docs/release-v1/SECURITY_AND_LIMITS.md`.
 
 ### Fixed
+- `argument_allowed_values` no longer raises `UnicodeDecodeError` when the
+  argument is a dict or list whose canonical JSON has a multibyte character
+  at byte 200; it denies with `ARGUMENT_NOT_ALLOWED` as intended.
 - CI runs pytest with the warnings plugin enabled, so
   `DeprecationWarning` from `atp_*` fails the job. The opt-in third-party
   filesystem server is reported as NOT_MEASURED instead of disappearing

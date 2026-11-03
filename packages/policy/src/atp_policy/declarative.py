@@ -322,7 +322,7 @@ class DeclaredRule(Policy):
                 name=name,
                 requested=value
                 if isinstance(value, str | int | bool)
-                else canonical_json(value)[:200].decode(),
+                else canonical_json(value).decode()[:200],
                 limit=allowed,
                 satisfied=ok,
             )

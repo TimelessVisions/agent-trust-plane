@@ -480,6 +480,24 @@ def test_subset_malformed_multibyte_does_not_raise() -> None:
         assert len(ev.constraints[0].requested) <= 200
 
 
+def test_allowed_values_multibyte_dict_argument_denies_without_raising() -> None:
+    rule = {
+        "id": "tag",
+        "applies_to": {"tool": "*"},
+        "kind": "argument_allowed_values",
+        "argument": "tag",
+        "values": ["work"],
+    }
+    ps = build_policy_set(
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+        ).policy_sets[0]
+    )
+    d = PolicyEngine().evaluate(ps, ctx(arguments={"tag": [{"k": "é" * 150}]}))
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
+
+
 def test_subset_deny_message_is_bounded() -> None:
     values = [f"v{n}@x" for n in range(500)]
     d = _subset_decide(values, ["evil@y"])
