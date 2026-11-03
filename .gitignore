@@ -16,6 +16,7 @@ htmlcov/
 *.db-journal
 *.sqlite
 data/
+!bench/data/
 eval-reports/
 
 # node
