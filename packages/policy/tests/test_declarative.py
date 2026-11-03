@@ -363,13 +363,13 @@ def test_payments_include_reuses_builtin_policies(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------- argument_subset_of
-def _subset_set(optional: bool = False) -> Any:
+def _subset_set(optional: bool = False, values: list[Any] | None = None) -> Any:
     rule: dict[str, Any] = {
         "id": "recipients",
         "applies_to": {"tool": "mcp.notes", "action": "write_note"},
         "kind": "argument_subset_of",
         "argument": "to",
-        "values": ["a@x", "b@x", "c@x"],
+        "values": values if values is not None else ["a@x", "b@x", "c@x"],
     }
     if optional:
         rule["optional"] = True
@@ -430,3 +430,48 @@ def test_subset_requires_values() -> None:
         PolicyFile.model_validate(
             {"version": 1, "policy_sets": [{"version": "v", "rules": [base]}]}
         )
+
+
+def _subset_decide(values: list[Any], arg: Any) -> Any:
+    return PolicyEngine().evaluate(_subset_set(values=values), ctx(arguments={"to": arg}))
+
+
+def test_subset_is_type_strict() -> None:
+    assert _subset_decide([1], [1]).outcome is DecisionOutcome.ALLOW
+    assert _subset_decide([1, 2], [2, 1]).outcome is DecisionOutcome.ALLOW
+    for values, arg in (
+        ([1], ["1"]),
+        (["1"], [1]),
+        (["True"], [True]),
+        ([True], ["True"]),
+        ([1], [True]),
+        ([True], [1]),
+    ):
+        d = _subset_decide(values, arg)
+        assert d.outcome is DecisionOutcome.DENY, (values, arg)
+        assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED, (values, arg)
+    assert _subset_decide([True], True).outcome is DecisionOutcome.ALLOW
+
+
+def test_subset_malformed_shapes_deny_as_invalid() -> None:
+    for arg in (
+        [None],
+        ["a@x", None],
+        [{"k": "a@x"}],
+        [["a@x"]],
+        [1.0],
+        {"k": "a@x"},
+        {},
+        None,
+        1.5,
+    ):
+        d = _subset_decide(["a@x", "None", "{'k': 'a@x'}", "['a@x']", "1.0"], arg)
+        assert d.outcome is DecisionOutcome.DENY, arg
+        assert d.reason_code is ReasonCode.ARGUMENT_INVALID, arg
+
+
+def test_subset_deny_message_is_bounded() -> None:
+    values = [f"v{n}@x" for n in range(500)]
+    d = _subset_decide(values, ["evil@y"])
+    ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
+    assert "evil@y" in ev.message and len(ev.message) < 300

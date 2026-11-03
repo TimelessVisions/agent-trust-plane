@@ -8,9 +8,11 @@ changes may land in minor versions and are called out).
 
 ### Added
 - Declarative policy rule kind `argument_subset_of`: passes when every item
-  of a list argument is in `values` (a scalar counts as one item, an empty
-  list passes). Denies with `ARGUMENT_NOT_ALLOWED` and reports the allowed
-  values and the offending items.
+  of a list argument is in `values`, using the same exact-type comparison as
+  `argument_allowed_values` (`1`, `"1"` and `true` are distinct). A scalar
+  counts as one item and an empty list passes. Denies with
+  `ARGUMENT_NOT_ALLOWED`, reporting the allowed values and the offending
+  items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Security
 - Lockfile pins the lowest releases that clear PYSEC-2026-4320

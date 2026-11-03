@@ -43,7 +43,7 @@ policy_sets:
 | `argument_max` | `argument`, `max` (decimal), `optional` | `ARGUMENT_EXCEEDS_LIMIT` | value ≤ max |
 | `argument_min` | `argument`, `min`, `optional` | `ARGUMENT_BELOW_MINIMUM` | value ≥ min |
 | `argument_allowed_values` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | value is one of the values, same type (`1` ≠ `true` ≠ `"1"`) |
-| `argument_subset_of` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | every item of a list argument is one of the values (compared as case-sensitive strings); a scalar counts as a one-item list; an empty list passes |
+| `argument_subset_of` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | every item of a list argument is one of the values, same exact-type comparison as `argument_allowed_values` (`1` ≠ `true` ≠ `"1"`); a scalar counts as a one-item list; an empty list passes; a dict, `null`, float or nested list (as the argument or an item) denies with `ARGUMENT_INVALID` |
 | `argument_max_length` | `argument`, `max_length`, `optional` | `ARGUMENT_TOO_LONG` | string/list/dict length ≤ max |
 | `argument_required` | `arguments` | `ARGUMENT_MISSING` | every listed argument present |
 | `argument_forbidden` | `arguments` | `ARGUMENT_FORBIDDEN` | none of the listed arguments present |

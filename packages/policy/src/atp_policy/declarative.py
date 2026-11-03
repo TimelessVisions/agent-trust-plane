@@ -335,21 +335,38 @@ class DeclaredRule(Policy):
             return self.allow(f"{name} is an allowed value", (c,))
 
         if k == "argument_subset_of":
-            # A scalar is a one-item list. Items compare as strings, case-sensitive.
-            items = list(value) if isinstance(value, list | tuple) else [value]
+            # A list/tuple of scalars, or one scalar (= one-item list). Scalars are str, int and
+            # bool only. Each item must match an allowed value by exact type and equality, as in
+            # argument_allowed_values (type() identity keeps True out of an int allow-list).
             allowed = list(spec.values or ())
-            allowed_text = {str(v) for v in allowed}
-            offending = [str(i)[:200] for i in items if str(i) not in allowed_text][:50]
+            items = list(value) if isinstance(value, list | tuple) else [value]
+            if any(type(i) not in (str, int, bool) for i in items):
+                c = ConstraintEvaluation(
+                    name=name,
+                    requested=canonical_json(value)[:200].decode(),
+                    limit="list of str/int/bool, or one such scalar",
+                    satisfied=False,
+                )
+                return self.deny(
+                    ReasonCode.ARGUMENT_INVALID,
+                    f"{name} must be a list of strings/integers/booleans or one such scalar",
+                    (c,),
+                )
+            offending = [
+                i for i in items if not any(type(i) is type(v) and i == v for v in allowed)
+            ]
+            shown = [_fmt(i)[:200] for i in offending[:50]]
             c = ConstraintEvaluation(
                 name=name,
-                requested=[str(i)[:200] for i in items[:MAX_ALLOWED_VALUES]],
-                limit={"allowed": allowed, "offending": offending},
+                requested=[i if len(_fmt(i)) <= 200 else _fmt(i)[:200] for i in items[:50]],
+                limit={"allowed": allowed, "offending": shown},
                 satisfied=not offending,
             )
             if offending:
                 return self.deny(
                     ReasonCode.ARGUMENT_NOT_ALLOWED,
-                    f"{name} has item(s) {offending} outside the allowed values {allowed}",
+                    f"{name} has {len(offending)} item(s) outside the {len(allowed)} allowed "
+                    f"values: {shown[:10]}",
                     (c,),
                 )
             return self.allow(f"every item of {name} is an allowed value", (c,))
