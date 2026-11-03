@@ -49,11 +49,16 @@ def _item(**kw):
     return d
 
 
-def test_default_root_is_bench_annotations_and_files_start_empty():
+def test_default_root_is_bench_annotations_and_files_load():
     assert DEFAULT_ROOT.name == "annotations" and DEFAULT_ROOT.parent.name == "bench"
     for s in SUITES:
-        assert yaml.safe_load((DEFAULT_ROOT / f"{s}.yaml").read_text()) == []
-        assert load_annotations(DEFAULT_ROOT, s) == {}
+        assert isinstance(yaml.safe_load((DEFAULT_ROOT / f"{s}.yaml").read_text()), list)
+        load_annotations(DEFAULT_ROOT, s)  # validates every entry against the real suite
+
+
+@pytest.mark.parametrize("suite", ["banking", "slack"])
+def test_banking_and_slack_annotate_every_user_task(suite):
+    assert set(load_annotations(DEFAULT_ROOT, suite)) == set(load_suite(suite).user_task_ids())
 
 
 def test_valid_annotation_loads(tmp_path):
