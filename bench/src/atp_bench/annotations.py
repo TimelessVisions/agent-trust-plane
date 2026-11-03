@@ -30,7 +30,6 @@ try:
 except ImportError:  # pragma: no cover
     RuleSpec = None  # type: ignore[assignment,misc]
 
-_SUBSET_KIND = "argument_subset_of"
 _FORBIDDEN = re.compile(r"injection[_ ]?task", re.IGNORECASE)
 
 
@@ -39,14 +38,8 @@ def _check_rule(rule: dict[str, Any]) -> None:
         raise ValueError("rule must be a mapping")
     if RuleSpec is None:  # pragma: no cover
         return
-    shaped = dict(rule)
-    if shaped.get("kind") == _SUBSET_KIND:
-        # Not yet in RuleSpec; check its shape as the closest allowed-values rule.
-        if not shaped.get("values"):
-            raise ValueError(f"rule {shaped.get('id')}: {_SUBSET_KIND} needs 'values'")
-        shaped["kind"] = "argument_allowed_values"
     try:
-        RuleSpec.model_validate(shaped)
+        RuleSpec.model_validate(rule)
     except ValidationError as exc:
         raise ValueError(f"invalid rule {rule.get('id')!r}: {exc}") from exc
 

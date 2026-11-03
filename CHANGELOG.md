@@ -6,6 +6,12 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+### Added
+- Declarative policy rule kind `argument_subset_of`: passes when every item
+  of a list argument is in `values` (a scalar counts as one item, an empty
+  list passes). Denies with `ARGUMENT_NOT_ALLOWED` and reports the allowed
+  values and the offending items.
+
 ### Security
 - Lockfile pins the lowest releases that clear PYSEC-2026-4320
   (`certifi==2026.10.19`), CVE-2026-114603 (`opentelemetry-api==1.45.1`),

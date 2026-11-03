@@ -18,7 +18,6 @@ from atp_bench.layers.base import CallOutcome, Session, StdioMcpSession, result_
 from atp_bench.layers.open_layer import suite_server_argv
 
 POLICY_SET = "bench"
-_SUBSET_KIND = "argument_subset_of"
 # DENIED means a policy or delegation decision, nothing else. Harness and setup failures that
 # share the ReasonCode enum (POLICY_SET_NOT_FOUND, TOOL_NOT_REGISTERED, OPERATOR_KEY_REQUIRED,
 # AGENT_CREDENTIAL_*, GRANT_*, EXECUTION_*, TRACE_*, EVENT_*_RESERVED, ...) must not be credited
@@ -95,12 +94,6 @@ def render_atp_config(
         if applies.get("tool") == f"dojo.{suite.name}":
             applies["tool"] = f"mcp.{config['server_name']}"
             rule["applies_to"] = applies
-        if rule.get("kind") == _SUBSET_KIND:
-            # ATP compares argument types exactly, so an allow-list would deny every list
-            # argument. A later task adds a real subset kind; until then refuse to guess.
-            raise ValueError(
-                f"rule {rule.get('id')!r}: {_SUBSET_KIND} is not supported by ATP yet"
-            )
         rules.append(rule)
     policies = {
         "version": 1,

@@ -360,3 +360,73 @@ def test_payments_include_reuses_builtin_policies(tmp_path: Path) -> None:
     assert {"payments.vendor.max_amount", "payments.vendor.approved_destination"} <= ids
     threshold = next(pol for pol in ps.policies if pol.id == "payments.approval_threshold")
     assert str(threshold.threshold.amount) == "500"  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------- argument_subset_of
+def _subset_set(optional: bool = False) -> Any:
+    rule: dict[str, Any] = {
+        "id": "recipients",
+        "applies_to": {"tool": "mcp.notes", "action": "write_note"},
+        "kind": "argument_subset_of",
+        "argument": "to",
+        "values": ["a@x", "b@x", "c@x"],
+    }
+    if optional:
+        rule["optional"] = True
+    return build_policy_set(
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+        ).policy_sets[0]
+    )
+
+
+def test_subset_allows_all_known() -> None:
+    d = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": ["a@x", "b@x"]}))
+    assert d.outcome is DecisionOutcome.ALLOW
+    empty = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": []}))
+    assert empty.outcome is DecisionOutcome.ALLOW
+
+
+def test_subset_denies_one_unknown() -> None:
+    d = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": ["a@x", "evil@y"]}))
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
+    assert d.matched_policy is not None and d.matched_policy.id == "rule.recipients"
+    ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
+    c = ev.constraints[0]
+    assert c.satisfied is False
+    assert c.limit == {"allowed": ["a@x", "b@x", "c@x"], "offending": ["evil@y"]}
+    assert "evil@y" in ev.message
+    # case-sensitive, like argument_allowed_values
+    upper = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": ["A@x"]}))
+    assert upper.outcome is DecisionOutcome.DENY
+
+
+def test_subset_scalar_treated_as_list() -> None:
+    ok = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": "a@x"}))
+    assert ok.outcome is DecisionOutcome.ALLOW
+    bad = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": "evil@y"}))
+    assert bad.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
+
+
+def test_subset_missing_argument_denies_unless_optional() -> None:
+    d = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"text": "a"}))
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_MISSING
+    ok = PolicyEngine().evaluate(_subset_set(optional=True), ctx(arguments={"text": "a"}))
+    assert ok.outcome is DecisionOutcome.ALLOW
+
+
+def test_subset_requires_values() -> None:
+    from pydantic import ValidationError
+
+    base = {
+        "id": "r",
+        "applies_to": {"tool": "*"},
+        "kind": "argument_subset_of",
+        "argument": "to",
+    }
+    with pytest.raises(ValidationError, match=r"argument_subset_of needs .values."):
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [base]}]}
+        )

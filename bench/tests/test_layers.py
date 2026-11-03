@@ -131,20 +131,22 @@ def test_render_config_uses_absolute_quoted_paths(tmp_path):
     PolicyFile.model_validate(yaml.safe_load(yaml.safe_dump(pol)))
 
 
-def test_render_config_refuses_argument_subset_of(tmp_path):
-    import pytest
-
+def test_render_config_passes_argument_subset_of_through(tmp_path):
+    rule = {"id": "r", "applies_to": {"tool": "dojo.banking", "action": "send_money"},
+            "kind": "argument_subset_of", "argument": "recipient", "values": ["a"]}  # fmt: skip
     ann = Annotation(
         user_task="user_task_0", status="ok", capabilities=("send_money",),
         resource_scope=("dojo.banking:*",), resource_args={"send_money": "recipient"},
-        rules=({"id": "r", "applies_to": {"tool": "dojo.banking", "action": "send_money"},
-                "kind": "argument_subset_of", "argument": "recipient", "values": ["a"]},),
+        rules=(rule,),
         rationale=RATIONALE,
     )  # fmt: skip
-    with pytest.raises(ValueError, match="argument_subset_of"):
-        render_atp_config(
-            load_suite("banking"), ann, _server_argv("banking", tmp_path / "j"), tmp_path / "h"
-        )
+    _, pol = render_atp_config(
+        load_suite("banking"), ann, _server_argv("banking", tmp_path / "j"), tmp_path / "h"
+    )
+    (out,) = pol["policy_sets"][0]["rules"]
+    # Only the logical tool name is retargeted to the proxy's; kind and fields pass unchanged.
+    assert out == {**rule, "applies_to": {"tool": "mcp.dojo-banking", "action": "send_money"}}
+    assert yaml.safe_load(yaml.safe_dump(pol))["policy_sets"][0]["rules"] == [out]
 
 
 def test_classify_only_policy_decisions_are_denials():

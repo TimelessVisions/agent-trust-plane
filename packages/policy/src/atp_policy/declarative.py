@@ -1,6 +1,6 @@
 """Declarative policy sets loaded from YAML.
 
-The format is deliberately small: eight rule kinds, exact tool/action
+The format is deliberately small: nine rule kinds, exact tool/action
 matching, no expressions, no regular expressions, no globbing. It exists so
 that a developer can bound an MCP tool ("`text` at most 2000 characters",
 "`amount` at most 1000", "never `rm -rf`") without editing Python, and so
@@ -64,6 +64,7 @@ RuleKind = Literal[
     "argument_max",
     "argument_min",
     "argument_allowed_values",
+    "argument_subset_of",
     "argument_max_length",
     "argument_required",
     "argument_forbidden",
@@ -114,6 +115,7 @@ class RuleSpec(BaseModel):
             "argument_max",
             "argument_min",
             "argument_allowed_values",
+            "argument_subset_of",
             "argument_max_length",
         )
         if needs_arg and not self.argument:
@@ -126,6 +128,8 @@ class RuleSpec(BaseModel):
             raise ValueError(f"rule {self.id}: argument_min needs 'min'")
         if k == "argument_allowed_values" and not self.values:
             raise ValueError(f"rule {self.id}: argument_allowed_values needs 'values'")
+        if k == "argument_subset_of" and not self.values:
+            raise ValueError(f"rule {self.id}: argument_subset_of needs 'values'")
         if self.values is not None and len(self.values) > MAX_ALLOWED_VALUES:
             raise ValueError(f"rule {self.id}: at most {MAX_ALLOWED_VALUES} values")
         if k == "argument_max_length" and self.max_length is None:
@@ -330,6 +334,26 @@ class DeclaredRule(Policy):
                 )
             return self.allow(f"{name} is an allowed value", (c,))
 
+        if k == "argument_subset_of":
+            # A scalar is a one-item list. Items compare as strings, case-sensitive.
+            items = list(value) if isinstance(value, list | tuple) else [value]
+            allowed = list(spec.values or ())
+            allowed_text = {str(v) for v in allowed}
+            offending = [str(i)[:200] for i in items if str(i) not in allowed_text][:50]
+            c = ConstraintEvaluation(
+                name=name,
+                requested=[str(i)[:200] for i in items[:MAX_ALLOWED_VALUES]],
+                limit={"allowed": allowed, "offending": offending},
+                satisfied=not offending,
+            )
+            if offending:
+                return self.deny(
+                    ReasonCode.ARGUMENT_NOT_ALLOWED,
+                    f"{name} has item(s) {offending} outside the allowed values {allowed}",
+                    (c,),
+                )
+            return self.allow(f"every item of {name} is an allowed value", (c,))
+
         dec = _to_decimal(value)
         if dec is None:
             c = ConstraintEvaluation(
@@ -368,7 +392,7 @@ class DeclaredRule(Policy):
             return _fmt(s.min)
         if s.kind == "argument_max_length":
             return s.max_length
-        if s.kind == "argument_allowed_values":
+        if s.kind in ("argument_allowed_values", "argument_subset_of"):
             return list(s.values or ())
         return None
 

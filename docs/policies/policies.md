@@ -36,18 +36,30 @@ policy_sets:
         kind: deny
 ```
 
-### Rule kinds (all eight)
+### Rule kinds (all nine)
 
 | kind | fields | denies with | passes when |
 |---|---|---|---|
 | `argument_max` | `argument`, `max` (decimal), `optional` | `ARGUMENT_EXCEEDS_LIMIT` | value ≤ max |
 | `argument_min` | `argument`, `min`, `optional` | `ARGUMENT_BELOW_MINIMUM` | value ≥ min |
 | `argument_allowed_values` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | value is one of the values, same type (`1` ≠ `true` ≠ `"1"`) |
+| `argument_subset_of` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | every item of a list argument is one of the values (compared as case-sensitive strings); a scalar counts as a one-item list; an empty list passes |
 | `argument_max_length` | `argument`, `max_length`, `optional` | `ARGUMENT_TOO_LONG` | string/list/dict length ≤ max |
 | `argument_required` | `arguments` | `ARGUMENT_MISSING` | every listed argument present |
 | `argument_forbidden` | `arguments` | `ARGUMENT_FORBIDDEN` | none of the listed arguments present |
 | `deny` | — | `ACTION_DENIED_BY_POLICY` | never |
 | `require_approval` | `approver_role` | `APPROVAL_REQUIRED_BY_POLICY` (REQUIRE_APPROVAL) | never; see limitations |
+
+For example, `send_email` may only address known recipients (a denial reports
+the allowed values and the offending items):
+
+```yaml
+- id: known-recipients
+  applies_to: {tool: mcp.mail, action: send_email}
+  kind: argument_subset_of
+  argument: recipients
+  values: [alice@example.com, bob@example.com]
+```
 
 Numeric rules parse the argument as a `Decimal` from its string form;
 booleans, NaN, infinity and non-numbers fail closed with
