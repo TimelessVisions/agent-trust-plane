@@ -299,6 +299,15 @@ class DeclaredRule(Policy):
 
         if k == "argument_max_length":
             assert spec.max_length is not None
+            if value is None:
+                # Fail closed: null has no length, so it is not measured as the string "null".
+                c = ConstraintEvaluation(
+                    name=f"{name}.length",
+                    requested=None,
+                    limit=spec.max_length,
+                    satisfied=False,
+                )
+                return self.deny(ReasonCode.ARGUMENT_INVALID, f"{name} is null, not a value", (c,))
             length = (
                 len(value) if isinstance(value, str | list | dict) else len(canonical_json(value))
             )

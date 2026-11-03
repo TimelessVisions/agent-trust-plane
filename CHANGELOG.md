@@ -27,6 +27,9 @@ changes may land in minor versions and are called out).
   `docs/release-v1/SECURITY_AND_LIMITS.md`.
 
 ### Fixed
+- `argument_max_length` denies a non-optional explicit `null` argument with
+  `ARGUMENT_INVALID`; it was measured as the 4-character string `"null"` and
+  passed under any limit of 4 or more.
 - Declarative `argument_*` rules with `optional: true` now treat an argument
   sent as an explicit `null` like an absent one (pass). Previously
   `argument_subset_of` and `argument_allowed_values` denied it. Without

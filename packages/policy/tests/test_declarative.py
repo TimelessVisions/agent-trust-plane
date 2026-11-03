@@ -503,7 +503,7 @@ _NULL_RULES: dict[str, dict[str, Any]] = {
     "argument_allowed_values": {"values": ["a"]},
     "argument_max": {"max": 10},
     "argument_min": {"min": 1},
-    "argument_max_length": {"max_length": 2},
+    "argument_max_length": {"max_length": 20},
 }
 
 
@@ -526,7 +526,10 @@ def test_explicit_null_is_absent_only_when_optional(kind: str) -> None:
         return PolicyEngine().evaluate(ps, ctx(arguments={"x": None}))
 
     assert decide(True).outcome is DecisionOutcome.ALLOW
-    assert decide(False).outcome is DecisionOutcome.DENY
+    denied = decide(False)
+    assert denied.outcome is DecisionOutcome.DENY
+    if kind == "argument_max_length":
+        assert denied.reason_code is ReasonCode.ARGUMENT_INVALID
 
 
 def test_subset_deny_message_is_bounded() -> None:
