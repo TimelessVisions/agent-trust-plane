@@ -155,6 +155,46 @@ jobs:
           path: ${{ runner.temp }}/d4.xml
           if-no-files-found: warn
 
+
+  e1-e2-incidents:
+    name: E1 fixture runner and E2 real MCPoison replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark environment
+        working-directory: bench
+        run: uv sync --frozen
+      - name: Run incident fixture protocol and real ATP proxy case
+        working-directory: bench
+        run: |
+          uv run --no-sync pytest -q -s -p no:cacheprovider \
+            --junitxml="${{ runner.temp }}/incidents.xml" \
+            tests/test_incidents.py tests/test_incident_cases.py
+      - name: Require measured incident JUnit cases
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/incidents.xml" \
+            --label "E1 incident runner and E2 MCPoison" --min-tests 5 --max-skips 0 \
+            --require-case test_incident_runner_reports_per_layer \
+            --require-case test_mcpoison_incident_real_server_and_atp_proxy \
+            --require-case test_mcpoison_companion_atp_regression_is_not_a_schema_pin
+      - name: Preserve incident evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-e1-e2-junit
+          path: ${{ runner.temp }}/incidents.xml
+          if-no-files-found: warn
+
   root-verify:
     name: Root full suite, type checks and demos
     runs-on: ubuntu-latest
