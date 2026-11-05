@@ -78,7 +78,7 @@ def _lit(value: Any) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, str):
-        return json.dumps(value)
+        return json.dumps(value, ensure_ascii=False)
     raise TypeError(f"no CEL literal for {type(value).__name__}")
 
 
@@ -107,6 +107,33 @@ def _is_int(expr: str) -> str:
     return f"(type({expr}) == int || type({expr}) == uint)"
 
 
+# ATP's resource id grammar (``atp_core.resources.RESOURCE_PATTERN``): 1-255 code points, no
+# '*', no control characters. agentgateway's CEL regex (Rust ``regex``) is Unicode-aware, so
+# ``{1,255}`` counts code points exactly like Python's ``re`` (to be checked against the pinned binary before D2 approval).
+_RESOURCE_ID_RE = r"\A[^*\x00-\x1f\x7f]{1,255}\z"
+# Largest max_length rendered as a code-point regex; ``(?s:.){0,100000}`` exceeds the regex size
+# limit in agentgateway 1.6.0 (checked on the binary), 10000 compiles.
+_MAX_REGEX_LENGTH = 10_000
+# Python's Decimal allows '_' only between two digits.
+_BAD_UNDERSCORE_RE = r"(?:\A|[^0-9])_|_(?:[^0-9]|\z)"
+
+
+def _number(expr: str, test: str) -> str:
+    """``test`` over ``n``, the finite number ATP's ``_to_decimal`` reads from ``expr``.
+
+    A JSON number is used as is; a string is trimmed and its digit-separating underscores
+    removed, as ``Decimal(str(v))`` does. Infinities and NaN fail ``n - n == 0.0``, as ATP
+    rejects them. Anything ``double()`` cannot parse is a CEL error: the rule is false (deny),
+    as ATP denies a non-number."""
+    s = f"{expr}.trim()"
+    num = (
+        f"(type({expr}) == string ? "
+        f'({s}.matches({_lit(_BAD_UNDERSCORE_RE)}) ? double("x") : '
+        f'double({s}.replace("_", ""))) : double({expr}))'
+    )
+    return f"{num}.with(n, n - n == 0.0 && {test})"
+
+
 def _present(arg: str) -> str:
     return f"(has(a.{arg}) && a.{arg} != null)"
 
@@ -127,24 +154,37 @@ def _rule_condition(rule: dict[str, Any]) -> tuple[str | None, DroppedConstraint
     x = f"a.{arg}"
     dropped = None
     if kind == "argument_max":
-        check = f"double({x}) <= {_double(Decimal(str(rule['max'])))}"
+        check = _number(x, f"n <= {_double(Decimal(str(rule['max'])))}")
     elif kind == "argument_min":
-        check = f"double({x}) >= {_double(Decimal(str(rule['min'])))}"
+        check = _number(x, f"n >= {_double(Decimal(str(rule['min'])))}")
     elif kind == "argument_allowed_values":
         check = _member(x, rule["values"])
     elif kind == "argument_subset_of":
         check = f"(type({x}) == list ? {x} : [{x}]).all(i, {_member('i', rule['values'])})"
     elif kind == "argument_max_length":
         n = int(rule["max_length"])
-        sized = f"(type({x}) == string || type({x}) == list || type({x}) == map)"
-        check = f"(!{sized} || size({x}) <= {n})"
+        # size() counts UTF-8 bytes for a string; ATP counts code points. bytes <= n implies
+        # code points <= n, else a Unicode-aware regex counts code points exactly.
+        if n <= _MAX_REGEX_LENGTH:
+            cp = _lit(rf"\A(?s:.){{0,{n}}}\z")
+            text = f"(size({x}) <= {n} || {x}.matches({cp}))"
+        else:
+            text = f"size({x}) <= {n}"
+        listy = f"(type({x}) == list || type({x}) == map)"
+        check = f"(type({x}) == string ? {text} : (!{listy} || size({x}) <= {n}))"
+        reason = (
+            f"argument_max_length on {arg!r} is enforced for strings, lists and objects; "
+            "for a number or boolean ATP measures its canonical JSON text, which agentgateway "
+            "CEL cannot compute, so such values pass"
+        )
+        if n > _MAX_REGEX_LENGTH:
+            reason += (
+                f"; strings are enforced on UTF-8 bytes (stricter for non-ASCII), since a "
+                f"code-point regex longer than {_MAX_REGEX_LENGTH} does not compile"
+            )
         dropped = DroppedConstraint(
             source=rid,
-            reason=(
-                f"argument_max_length on {arg!r} is enforced for strings, lists and objects; "
-                "for a number or boolean ATP measures its canonical JSON text, which agentgateway "
-                "CEL cannot compute, so such values pass"
-            ),
+            reason=reason,
             doc_url=DOC_URLS["cel_functions"],
         )
     else:  # pragma: no cover - RuleSpec validation keeps the kinds closed
@@ -158,16 +198,22 @@ def _scope_condition(scope: tuple[str, ...], suite: str, arg: str) -> str | None
     """CEL for ``dojo.<suite>:{arg}`` matching ``scope`` (``atp_identity.scope.matches``);
     ``None`` when no pattern can match (the tool is then not granted)."""
     x = f"a.{arg}"
+    # ATP derives the resource from a string or integer argument only, and rejects an id that
+    # breaks RESOURCE_PATTERN before any matching (so '*' never matches, even under '*').
+    valid = (
+        f"{_present(arg)} && (type({x}) == string || {_is_int(x)}) && "
+        f"string({x}).matches({_lit(_RESOURCE_ID_RE)})"
+    )
     exact: list[str] = []
     prefixes: list[str] = []
     for pattern in scope:
         if pattern == "*":
-            return f"({_present(arg)} && (type({x}) == string || {_is_int(x)}))"
+            return f"({valid})"
         p_type, _, p_id = pattern.partition(":")
         if p_type not in ("*", f"dojo.{suite}"):
             continue
         if p_id == "*":
-            return f"({_present(arg)} && (type({x}) == string || {_is_int(x)}))"
+            return f"({valid})"
         if p_id.endswith("*"):
             prefixes.append(p_id[:-1])
         else:
@@ -178,11 +224,7 @@ def _scope_condition(scope: tuple[str, ...], suite: str, arg: str) -> str | None
     tests += [f"string({x}).startsWith({_lit(p)})" for p in prefixes]
     if not tests:
         return None
-    # ATP derives the resource from a string or integer argument only; '*' never matches.
-    return (
-        f"({_present(arg)} && (type({x}) == string || {_is_int(x)}) && "
-        f'!string({x}).contains("*") && ({" || ".join(tests)}))'
-    )
+    return f"({valid} && ({' || '.join(tests)}))"
 
 
 def _tool_resource_in_scope(scope: tuple[str, ...], tool: str) -> bool:
