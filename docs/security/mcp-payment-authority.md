@@ -23,7 +23,7 @@ authority:
   expires_in: 1h
 tools:
   - mcp_tool: send_payment
-    tool: mcp.vendor-payments
+    tool: mcp.vendor_payments
     action: send_payment
     capability: pay:vendor
     resource_template: "vendor:128" # example is restricted to one vendor
