@@ -213,6 +213,18 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
     issued = operator.issue_credential(
         agent, label=f"wrap:{config.server_name}", expires_at=expires.isoformat()
     )
+    # A payment must be bounded by an explicit, operator-reviewed amount.
+    # Mirror monetary constraints on both grants so the root and leaf cannot
+    # accidentally widen one another. Cumulative budgets remain leaf-only:
+    # duplicating them at root would double-count spending along the chain.
+    payment_limits: dict[str, Any] = {}
+    if config.authority.max_amount is not None:
+        payment_limits["max_amount"] = config.authority.max_amount.model_dump(mode="json")
+    if config.authority.currencies is not None:
+        payment_limits["currencies"] = sorted(config.authority.currencies)
+    leaf_constraints = dict(payment_limits)
+    if config.authority.budget is not None:
+        leaf_constraints["budget"] = config.authority.budget.model_dump(mode="json")
     root = operator.issue_delegation(
         {
             "label": f"{config.principal.id}: local authority for {config.server_name}",
@@ -220,6 +232,7 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
             "grantee": human,
             "capabilities": list(config.authority.capabilities),
             "resource_scope": list(config.authority.resource_scope),
+            **({"constraints": payment_limits} if payment_limits else {}),
             "expires_at": (expires + timedelta(minutes=1)).isoformat(),
         }
     )["grant_id"]
@@ -231,11 +244,7 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
             "parent_grant_id": root,
             "capabilities": list(config.authority.capabilities),
             "resource_scope": list(config.authority.resource_scope),
-            **(
-                {"constraints": {"budget": config.authority.budget.model_dump(mode="json")}}
-                if config.authority.budget is not None
-                else {}
-            ),
+            **({"constraints": leaf_constraints} if leaf_constraints else {}),
             "expires_at": expires.isoformat(),
         }
     )["grant_id"]
