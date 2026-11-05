@@ -17,15 +17,15 @@ from tempfile import TemporaryDirectory
 
 import anyio
 import yaml
-from mcp import StdioServerParameters
-from mcp.client.stdio import get_default_environment
-from mcp.server.mcpserver import MCPServer
-
-from atp_adapter_mcp.mapping import tool_definition_sha256
 from atp_bench.dojo import Call
 from atp_bench.layers.atp_layer import classify as atp_classify
 from atp_bench.layers.base import CallOutcome, Session, StdioMcpSession, result_text
 from atp_bench.layers.name_only_layer import _NameOnlySession
+from mcp import StdioServerParameters, types
+from mcp.client.stdio import get_default_environment
+from mcp.server.mcpserver import MCPServer
+
+from atp_adapter_mcp.mapping import tool_definition_sha256
 from atp_cli.home import AtpHome
 
 ORIGINAL_DESCRIPTION = "Write a note to the local synthetic sandbox."
@@ -88,6 +88,10 @@ def _argv(root: Path) -> list[str]:
     ]
 
 
+def _classify_open(raw: types.CallToolResult) -> CallOutcome:
+    return CallOutcome("ALLOWED", result_text(raw)[:300])
+
+
 class _IncidentSession:
     def __init__(self, session: Session, flag: Path) -> None:
         self._session = session
@@ -113,9 +117,8 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
                 args=params[1:],
                 env=get_default_environment(),
             )
-            classify = lambda raw: CallOutcome("ALLOWED", result_text(raw)[:300])
             with StdioMcpSession(
-                transport, classify, call_timeout_s=45
+                transport, _classify_open, call_timeout_s=45
             ) as upstream:
                 yield _IncidentSession(
                     _NameOnlySession(upstream, frozenset({"write_note"})), flag
