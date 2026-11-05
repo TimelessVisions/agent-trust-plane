@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from atp_core import new_secret_key
+
+if TYPE_CHECKING:
+    from atp_gateway.grant_keys import GrantKeyring
 
 log = logging.getLogger("atp.gateway")
 
@@ -28,10 +33,20 @@ class GatewaySettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="ATP_", env_file=".env", extra="ignore")
 
+    grant_signing_kid: str = Field(
+        default="",
+        description="Key id of the active Ed25519 grant signing key in grant_keys_dir. "
+        "Required unless the database is ':memory:'.",
+    )
+    grant_keys_dir: str = Field(
+        default="",
+        description="Directory holding grant-<kid>.key / .pub / .retired files.",
+    )
     grant_signing_key: str = Field(
         default="",
-        description="HMAC key for execution grants (>= 32 chars). Required unless the "
-        "database is ':memory:'.",
+        description="Removed in 1.0: the HMAC key of atp-grant/1. A persistent gateway "
+        "configured only with it refuses to start; run `atp keygen` (or let the ATP "
+        "home migrate it).",
     )
     operator_key: str = Field(
         default="",
@@ -62,8 +77,44 @@ class GatewaySettings(BaseSettings):
     def ephemeral(self) -> bool:
         return self.database_path == ":memory:"
 
-    def signing_key_bytes(self) -> bytes:
-        return self._resolve("ATP_GRANT_SIGNING_KEY", self.grant_signing_key).encode("utf-8")
+    def grant_keyring(self, now: datetime | None = None) -> GrantKeyring:
+        """The active Ed25519 signer and every public key that still verifies."""
+        from atp_gateway.grant_keys import ephemeral_keyring, load_grant_keys
+
+        if self.grant_signing_kid:
+            if not self.grant_keys_dir:
+                raise InsecureConfigurationError(
+                    "ATP_GRANT_SIGNING_KID is set but ATP_GRANT_KEYS_DIR is not"
+                )
+            if self.grant_signing_key:
+                log.warning("ATP_GRANT_SIGNING_KEY (HMAC, atp-grant/1) is ignored; remove it")
+            try:
+                return load_grant_keys(
+                    Path(self.grant_keys_dir),
+                    self.grant_signing_kid,
+                    grant_ttl_seconds=self.grant_ttl_seconds,
+                    now=now,
+                )
+            except (OSError, ValueError) as exc:
+                raise InsecureConfigurationError(
+                    f"cannot load grant signing key {self.grant_signing_kid} from "
+                    f"{self.grant_keys_dir}: {exc}"
+                ) from exc
+        if self.ephemeral:
+            if self.grant_signing_key:
+                log.warning("ATP_GRANT_SIGNING_KEY (HMAC, atp-grant/1) is ignored; remove it")
+            log.info("grant key not set; ephemeral in-memory gateway, generating a per-process key")
+            return ephemeral_keyring()
+        if self.grant_signing_key:
+            raise InsecureConfigurationError(
+                "ATP_GRANT_SIGNING_KEY (an HMAC key for atp-grant/1) is no longer supported. "
+                "Execution grants are Ed25519 now: run `atp keygen --write .env.new` and use "
+                "its ATP_GRANT_KEYS_DIR and ATP_GRANT_SIGNING_KID (an ATP home migrates itself)"
+            )
+        raise InsecureConfigurationError(
+            "ATP_GRANT_SIGNING_KID is not set. A persistent gateway will not start with "
+            "generated keys. Run: atp keygen --write .env"
+        )
 
     def operator_key_value(self) -> str:
         return self._resolve("ATP_OPERATOR_KEY", self.operator_key)
@@ -73,7 +124,7 @@ class GatewaySettings(BaseSettings):
             if len(value) < MIN_KEY_LENGTH:
                 raise InsecureConfigurationError(
                     f"{name} must be at least {MIN_KEY_LENGTH} characters; "
-                    "generate one with: python -m atp_gateway keygen"
+                    "generate one with: atp keygen"
                 )
             return value
         if self.ephemeral:
@@ -81,7 +132,7 @@ class GatewaySettings(BaseSettings):
             return new_secret_key()
         raise InsecureConfigurationError(
             f"{name} is not set. A persistent gateway will not start with generated keys. "
-            "Run: python -m atp_gateway keygen  and put the output in .env"
+            "Run: atp keygen --write .env"
         )
 
     def external_tool_prefix_list(self) -> list[str]:

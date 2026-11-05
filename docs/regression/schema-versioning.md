@@ -8,7 +8,7 @@
 | Proxy config (`atp-mcp.yaml`) | `version:` | 1 | Same rule; `atp mcp init` writes it. Strict models (`extra=forbid`) |
 | Trace events | implicit (event types + payload shapes) | — | Additive only: new event types and payload keys may appear; existing keys are never reinterpreted |
 | Decision | fields with defaults (`enforcement` added in 0.3.0) | — | Old stored decisions validate with defaults (`enforce`) |
-| Execution grant token | `v: atp-grant/1` | 1 | A new format gets a new tag; old tokens are rejected, not reinterpreted |
+| Execution grant token | header `v: atp-grant/2` | 2 | A new format gets a new tag; old tokens are rejected, not reinterpreted (`atp-grant/1` HMAC tokens are GRANT_MALFORMED since 1.0) |
 | Evidence bundle | `bundle_version` | 1 | Verifier rejects unknown versions |
 | HTTP API | path-versionless while 0.x | — | Additive changes only within a minor; removals/renames bump the minor and are listed |
 

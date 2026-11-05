@@ -17,7 +17,7 @@ flowchart LR
     subgraph Gateway["Trust gateway (services/gateway)"]
         API[FastAPI routes]
         TP[TrustPlane service]
-        G[Execution grants<br/>HMAC + store]
+        G[Execution grants<br/>Ed25519 + store]
         T[Tool registry]
     end
 
@@ -104,7 +104,12 @@ action_hash        what an execution grant would be bound to
 
 ### Execution grant (`atp_gateway.grants`)
 
-`atp-grant/1` = `base64url(canonical claims) . base64url(HMAC-SHA256)`
+`atp-grant/2` = `base64url(header) . base64url(canonical claims) . base64url(Ed25519 signature)`,
+with `header = {"alg": "EdDSA", "kid": <kid>, "v": "atp-grant/2"}` and the
+signature over `base64url(header) . base64url(claims)`. `kid` is the first 16
+hex characters of SHA-256 over the raw public key. Keys live in
+`.atp/keys/grant-<kid>.{key,pub,retired}`; see `docs/formal/grant-lifecycle.md`
+for rotation. `atp-grant/1` (HMAC) tokens are rejected as `GRANT_MALFORMED`.
 
 Claims: `grant_id, trace_id, decision_id, envelope_id, action_hash, agent_id,
 policy_set_version, issued_at, expires_at`. A server-side record tracks
@@ -157,7 +162,7 @@ sequenceDiagram
     AG->>GW: POST /authorize
     GW-->>AG: ALLOW + signed single-use grant (TTL 120s)
     AG->>GW: POST /execute (envelope, grant)
-    GW->>GW: verify HMAC, expiry, action_hash == envelope.action_hash
+    GW->>GW: verify Ed25519 (by kid), expiry, action_hash == envelope.action_hash
     GW->>GW: re-resolve delegation (still valid?)
     GW->>GS: UPDATE status='consumed' WHERE status='issued'
     GS-->>GW: rowcount 1

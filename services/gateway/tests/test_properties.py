@@ -43,11 +43,11 @@ from atp_identity import AuthenticatedAgent, DelegationRequest
 from gateway_fixtures import (
     AP_AGENT,
     ATTACKER_ACCOUNT,
+    GRANT_KEY_SETTINGS,
     HUMAN,
     NOW,
     OPERATOR_KEY,
     ORCHESTRATOR,
-    SIGNING_KEY,
     Clock,
 )
 
@@ -56,7 +56,7 @@ def _runtime(clock: Clock) -> Runtime:
     rt = build_runtime(
         GatewaySettings(
             database_path=":memory:",
-            grant_signing_key=SIGNING_KEY,
+            **GRANT_KEY_SETTINGS,
             operator_key=OPERATOR_KEY,
         )
     )

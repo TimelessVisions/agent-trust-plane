@@ -532,7 +532,30 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 def _cmd_keygen(args: argparse.Namespace) -> int:
     from atp_gateway.__main__ import keygen
 
-    keygen(["--write", args.write] if args.write else [])
+    if args.rotate and not args.env:
+        # Rotate the ATP home's grant key (`atp mcp wrap` and offline commands use it).
+        from atp_cli.home import AtpHome
+
+        home = AtpHome(args.home)
+        if not home.keys_path.exists():
+            raise UsageError(f"no ATP home keys at {home.keys_path}; nothing to rotate")
+        try:
+            old, new = home.rotate_grant_key()
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise UsageError(f"cannot rotate: {exc}") from exc
+        print(
+            f"rotated grant signing key {old} -> {new} in {home.keys_path}; restart "
+            f"`atp mcp wrap`. Grants signed by {old} verify for one grant TTL more."
+        )
+        return 0
+    argv: list[str] = []
+    if args.write:
+        argv += ["--write", args.write]
+    if args.keys_dir:
+        argv += ["--keys-dir", args.keys_dir]
+    if args.rotate:
+        argv += ["--rotate", "--env", args.env]
+    keygen(argv)
     return 0
 
 
@@ -754,8 +777,19 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
 
-    k = sub.add_parser("keygen", help="generate gateway keys for `atp serve`")
-    k.add_argument("--write", metavar="PATH")
+    k = sub.add_parser(
+        "keygen", help="generate gateway keys for `atp serve`, or rotate the grant key"
+    )
+    k.add_argument("--write", metavar="PATH", help="write the env lines to PATH (never overwrites)")
+    k.add_argument("--keys-dir", metavar="DIR", help="where the Ed25519 grant key files go")
+    k.add_argument(
+        "--rotate",
+        action="store_true",
+        help="new active grant key; old public keys verify for one grant TTL. Rotates the "
+        "ATP home (--home, $ATP_HOME or ./.atp) unless --env names a serve .env",
+    )
+    k.add_argument("--home", help="ATP home to rotate (default: $ATP_HOME or ./.atp)")
+    k.add_argument("--env", metavar="PATH", help="serve .env to rotate instead of the home")
     k.set_defaults(func=_cmd_keygen)
     return p
 

@@ -35,7 +35,13 @@ from atp_core import (
     utcnow,
 )
 from atp_core.sqlite import no_transaction
-from atp_gateway.grants import GrantClaims, GrantSigner, GrantStore, new_grant_claims
+from atp_gateway.grants import (
+    GrantClaims,
+    GrantSigner,
+    GrantStore,
+    GrantVerifier,
+    new_grant_claims,
+)
 from atp_gateway.tools import ToolRegistry
 from atp_identity import (
     AuthenticatedAgent,
@@ -132,12 +138,16 @@ class TrustPlane:
         enforcement_mode: EnforcementMode = "enforce",
         identity: IdentityProvider | None = None,
         transaction: Callable[[], AbstractContextManager[None]] = no_transaction,
+        verifier: GrantVerifier | None = None,
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
         self.traces = traces
         self.grants = grants
         self.signer = signer
+        # Verifies tokens from the active key and from keys retired less than one
+        # grant TTL ago (rotation); defaults to the signer's own public key.
+        self.verifier = verifier or GrantVerifier({signer.kid: signer.public_key})
         self.policy_sets = policy_sets
         self.vendors = vendors
         self.tools = tools
@@ -329,7 +339,7 @@ class TrustPlane:
                     "expires_at": claims.expires_at.isoformat(),
                     "action_hash": claims.action_hash,
                     "single_use": True,
-                    "key_fingerprint": self.signer.key_fingerprint,
+                    "kid": self.signer.kid,
                 },
             )
         elif decision.outcome is DecisionOutcome.REQUIRE_APPROVAL and decision.approval:
@@ -580,7 +590,7 @@ class TrustPlane:
                 ReasonCode.GRANT_MISSING,
                 "execution requires a grant issued by /authorize; none was presented",
             )
-        claims = self.signer.verify(token)
+        claims = self.verifier.verify(token, now=now)
         if claims.is_expired(now):
             raise GrantError(
                 ReasonCode.GRANT_EXPIRED,

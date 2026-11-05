@@ -3,40 +3,61 @@
 Threats this mechanism is designed to stop, and which check stops each:
 
 * call /execute without ever calling /authorize      -> no token: GRANT_MISSING
-* invent or edit a token                              -> HMAC: GRANT_SIGNATURE_INVALID
+* invent or edit a token                              -> Ed25519: GRANT_SIGNATURE_INVALID
+* sign with a key the gateway does not hold           -> unknown kid: GRANT_SIGNATURE_INVALID
 * authorize $480 then execute $12,500 with the token  -> action_hash: GRANT_ENVELOPE_MISMATCH
 * hold a token and use it later                       -> expires_at: GRANT_EXPIRED
 * use a token twice                                   -> atomic consume: GRANT_ALREADY_CONSUMED
 * use a token issued to a different trace/envelope    -> action_hash covers both ids
 
-The token is ``atp-grant/1`` = base64url(canonical claims) "." base64url(HMAC-SHA256).
-See ADR-0001 D5 for why HMAC + server-side state rather than either alone.
+The token is ``atp-grant/2``::
+
+    base64url(header) "." base64url(canonical claims) "." base64url(Ed25519 signature)
+
+with ``header = {"alg": "EdDSA", "kid": <kid>, "v": "atp-grant/2"}``. The
+signature covers ``base64url(header) "." base64url(claims)``. ``kid`` is the
+first 16 hex characters of SHA-256 over the raw 32-byte public key, so a
+verifier can hold several public keys (key rotation) and pick one without
+trying them all. ``atp-grant/1`` (HMAC-SHA256) tokens are rejected as
+GRANT_MALFORMED: grants are single-use and short-lived, so no compatibility
+window is needed. See ADR-0001 D5 for why a signature plus server-side state
+rather than either alone.
 """
 
 from __future__ import annotations
 
 import base64
-import hmac
+import binascii
 import json
 import sqlite3
 import threading
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
-from typing import Final, Literal, Protocol
+from typing import Any, Final, Literal, Protocol
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from atp_core import GrantError, ReasonCode, canonical_json, new_id, utcnow
 from atp_core.sqlite import commit_if_implicit
 
-TOKEN_VERSION: Final[Literal["atp-grant/1"]] = "atp-grant/1"
+TOKEN_VERSION: Final[Literal["atp-grant/2"]] = "atp-grant/2"
+LEGACY_TOKEN_VERSION: Final = "atp-grant/1"
+ALG: Final = "EdDSA"
 
 
 class GrantClaims(BaseModel):
+    """What a grant binds. The token version lives in the token header, not here."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    v: Literal["atp-grant/1"] = TOKEN_VERSION
     grant_id: str
     trace_id: str
     decision_id: str
@@ -56,53 +77,124 @@ def _b64e(data: bytes) -> str:
 
 
 def _b64d(text: str) -> bytes:
+    """Strict base64url without padding: a segment must be exactly what
+    ``_b64e`` would produce, so no two strings decode to the same token."""
     pad = "=" * (-len(text) % 4)
-    return base64.urlsafe_b64decode(text + pad)
+    data = base64.urlsafe_b64decode(text + pad)
+    if _b64e(data) != text:
+        raise ValueError("non-canonical base64url")
+    return data
+
+
+def kid_for(public_key: Ed25519PublicKey) -> str:
+    """``sha256(raw public key).hexdigest()[:16]``."""
+    raw = public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return sha256(raw).hexdigest()[:16]
+
+
+def _malformed(message: str = "execution grant is malformed") -> GrantError:
+    return GrantError(ReasonCode.GRANT_MALFORMED, message)
+
+
+def _invalid(message: str) -> GrantError:
+    return GrantError(ReasonCode.GRANT_SIGNATURE_INVALID, message)
 
 
 class GrantSigner:
-    """HMAC-SHA256 over the canonical claims. Symmetric because authorizer and
-    executor are the same process in the MVP; the token format is versioned so
-    an asymmetric scheme can replace it without changing callers."""
+    """Mints ``atp-grant/2`` tokens with one Ed25519 private key."""
 
-    def __init__(self, key: bytes) -> None:
-        if len(key) < 32:
-            raise ValueError("grant signing key must be at least 32 bytes")
-        self._key = key
+    def __init__(self, private_key: Ed25519PrivateKey, kid: str) -> None:
+        if not isinstance(private_key, Ed25519PrivateKey):
+            raise ValueError("grant signing key must be an Ed25519 private key")
+        actual = kid_for(private_key.public_key())
+        if kid != actual:
+            raise ValueError(f"grant signing key does not match kid {kid!r} (it is {actual!r})")
+        self._key = private_key
+        self._kid = kid
 
     @property
-    def key_fingerprint(self) -> str:
-        return sha256(self._key).hexdigest()[:16]
+    def kid(self) -> str:
+        return self._kid
+
+    @property
+    def public_key(self) -> Ed25519PublicKey:
+        return self._key.public_key()
 
     def mint(self, claims: GrantClaims) -> str:
-        body = canonical_json(claims.model_dump(mode="json"))
-        sig = hmac.new(self._key, body, sha256).digest()
-        return f"{_b64e(body)}.{_b64e(sig)}"
+        header = _b64e(canonical_json({"alg": ALG, "kid": self._kid, "v": TOKEN_VERSION}))
+        body = _b64e(canonical_json(claims.model_dump(mode="json")))
+        signing_input = f"{header}.{body}".encode("ascii")
+        return f"{header}.{body}.{_b64e(self._key.sign(signing_input))}"
 
-    def verify(self, token: str) -> GrantClaims:
+
+class GrantVerifier:
+    """Verifies ``atp-grant/2`` tokens against a set of public keys by ``kid``.
+
+    ``not_after`` maps a retired kid to the moment it stops verifying (its
+    retirement plus one grant TTL); ``clock`` reads the current time.
+    """
+
+    def __init__(
+        self,
+        public_keys: Mapping[str, Ed25519PublicKey],
+        *,
+        not_after: Mapping[str, datetime] | None = None,
+        clock: Callable[[], datetime] = utcnow,
+    ) -> None:
+        self._keys = dict(public_keys)
+        self._not_after = dict(not_after or {})
+        self._clock = clock
+
+    @property
+    def kids(self) -> frozenset[str]:
+        return frozenset(self._keys)
+
+    def verify(self, token: str, *, now: datetime | None = None) -> GrantClaims:
+        """``now`` (default: the clock) decides whether a retired kid still verifies;
+        expiry of the grant itself is the caller's check."""
+        parts = token.strip().split(".")
+        if len(parts) == 2:
+            raise _malformed(
+                f"execution grant uses the retired {LEGACY_TOKEN_VERSION} (HMAC) format; "
+                f"this gateway accepts only {TOKEN_VERSION}"
+            )
+        if len(parts) != 3:
+            raise _malformed()
+        header_b64, body_b64, sig_b64 = parts
         try:
-            body_b64, sig_b64 = token.strip().split(".", 1)
+            header: Any = json.loads(_b64d(header_b64))
             body = _b64d(body_b64)
             sig = _b64d(sig_b64)
-        except (ValueError, TypeError) as exc:
-            raise GrantError(ReasonCode.GRANT_MALFORMED, "execution grant is malformed") from exc
-        expected = hmac.new(self._key, body, sha256).digest()
-        if not hmac.compare_digest(sig, expected):
-            raise GrantError(
-                ReasonCode.GRANT_SIGNATURE_INVALID,
-                "execution grant signature does not verify; the grant was forged or altered",
-            )
+        except (ValueError, TypeError, binascii.Error) as exc:
+            raise _malformed() from exc
+        if (
+            not isinstance(header, dict)
+            or set(header) != {"alg", "kid", "v"}
+            or header["alg"] != ALG
+            or header["v"] != TOKEN_VERSION
+            or not isinstance(header["kid"], str)
+        ):
+            raise _malformed(f"execution grant header is not an {TOKEN_VERSION} EdDSA header")
+        kid: str = header["kid"]
+        key = self._keys.get(kid)
+        if key is None:
+            raise _invalid(f"execution grant kid {kid!r} is not a key this gateway trusts")
+        deadline = self._not_after.get(kid)
+        if deadline is not None and (now or self._clock()) >= deadline:
+            raise _invalid(f"execution grant kid {kid!r} was retired")
+        try:
+            key.verify(sig, f"{header_b64}.{body_b64}".encode("ascii"))
+        except InvalidSignature as exc:
+            raise _invalid(
+                "execution grant signature does not verify; the grant was forged or altered"
+            ) from exc
         try:
             claims = GrantClaims.model_validate(json.loads(body))
         except (ValidationError, ValueError) as exc:
-            raise GrantError(
-                ReasonCode.GRANT_MALFORMED, "execution grant claims are malformed"
-            ) from exc
+            raise _malformed("execution grant claims are malformed") from exc
         # Belt and braces: the signature must have been computed over the canonical form.
         if canonical_json(claims.model_dump(mode="json")) != body:
-            raise GrantError(
-                ReasonCode.GRANT_SIGNATURE_INVALID, "execution grant body is not canonical"
-            )
+            raise _invalid("execution grant body is not canonical")
         return claims
 
 
@@ -218,8 +310,12 @@ class SqliteGrantStore:
             ).fetchone()
         if row is None:
             return None
+        data = json.loads(row[1])
+        # Rows written by 0.3.x carry ``v: atp-grant/1`` inside the claims; the
+        # version now lives in the token header, and the row itself is unchanged.
+        data.pop("v", None)
         return GrantRecord(
-            claims=GrantClaims.model_validate_json(row[1]),
+            claims=GrantClaims.model_validate(data),
             status=GrantStatus(row[0]),
             consumed_at=datetime.fromisoformat(row[2]) if row[2] else None,
         )

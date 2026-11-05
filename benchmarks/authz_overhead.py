@@ -214,11 +214,15 @@ def bench_gateway_asgi(n: int) -> dict[str, Any]:
 
 
 def bench_gateway_sqlite(n: int) -> dict[str, Any]:
+    from atp_gateway.grant_keys import generate_grant_key
+
     db = Path(tempfile.mkdtemp(prefix="atp-bench-gw-")) / "atp.db"
+    kid = generate_grant_key(db.parent / "keys")
     app = create_app(
         GatewaySettings(
             database_path=str(db),
-            grant_signing_key="benchmark-signing-key-at-least-32-bytes-long!!",
+            grant_keys_dir=str(db.parent / "keys"),
+            grant_signing_kid=kid,
             operator_key="benchmark-operator-key-at-least-32-bytes-long!!",
         )
     )

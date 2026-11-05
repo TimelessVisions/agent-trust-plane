@@ -132,6 +132,7 @@ def test_generated_keys_never_start_with_a_dash(
     draws = iter(["-" + real(48)[1:], real(48)] * 8)
     monkeypatch.setattr(secrets, "token_urlsafe", lambda n=None: next(draws))
 
+    monkeypatch.chdir(tmp_path)
     home = AtpHome(tmp_path / "home").ensure()
     keygen([])
     settings = GatewaySettings(
@@ -142,7 +143,9 @@ def test_generated_keys_never_start_with_a_dash(
         + capsys.readouterr().out.splitlines()
     )
     values = [line.split("=", 1)[1] for line in lines if line.startswith("ATP_")]
-    values += [settings.operator_key_value(), settings.signing_key_bytes().decode("utf-8")]
+    values += [settings.operator_key_value()]
 
+    # home: operator key, grant kid; keygen: operator key, keys dir, grant kid; settings:
+    # the ephemeral operator key. (The Ed25519 grant key is a file, not a pasted value.)
     assert len(values) == 6
     assert not [v for v in values if v.startswith("-")]

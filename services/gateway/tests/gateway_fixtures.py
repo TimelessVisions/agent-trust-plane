@@ -22,7 +22,38 @@ AP_AGENT = PrincipalRef(id="accounts-payable-agent", kind=PrincipalKind.AGENT)
 DOC_AGENT = PrincipalRef(id="document-agent", kind=PrincipalKind.AGENT)
 ATTACKER_ACCOUNT = "acct-offshore-9931"
 
-SIGNING_KEY = "test-signing-key-that-is-at-least-32-bytes-long!!"
+
+def _fixture_grant_key() -> tuple[dict[str, str], str]:
+    """One deterministic Ed25519 grant key for the test session, on disk the way
+    a real gateway keeps it. Returns the settings that load it and its PEM."""
+    import atexit
+    import shutil
+    import tempfile
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    from atp_gateway.grants import kid_for
+
+    key = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+    kid = kid_for(key.public_key())
+    keys_dir = Path(tempfile.mkdtemp(prefix="atp-test-grant-keys-"))
+    atexit.register(shutil.rmtree, keys_dir, True)
+    pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    (keys_dir / f"grant-{kid}.key").write_bytes(pem)
+    (keys_dir / f"grant-{kid}.pub").write_bytes(
+        key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+    return {"grant_keys_dir": str(keys_dir), "grant_signing_kid": kid}, pem.decode("ascii")
+
+
+# ``SIGNING_KEY`` is the private grant key's PEM: tests assert it never leaks.
+GRANT_KEY_SETTINGS, SIGNING_KEY = _fixture_grant_key()
 OPERATOR_KEY = "test-operator-key-that-is-at-least-32-bytes-long!"
 
 
@@ -47,7 +78,7 @@ def runtime(clock: Clock, request: pytest.FixtureRequest, tmp_path: Path) -> Ite
     db = ":memory:" if request.param == "memory" else str(tmp_path / "atp-test.db")
     settings = GatewaySettings(
         database_path=db,
-        grant_signing_key=SIGNING_KEY,
+        **GRANT_KEY_SETTINGS,
         operator_key=OPERATOR_KEY,
         grant_ttl_seconds=120,
     )

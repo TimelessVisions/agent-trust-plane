@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -34,6 +34,7 @@ name = "agent-trust-plane"
 version = "0.3.2"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "mcp" },
@@ -67,6 +68,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "mcp", specifier = ">=2.2,<3" },
@@ -307,6 +309,7 @@ dependencies = [
     { name = "atp-core" },
     { name = "atp-identity" },
     { name = "atp-policy" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
@@ -319,6 +322,7 @@ requires-dist = [
     { name = "atp-core", editable = "packages/core" },
     { name = "atp-identity", editable = "packages/identity" },
     { name = "atp-policy", editable = "packages/policy" },
+    { name = "cryptography", specifier = ">=50" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },

@@ -29,7 +29,7 @@ from atp_gateway.evidence import build_bundle, verify_bundle
 from atp_gateway.service import TrustPlane
 from atp_identity import DelegationRequest
 
-from gateway_fixtures import OPERATOR_KEY, SIGNING_KEY, Clock
+from gateway_fixtures import GRANT_KEY_SETTINGS, OPERATOR_KEY, SIGNING_KEY, Clock
 
 HUMAN = PrincipalRef(id="alice", kind=PrincipalKind.HUMAN)
 AGENT = PrincipalRef(id="ap", kind=PrincipalKind.AGENT)
@@ -175,7 +175,7 @@ class TestEvidenceBundles:
     def _view(self) -> Any:
         rt = build_runtime(
             GatewaySettings(
-                database_path=":memory:", grant_signing_key=SIGNING_KEY, operator_key=OPERATOR_KEY
+                database_path=":memory:", **GRANT_KEY_SETTINGS, operator_key=OPERATOR_KEY
             )
         )
         rt.trust_plane.clock = Clock()
@@ -356,7 +356,7 @@ class TestIdentityProviderBoundary:
 
         rt = build_runtime(
             GatewaySettings(
-                database_path=":memory:", grant_signing_key=SIGNING_KEY, operator_key=OPERATOR_KEY
+                database_path=":memory:", **GRANT_KEY_SETTINGS, operator_key=OPERATOR_KEY
             )
         )
         provider = HeaderProvider()

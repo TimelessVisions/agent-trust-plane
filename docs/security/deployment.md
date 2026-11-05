@@ -12,10 +12,15 @@ cannot meet a line here, the corresponding guarantee does not hold.
    and with tool-side credentials that only the gateway holds. The
    in-process `PaymentsTool` in this repo is a stand-in and is deliberately
    unprotected (`test_in_process_tool_call_is_not_protected`).
-2. **Keys are explicit and secret.** `ATP_GRANT_SIGNING_KEY` and
-   `ATP_OPERATOR_KEY` (≥ 32 chars each; `python -m atp_gateway keygen`) live in
-   a secret store or a mode-600 `.env` that is never committed. The gateway
-   refuses to start a persistent database without them.
+2. **Keys are explicit and secret.** `ATP_OPERATOR_KEY` (≥ 32 chars) and the
+   Ed25519 grant key (`ATP_GRANT_KEYS_DIR` + `ATP_GRANT_SIGNING_KID`; the
+   private key is `grant-<kid>.key`, mode 600) come from `atp keygen --write
+   .env`. They live in a secret store or a mode-600 `.env` and key directory
+   that are never committed. The gateway refuses to start a persistent
+   database without them, and refuses a 0.3 HMAC `ATP_GRANT_SIGNING_KEY`.
+   Rotate the grant key with `atp keygen --rotate --env .env` (or `atp keygen
+   --rotate` for an ATP home) and restart; grants signed by the old key keep
+   verifying for one grant TTL.
 3. **The operator key is held by the operator only.** It is omnipotent (see
    `docs/security/security-review.md` O1). Agents never receive it. The dashboard is
    an operator tool and asks for it; do not embed it in the dashboard build.

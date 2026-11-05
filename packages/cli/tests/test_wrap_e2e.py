@@ -74,6 +74,8 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ATP_OPERATOR_KEY", raising=False)
     monkeypatch.delenv("ATP_GRANT_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("ATP_GRANT_SIGNING_KID", raising=False)
+    monkeypatch.delenv("ATP_GRANT_KEYS_DIR", raising=False)
     monkeypatch.setenv("NOTES_DIR", str(notes))
     assert (
         _run(

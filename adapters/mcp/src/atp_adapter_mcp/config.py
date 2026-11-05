@@ -18,7 +18,9 @@ Two ways to run:
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -202,21 +204,32 @@ class ProxyConfig(BaseModel):
         whether some other process can also spawn the upstream command.
         """
         forbidden = gateway_credential_env_names(self.agent_token_env)
-        leaked = sorted(set(self.upstream.env).intersection(forbidden))
-        leaked += [
-            f"headers_env:{var}" for var in self.upstream.headers_env.values() if var in forbidden
-        ]
-        for header, value in self.upstream.headers.items():
+        up = self.upstream
+        leaked = sorted(set(up.env).intersection(forbidden))
+        leaked += [f"headers_env:{var}" for var in up.headers_env.values() if var in forbidden]
+        for header, value in up.headers.items():
             for var in forbidden:
                 secret = os.environ.get(var, "")
                 if secret and value == secret:
                     leaked.append(f"header:{header}=${var}")
+        # The Ed25519 grant key: its PEM, its file, or the directory holding it.
+        places: list[tuple[str, str]] = [(f"env:{k}", v) for k, v in up.env.items()]
+        places += [(f"header:{k}", v) for k, v in up.headers.items()]
+        places += [
+            (f"headers_env:{var}", os.environ.get(var, "")) for var in up.headers_env.values()
+        ]
+        places += [(f"args[{i}]", a) for i, a in enumerate(up.args)]
+        for where, value in places:
+            what = grant_key_material(value)
+            if what:
+                leaked.append(f"{where} ({what})")
         if leaked:
             raise ValueError(
                 "refusing to start: gateway credentials would be given to the upstream "
-                f"({', '.join(leaked)}). Keep ATP_OPERATOR_KEY, ATP_GRANT_SIGNING_KEY, "
+                f"({', '.join(leaked)}). Keep ATP_OPERATOR_KEY, ATP_GRANT_SIGNING_KID, "
+                "ATP_GRANT_KEYS_DIR, ATP_HOME, the grant key files (grant-<kid>.key), "
                 f"and ${self.agent_token_env} out of upstream.env, upstream.headers, "
-                "and upstream.headers_env."
+                "upstream.headers_env and upstream.args."
             )
         return self
 
@@ -248,12 +261,49 @@ class ProxyConfig(BaseModel):
         return next((m for m in self.tools if m.mcp_tool == tool_name), None)
 
 
-_GATEWAY_CREDENTIAL_ENV = ("ATP_OPERATOR_KEY", "ATP_GRANT_SIGNING_KEY")
+_GATEWAY_CREDENTIAL_ENV = (
+    "ATP_OPERATOR_KEY",
+    "ATP_GRANT_SIGNING_KEY",  # the 0.3.x HMAC key; still never handed on
+    "ATP_GRANT_SIGNING_KID",
+    "ATP_GRANT_KEYS_DIR",
+    "ATP_HOME",  # holds keys.env and keys/
+)
+_GRANT_KEY_FILE = re.compile(r"grant-[0-9a-f]{16}\.key\b")
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
 
 def gateway_credential_env_names(agent_token_env: str) -> frozenset[str]:
     return frozenset({*_GATEWAY_CREDENTIAL_ENV, agent_token_env})
+
+
+def _grant_key_dirs() -> list[Path]:
+    dirs = []
+    if os.environ.get("ATP_GRANT_KEYS_DIR"):
+        dirs.append(Path(os.environ["ATP_GRANT_KEYS_DIR"]))
+    dirs.append(Path(os.environ.get("ATP_HOME") or ".atp") / "keys")
+    out = []
+    for d in dirs:
+        with contextlib.suppress(OSError, ValueError, RuntimeError):
+            out.append(d.expanduser().resolve())
+    return out
+
+
+def grant_key_material(value: str) -> str | None:
+    """Why ``value`` would hand the upstream the grant signing key, or None."""
+    if not value:
+        return None
+    if "PRIVATE KEY-----" in value:
+        return "a PEM private key"
+    if _GRANT_KEY_FILE.search(value):
+        return "a grant key file"
+    try:
+        path = Path(value).expanduser().resolve()
+    except (OSError, ValueError, RuntimeError):
+        return None
+    for keys_dir in _grant_key_dirs():
+        if path == keys_dir or path.is_relative_to(keys_dir):
+            return "the grant key directory"
+    return None
 
 
 def url_host(url: str) -> str:
@@ -278,7 +328,9 @@ def shared_upstream_warning(url: str) -> str | None:
         "upstream is not loopback; the proxy cannot prove it is the only client. "
         "Anything that can open this URL bypasses authorization unless the "
         "upstream accepts connections only from the proxy and the proxy alone "
-        "holds the upstream credential."
+        "holds the upstream credential. Never give the upstream ATP_OPERATOR_KEY, "
+        "ATP_GRANT_SIGNING_KID, or read access to the grant keys "
+        "(.atp/keys/grant-<kid>.key): with them it can act as the operator or mint grants."
     )
 
 

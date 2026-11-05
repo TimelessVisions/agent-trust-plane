@@ -16,8 +16,8 @@ from atp_gateway import GatewaySettings, build_runtime, create_app
 
 from gateway_fixtures import (
     ATTACKER_ACCOUNT,
+    GRANT_KEY_SETTINGS,
     OPERATOR_KEY,
-    SIGNING_KEY,
     Clock,
     authorize,
     bearer,
@@ -33,7 +33,7 @@ from gateway_fixtures import (
 def shadow_client(clock: Clock) -> Iterator[TestClient]:
     settings = GatewaySettings(
         database_path=":memory:",
-        grant_signing_key=SIGNING_KEY,
+        **GRANT_KEY_SETTINGS,
         operator_key=OPERATOR_KEY,
         enforcement_mode="shadow",
     )

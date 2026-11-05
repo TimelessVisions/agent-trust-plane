@@ -45,7 +45,7 @@ from mcp.server.stdio import stdio_server
 from mcp.shared._httpx_utils import create_mcp_http_client
 
 from atp_adapter_http import AgentClient, GatewayError, TrustPlaneClient
-from atp_adapter_mcp.config import ProxyConfig, shared_upstream_warning
+from atp_adapter_mcp.config import ProxyConfig, UpstreamConfig, shared_upstream_warning
 from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY
 from atp_core import ActionEnvelope, Provenance, canonical_json, new_trace_id
 
@@ -87,6 +87,13 @@ class Upstream:
         return next((t for t in self.tools if t.name == name), None)
 
 
+def upstream_process_env(up: UpstreamConfig) -> dict[str, str]:
+    """The whole environment a stdio upstream is started with: the SDK's minimal
+    default (HOME, PATH, ...; no ATP_* variables) plus ``upstream.env``, which
+    ``ProxyConfig`` has already checked for gateway credentials and grant keys."""
+    return {**get_default_environment(), **up.env}
+
+
 @contextlib.asynccontextmanager
 async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
     up = config.upstream
@@ -119,7 +126,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
     params = StdioServerParameters(
         command=up.command,
         args=list(up.args),
-        env={**get_default_environment(), **up.env},
+        env=upstream_process_env(up),
         cwd=up.cwd,
     )
     async with stdio_client(params) as (read, write), ClientSession(read, write) as session:

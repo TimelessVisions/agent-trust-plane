@@ -7,15 +7,17 @@ from __future__ import annotations
 import base64
 import json
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
-from atp_core import ActionEnvelope
+from atp_core import ActionEnvelope, canonical_json
 from atp_gateway import Runtime
-from atp_gateway.grants import GrantSigner, new_grant_claims
+from atp_gateway.grants import GrantSigner, kid_for, new_grant_claims
 
 from gateway_fixtures import (
     ATTACKER_ACCOUNT,
     DOC_AGENT,
+    GRANT_KEY_SETTINGS,
     ORCHESTRATOR,
     Clock,
     authorize,
@@ -26,6 +28,10 @@ from gateway_fixtures import (
     payment_envelope,
     seed_chain,
 )
+
+
+def _b64e(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
 class TestDirectExecutionBypass:
@@ -72,9 +78,16 @@ class TestForgedGrants:
             policy_set_version="payments-v2",
             ttl_seconds=3600,
         )
-        forged = GrantSigner(b"attacker-controlled-key-of-32-bytes!!").mint(claims)
+        attacker = Ed25519PrivateKey.generate()
+        forged = GrantSigner(attacker, kid_for(attacker.public_key())).mint(claims)
         res = execute(client, env, forged, g["tokens"]["ap"])
         assert res["status"] == "blocked"
+        assert res["reason_code"] == "GRANT_SIGNATURE_INVALID"
+        # Same attacker signature, but claiming the gateway's own kid.
+        real_kid = GRANT_KEY_SETTINGS["grant_signing_kid"]
+        header = _b64e(canonical_json({"alg": "EdDSA", "kid": real_kid, "v": "atp-grant/2"}))
+        _, body_b64, sig_b64 = forged.split(".")
+        res = execute(client, env, f"{header}.{body_b64}.{sig_b64}", g["tokens"]["ap"])
         assert res["reason_code"] == "GRANT_SIGNATURE_INVALID"
         assert ledger(client) == []
 
@@ -82,11 +95,11 @@ class TestForgedGrants:
         g = seed_chain(client)
         env = payment_envelope(g["ap"])
         token = authorize(client, env, g["tokens"]["ap"])["execution_grant"]["token"]
-        body_b64, sig = token.split(".")
+        header_b64, body_b64, sig = token.split(".")
         body = json.loads(base64.urlsafe_b64decode(body_b64 + "=" * (-len(body_b64) % 4)))
         body["expires_at"] = "2099-01-01T00:00:00+00:00"
         edited = base64.urlsafe_b64encode(json.dumps(body).encode()).rstrip(b"=").decode()
-        res = execute(client, env, f"{edited}.{sig}", g["tokens"]["ap"])
+        res = execute(client, env, f"{header_b64}.{edited}.{sig}", g["tokens"]["ap"])
         assert res["reason_code"] == "GRANT_SIGNATURE_INVALID"
         assert ledger(client) == []
 

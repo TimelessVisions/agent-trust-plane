@@ -9,7 +9,7 @@ from typing import Any
 
 from atp_audit import InMemoryTraceStore, SqliteTraceStore, TraceStore
 from atp_core.sqlite import SqliteUnitOfWork, no_transaction
-from atp_gateway.grants import GrantSigner, GrantStore, InMemoryGrantStore, SqliteGrantStore
+from atp_gateway.grants import GrantStore, InMemoryGrantStore, SqliteGrantStore
 from atp_gateway.reports import EvalReportStore, InMemoryEvalReportStore, SqliteEvalReportStore
 from atp_gateway.service import TrustPlane
 from atp_gateway.settings import GatewaySettings
@@ -70,6 +70,8 @@ class Runtime:
 
 def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     settings = settings or GatewaySettings()
+    # Keys first: a misconfigured gateway refuses to start before touching the database.
+    keyring = settings.grant_keyring()
     conn: sqlite3.Connection | None
     transaction: Any = no_transaction
     delegation_store: DelegationStore
@@ -121,7 +123,8 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         credentials=CredentialService(credential_store),
         traces=trace_store,
         grants=grant_store,
-        signer=GrantSigner(settings.signing_key_bytes()),
+        signer=keyring.signer,
+        verifier=keyring.verifier,
         policy_sets=policy_sets,
         vendors=vendors,
         tools=tools,

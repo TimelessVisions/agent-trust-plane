@@ -86,7 +86,9 @@ Each row names the mechanism and the test or eval that exercises it.
 | **Confused deputy (parent using child's grant, or vice-versa)** | A principal presents a grant issued to someone else. | Leaf grantee must equal `envelope.agent`; root must equal `envelope.principal`. | `test_orchestrator_cannot_use_ap_agents_grant` |
 | **Direct execution bypass** | Call `/execute` without `/authorize`. | Execution requires a signed grant; none → `GRANT_MISSING`. | EVAL-005 (c); `TestDirectExecutionBypass` |
 | **Client-asserted authorization** | Envelope contains `"authorized": true`. | `extra="forbid"` on the envelope and request schemas → 422. | `test_client_asserted_authorized_flag_is_rejected` |
-| **Forged authorization response / grant** | Attacker constructs a well-formed grant with their own key, or edits a real one. | HMAC-SHA256 with constant-time comparison; canonical re-encoding check. | `TestForgedGrants` |
+| **Forged authorization response / grant** | Attacker constructs a well-formed grant with their own key, or edits a real one. | Ed25519 signature (`atp-grant/2`) under a key id (`kid`) the gateway trusts; the header is signed too and must be exactly `EdDSA`/`atp-grant/2` (no algorithm choice); strict base64url; canonical re-encoding check. An unknown `kid` is GRANT_SIGNATURE_INVALID; an `atp-grant/1` HMAC token is GRANT_MALFORMED. | `TestForgedGrants`; `test_grants.py::TestSigner` |
+| **Grant key rotation mid-flight** | The operator rotates the key while grants are outstanding; or an attacker keeps using a retired key. | `atp keygen --rotate` deletes the old private key and keeps its public key trusted for one grant TTL after the rotation (`grant-<kid>.retired`), so every grant it signed is either expired or still verifiable; after that window the `kid` is unknown. | `test_old_kid_verifies_after_rotation`, `test_home_rotation_keeps_old_grants_valid_for_one_ttl` |
+| **Grant key handed to the upstream** | A config puts `ATP_GRANT_SIGNING_KID`, `ATP_GRANT_KEYS_DIR`, `ATP_HOME`, a `grant-<kid>.key` path or a PEM private key into `upstream.env`, `headers`, `headers_env` or `args`. | `ProxyConfig` refuses to start; the stdio upstream gets only the SDK's minimal environment plus `upstream.env`. | `test_private_key_never_in_upstream_env` |
 | **Modified action after authorization (TOCTOU)** | Authorize $480, execute $12,500 with the same grant. | Grant carries the SHA-256 of the action-defining envelope fields; mismatch blocks. | EVAL-007; `TestModifiedActionAfterAuthorization` |
 | **Replayed execution grant** | Use one grant twice. | Server-side record transitions `issued → consumed` via a conditional UPDATE; second use blocks. | EVAL-008; `test_grant_cannot_be_used_twice` |
 | **Held grant used later** | Keep a grant and use it after the situation changed. | Short TTL (default 120 s). | `test_grant_expires` |
@@ -155,7 +157,7 @@ Stated plainly. Each has a sketch of what closing it would take.
 | **Agent credential theft** | Bearer tokens are the agent until revoked or expired. There is no proof of possession, no sender binding, no rotation protocol. | Short TTLs (supported today), mTLS or DPoP-style proof of possession, per-host binding, rotation with overlap. |
 | **Human identity** | Humans have no credential; the operator stands in for all of them, and `envelope.principal` is only checked against the chain root. | Per-human signed root grants. |
 | **Gateway compromise** | If the gateway process or its SQLite file is attacker-writable, every guarantee falls: grants can be minted, chains rewritten, traces edited to look consistent. | Run the gateway as a separate hardened service; least-privilege DB credentials; asymmetric grant signing with the private key in an HSM/KMS so a DB-writer still cannot mint grants. |
-| **Signing key exposure** | One symmetric key signs and verifies. Anyone with it can mint grants (they still need a server-side record, but a DB-writer can add one). | Ed25519 grants; key rotation with `kid` in the token; key in KMS. The token format is already versioned (`atp-grant/1`). |
+| **Signing key exposure** | Grants are Ed25519 (`atp-grant/2`) with a `kid`, and `atp keygen --rotate` rotates them without invalidating live grants. The private key is still a file (`.atp/keys/grant-<kid>.key`, mode 0600) readable by the gateway process; anyone who can read it can mint grants (they still need a server-side record, but a DB-writer can add one). Verification still runs in the same process, so the asymmetry does not yet buy a separate verifier. | Private key in a KMS/HSM so a DB-writer or a file reader still cannot mint grants; a verifier that holds only public keys. |
 | **Audit tampering by a DB-writer** | The hash chain is tamper-*evident* against naive edits only. An attacker who can rewrite the whole chain can produce a consistent forgery. | Anchor chain heads externally (append to a write-once log, a transparency log, or periodically sign heads with a key the gateway does not hold); write-only audit credentials; ship events to a separate sink. |
 | **Approval workflow** | `REQUIRE_APPROVAL` is recorded and no grant is issued, but there is no approval endpoint or approver identity. | An approval record signed by an authenticated approver, referenced by a re-authorization that then mints the grant. |
 | **Partial execution failure** | If a tool fails mid-way (`EXECUTION_FAILED`), the grant is already consumed and the failure is recorded, but there is no compensation, retry, or idempotency key passed to the tool. | Idempotency keys derived from `envelope_id`; tool-side saga/compensation hooks; explicit `retry` that re-authorizes. |
@@ -178,8 +180,8 @@ The guarantees above hold only when (full list: [deployment.md](deployment.md)):
 
 1. Tools are reachable only through the gateway/proxy
    ([enforcing-the-boundary.md](enforcing-the-boundary.md)).
-2. Keys are explicit, secret and rotated; `.atp/` is private to the
-   operator.
+2. Keys are explicit, secret and rotated (`atp keygen --rotate` for the
+   grant key); `.atp/` (including `.atp/keys/`) is private to the operator.
 3. Agents hold their own short-lived credentials; the operator key never
    reaches an agent host.
 4. TLS in front of `atp serve`; `atp mcp wrap` is local by construction.
@@ -188,7 +190,7 @@ The guarantees above hold only when (full list: [deployment.md](deployment.md)):
 ## Assumptions
 
 - The gateway clock is roughly correct (NTP).
-- Python, SQLite, `hmac`/`hashlib`, pydantic and the MCP SDK are not
+- Python, SQLite, `hmac`/`hashlib`, `cryptography` (Ed25519), pydantic and the MCP SDK are not
   themselves compromised (supply chain: `docs/release/verification.md`).
 - The operator reviews generated configs before relying on them:
   `atp mcp init` proposes, it does not decide.

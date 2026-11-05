@@ -7,6 +7,11 @@ changes may land in minor versions and are called out).
 ## [Unreleased]
 
 ### Added
+- `atp keygen --rotate` makes a new active grant key for the ATP home
+  (`--home`, `$ATP_HOME` or `./.atp`), or for a serve `.env` with
+  `--env PATH`. The old private key is deleted, and its public key keeps
+  verifying for one grant TTL after the rotation time, which is stored in
+  `grant-<kid>.retired`; restart the gateway to load the new key.
 - `atp migrate PATH...` brings `atp-mcp.yaml`, `policies.yaml` and
   regression suites to the current file format version in place. The kind
   of each file is detected from its content, not its name. It adds
@@ -26,6 +31,33 @@ changes may land in minor versions and are called out).
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Changed
+- **BREAKING:** execution grants are Ed25519 with a key id. The token is
+  `atp-grant/2`: `b64url(header).b64url(claims).b64url(sig)` with header
+  `{"alg": "EdDSA", "kid": <kid>, "v": "atp-grant/2"}`, the signature over
+  the first two segments, and `kid` = the first 16 hex characters of SHA-256
+  over the raw public key. `atp-grant/1` (HMAC) tokens are rejected with
+  `GRANT_MALFORMED`; an unknown `kid` is `GRANT_SIGNATURE_INVALID`. Claims no
+  longer carry `v` (it is in the header); stored 0.3 grant rows still load.
+  The `grant_issued` trace event records `kid` instead of `key_fingerprint`.
+- **BREAKING:** grant keys are files. The ATP home keeps
+  `.atp/keys/grant-<kid>.key` (PKCS8 PEM, mode 0600 where the OS allows) and
+  `grant-<kid>.pub`, and `keys.env` holds `ATP_GRANT_SIGNING_KID`; the
+  private key is never written to an env file. A 0.3 home's HMAC
+  `ATP_GRANT_SIGNING_KEY` is migrated once by `AtpHome.ensure()` (and by any
+  offline command that opens the home): an Ed25519 key is generated, then the
+  HMAC line is removed, keeping the operator key and comments; `.gitignore`
+  gains `keys/`. Traces and evidence bundles are keyless hash chains and still
+  verify. A persistent `atp serve` gateway configured only with
+  `ATP_GRANT_SIGNING_KEY` refuses to start; `atp keygen --write .env` now
+  writes `ATP_OPERATOR_KEY`, `ATP_GRANT_KEYS_DIR` and `ATP_GRANT_SIGNING_KID`
+  and puts the key pair in `atp-keys/` next to the file (or `--keys-dir`).
+  `GatewaySettings.signing_key_bytes()` is removed; use `grant_keyring()`.
+  `cryptography>=50` is a new dependency.
+- **BREAKING:** the MCP proxy refuses a config that gives the upstream
+  `ATP_GRANT_SIGNING_KID`, `ATP_GRANT_KEYS_DIR`, `ATP_HOME`, a PEM private
+  key, a `grant-<kid>.key` path or the grant key directory, in
+  `upstream.env`, `headers`, `headers_env` or `args`. The non-loopback
+  upstream warning names the grant key too.
 - **BREAKING:** `atp-mcp.yaml` (`ProxyConfig`), `policies.yaml`
   (`PolicyFile`) and regression suites (`Suite`) have a top-level
   `version: 1` (`Literal[1]`). Any other value, including `2`, `"1"`,
