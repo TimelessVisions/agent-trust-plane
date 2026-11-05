@@ -53,3 +53,25 @@ def test_tool_description_companion_scope_regression() -> None:
     except SystemExit as exc:
         exit_code = exc.code
     assert exit_code in (None, 0), exit_code
+
+
+def test_pr_title_hijack_scope_with_real_proxy() -> None:
+    case = load_incident_case(CASE_ROOT.parent / "pr-title-hijack" / "case.yaml")
+    reference = run_incident(case, NameOnlyLayer())
+    assert reference.status == "PASS", reference
+    assert reference.outcomes == ("ALLOWED", "ALLOWED", "ALLOWED"), reference
+
+    protected = run_incident(case, AtpLayer())
+    assert protected.status == "PASS", protected
+    assert protected.outcomes == ("ALLOWED", "ALLOWED", "DENIED"), protected
+
+
+def test_pr_title_hijack_companion_regression() -> None:
+    from atp_cli.main import main
+
+    suite = CASE_ROOT.parent / "pr-title-hijack" / "atp-regression.yaml"
+    try:
+        exit_code = main(["test", str(suite)])
+    except SystemExit as exc:
+        exit_code = exc.code
+    assert exit_code in (None, 0), exit_code
