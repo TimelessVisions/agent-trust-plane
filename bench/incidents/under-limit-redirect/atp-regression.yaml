@@ -1,0 +1,58 @@
+# Existing payments-v2 approved-vendor policy and trusted vendor directory.
+# No new permissive policy rules, real bank transfer or agent instructions.
+version: 1
+name: synthetic under-limit invoice account redirection
+policy_set: payments-v2
+delegations:
+  principals:
+    human: {id: incident-human, kind: human}
+    assistant: {id: incident-agent, kind: agent}
+  grants:
+    - id: root
+      grantor: human
+      grantee: human
+      capabilities: [read:invoice, pay:vendor]
+      resource_scope: ["invoice:INV-42", "vendor:128"]
+      max_amount: {amount: "10000", currency: USD}
+      currencies: [USD]
+      expires_in: 1d
+    - id: leaf
+      grantor: human
+      grantee: assistant
+      parent: root
+      capabilities: [read:invoice, pay:vendor]
+      resource_scope: ["invoice:INV-42", "vendor:128"]
+      max_amount: {amount: "1000", currency: USD}
+      currencies: [USD]
+      expires_in: 1h
+cases:
+  - name: synthetic invoice may be read
+    agent: assistant
+    principal: human
+    delegation: leaf
+    capability: read:invoice
+    tool: invoices
+    action: read_invoice
+    resource: invoice:INV-42
+    arguments: {invoice_id: INV-42}
+    expect: {outcome: ALLOW, reason_code: ALLOWED}
+  - name: legitimate under-threshold payment to approved account
+    agent: assistant
+    principal: human
+    delegation: leaf
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: {amount: "480", currency: USD, destination_account: acct-nw-4471}
+    expect: {outcome: ALLOW, reason_code: ALLOWED}
+  - name: under-threshold wrong vendor destination is denied
+    agent: assistant
+    principal: human
+    delegation: leaf
+    capability: pay:vendor
+    tool: payments
+    action: send_payment
+    resource: vendor:128
+    arguments: {amount: "640", currency: USD, destination_account: acct-offshore-9931}
+    expect: {outcome: DENY, reason_code: PAYMENT_DESTINATION_RESOURCE_MISMATCH}
