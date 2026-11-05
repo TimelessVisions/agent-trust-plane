@@ -92,13 +92,17 @@ def main() -> int:
     args = parser.parse_args()
     if args.min_tests < 1 or args.max_skips < 0:
         parser.error("--min-tests must be >= 1 and --max-skips must be >= 0")
-    return 0 if inspect_junit(
-        args.xml,
-        label=args.label,
-        min_tests=args.min_tests,
-        max_skips=args.max_skips,
-        required_cases=args.require_case,
-    ) else 1
+    return (
+        0
+        if inspect_junit(
+            args.xml,
+            label=args.label,
+            min_tests=args.min_tests,
+            max_skips=args.max_skips,
+            required_cases=args.require_case,
+        )
+        else 1
+    )
 
 
 if __name__ == "__main__":
