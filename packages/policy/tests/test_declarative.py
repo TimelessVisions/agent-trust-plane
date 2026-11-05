@@ -553,6 +553,7 @@ def test_required_denies_explicit_null() -> None:
     d = _one_rule_decide(rule, {"x": None})
     assert d.outcome is DecisionOutcome.DENY
     assert d.reason_code is ReasonCode.ARGUMENT_MISSING
+    assert "missing or null" in d.explanation
     assert _one_rule_decide(rule, {"x": "v"}).outcome is DecisionOutcome.ALLOW
 
 

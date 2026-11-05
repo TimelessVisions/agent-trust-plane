@@ -265,7 +265,9 @@ class DeclaredRule(Policy):
             )
             if missing:
                 return self.deny(
-                    ReasonCode.ARGUMENT_MISSING, f"required argument(s) missing: {missing}", (c,)
+                    ReasonCode.ARGUMENT_MISSING,
+                    f"required argument(s) missing or null: {missing}",
+                    (c,),
                 )
             return self.allow("required arguments present", (c,))
         if k == "argument_forbidden":
