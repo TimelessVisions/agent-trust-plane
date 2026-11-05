@@ -123,7 +123,8 @@ def test_render_config_uses_absolute_quoted_paths(tmp_path):
     assert cfg["policy_set"] == "bench"
     assert pol["policy_sets"][0]["version"] == "bench"
     assert pol["policy_sets"][0]["rules"][0]["id"] == "cap"
-    assert pol["policy_sets"][0]["rules"][0]["applies_to"]["tool"] == "mcp.dojo-banking"
+    # Rules keep the logical tool: the mapping's `tool` is what the proxy stamps on envelopes.
+    assert pol["policy_sets"][0]["rules"][0]["applies_to"]["tool"] == "dojo.banking"
     # both documents round-trip through ATP's own models and YAML
     from atp_adapter_mcp.config import ProxyConfig
     from atp_policy.declarative import PolicyFile
@@ -145,8 +146,8 @@ def test_render_config_passes_argument_subset_of_through(tmp_path):
         load_suite("banking"), ann, _server_argv("banking", tmp_path / "j"), tmp_path / "h"
     )
     (out,) = pol["policy_sets"][0]["rules"]
-    # Only the logical tool name is retargeted to the proxy's; kind and fields pass unchanged.
-    assert out == {**rule, "applies_to": {"tool": "mcp.dojo-banking", "action": "send_money"}}
+    # The rule passes through exactly as annotated, logical tool included.
+    assert out == rule
     assert yaml.safe_load(yaml.safe_dump(pol))["policy_sets"][0]["rules"] == [out]
 
 

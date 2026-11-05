@@ -115,6 +115,11 @@ class ToolMapping(BaseModel):
         return self
 
     @property
+    def envelope_tool(self) -> str:
+        """The ``tool`` the proxy stamps on envelopes for calls this mapping matches."""
+        return self.tool
+
+    @property
     def resource_arguments(self) -> tuple[str, ...]:
         return tuple(_PLACEHOLDER.findall(self.resource_template))
 

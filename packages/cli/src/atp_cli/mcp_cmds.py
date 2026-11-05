@@ -147,13 +147,25 @@ def wrap(
         return 2
 
     home = AtpHome(home_dir).ensure()
-    settings = home.settings(enforcement_mode=mode, default_policy_set=config.policy_set)
+    settings = home.settings(
+        enforcement_mode=mode,
+        default_policy_set=config.policy_set,
+        external_tools=config.mapped_tools,
+    )
     from atp_gateway import build_runtime
 
     try:
         runtime = build_runtime(settings)
     except Exception as exc:
         _err(f"could not start the local gateway from {home.path}: {str(exc)[:500]}")
+        return 2
+    internal = [t for t in config.mapped_tools if not runtime.trust_plane.tools.is_external(t)]
+    if internal:
+        _err(
+            f"{config_path}: mapping tool(s) {internal} name a tool the gateway executes itself; "
+            "a proxied MCP tool needs its own tool name"
+        )
+        runtime.close()
         return 2
     app = create_app(settings, runtime=runtime)
     operator = TrustPlaneClient.for_app(app, operator_key=runtime.operator_key)

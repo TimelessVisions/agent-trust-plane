@@ -119,14 +119,9 @@ def render_atp_config(
         "tools": tools,
         "expose_unmapped_tools": False,
     }
-    rules = []
-    for raw in annotation.rules:
-        rule = dict(raw)
-        # The proxy stamps every envelope with tool "mcp.<server_name>" and ignores the mapping's
-        # `tool`, so a rule written against the logical tool "dojo.<suite>" is retargeted to it.
-        # _check_annotation has already ensured every rule names that logical tool.
-        rule["applies_to"] = {**rule["applies_to"], "tool": f"mcp.{config['server_name']}"}
-        rules.append(rule)
+    # Every mapping says tool "dojo.<suite>" and the proxy stamps envelopes with the matched
+    # mapping's tool, so rules (checked by _check_annotation to name that tool) pass unchanged.
+    rules = [dict(raw) for raw in annotation.rules]
     policies = {
         "version": 1,
         "policy_sets": [

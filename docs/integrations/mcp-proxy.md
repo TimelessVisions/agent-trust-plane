@@ -64,7 +64,7 @@ Full matrix incl. what was *not* verified: [compatibility.md](compatibility.md).
 ## Config reference (`atp-mcp.yaml`)
 
 ```yaml
-server_name: fs                     # envelopes use tool "mcp.fs"
+server_name: fs                     # unmapped calls use tool "mcp.fs"
 principal: {id: local-user, kind: human}     # default
 agent: {id: fs-agent, kind: agent}           # default "<server_name>-agent"
 policy_set: fs-v1                   # declared in .atp/policies.yaml (wrap) or built-in
@@ -103,6 +103,13 @@ path-like arguments (`path`, `file_path`, `directory`, …) → `path:{arg}`
 with normalisation; id-like arguments → `<arg>:{arg}`; otherwise
 `tool:<name>`. Annotations are unverified server claims; the file is a
 proposal you review (`../security/safe-defaults.md`).
+
+Each mapping's `tool` is the envelope tool for calls it matches, so a
+declared rule's `applies_to.tool` must name it. `atp mcp init` writes
+`tool: mcp.<server_name>` for every mapping. `atp mcp wrap` releases every
+mapping `tool` to the proxy for execution and refuses one that names a tool
+the gateway runs itself (`payments`). In proxy mode, a remote gateway must
+list any mapping `tool` outside `mcp.` in `ATP_EXTERNAL_TOOL_PREFIXES`.
 
 ## Policies that apply
 

@@ -349,7 +349,7 @@ class TrustPlaneProxy:
             agent=self.config.agent_ref,
             delegation_grant_id=self.delegation_grant_id,
             capability=mapping.capability,
-            tool=self.config.envelope_tool,
+            tool=mapping.envelope_tool,
             action=mapping.action,
             resource=resource,
             arguments=_bounded(arguments),

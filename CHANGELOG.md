@@ -27,6 +27,16 @@ changes may land in minor versions and are called out).
   `docs/release-v1/SECURITY_AND_LIMITS.md`.
 
 ### Fixed
+- The MCP proxy stamps each envelope with the matched `ToolMapping.tool`.
+  It used `mcp.<server_name>` for every call and ignored the mapping, so a
+  declared rule whose `applies_to.tool` named the mapping's `tool` never
+  matched. `atp mcp init` still writes `tool: mcp.<server_name>`, so its
+  configs behave as before; unmapped calls keep `mcp.<server_name>`.
+  `atp mcp wrap` releases every mapping `tool` to the proxy and refuses a
+  mapping onto a tool the gateway executes itself (`payments`). A remote
+  gateway needs any mapping `tool` outside `mcp.` in
+  `ATP_EXTERNAL_TOOL_PREFIXES`. The benchmark no longer retargets rules to
+  `mcp.<server_name>`.
 - `argument_max_length` denies a non-optional explicit `null` argument with
   `ARGUMENT_INVALID`; it was measured as the 4-character string `"null"` and
   passed under any limit of 4 or more.

@@ -115,6 +115,7 @@ policy_sets:
         *,
         enforcement_mode: str = "enforce",
         default_policy_set: str | None = None,
+        external_tools: tuple[str, ...] = (),
     ) -> GatewaySettings:
         keys = self.keys()
         kwargs: dict[str, object] = {
@@ -126,6 +127,10 @@ policy_sets:
         }
         if default_policy_set:
             kwargs["default_policy_set"] = default_policy_set
+        if external_tools:
+            # The wrapped proxy executes its mapped tools; the gateway only decides and binds.
+            default = GatewaySettings.model_fields["external_tool_prefixes"].default
+            kwargs["external_tool_prefixes"] = ",".join([default, *external_tools])
         # _env_file=None: the home is authoritative; a stray .env must not override it.
         return GatewaySettings(_env_file=None, **kwargs)  # type: ignore[arg-type]
 

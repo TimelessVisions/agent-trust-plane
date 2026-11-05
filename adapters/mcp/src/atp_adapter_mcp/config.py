@@ -105,7 +105,8 @@ class ProxyConfig(BaseModel):
     server_name: str = Field(
         pattern=r"^[A-Za-z0-9._-]+$",
         max_length=48,
-        description="Short name for the upstream; envelopes use tool='mcp.<server_name>'.",
+        description="Short name for the upstream. Mapped calls use their mapping's `tool`; "
+        "unmapped calls use tool='mcp.<server_name>'.",
     )
     principal: PrincipalRef = Field(
         default=PrincipalRef(id="local-user", kind=PrincipalKind.HUMAN),
@@ -183,7 +184,14 @@ class ProxyConfig(BaseModel):
 
     @property
     def envelope_tool(self) -> str:
+        """The tool stamped on envelopes for unmapped calls (and what `atp mcp init`
+        writes into every mapping). Mapped calls use ``ToolMapping.envelope_tool``."""
         return f"mcp.{self.server_name}"
+
+    @property
+    def mapped_tools(self) -> tuple[str, ...]:
+        """Distinct envelope tools across ``tools``, sorted."""
+        return tuple(sorted({m.envelope_tool for m in self.tools}))
 
     @property
     def agent_ref(self) -> PrincipalRef:
