@@ -21,6 +21,7 @@ from atp_adapter_mcp import (
     UpstreamConfig,
     connect_upstream,
     dump_config,
+    grant_hints,
     load_config,
     propose_config,
     render_header,
@@ -103,6 +104,8 @@ def init_config(
     _err(f"wrote {out}: {len(tools)} tool(s) mapped under tool 'mcp.{server_name}'")
     for note in proposal.notes:
         _err(f"note: {note}")
+    for hint in grant_hints(config, out.name):
+        _err(hint)
     _err(f"next: atp mcp wrap --config {out}   (add --mode shadow to observe first)")
     return 0
 

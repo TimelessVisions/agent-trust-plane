@@ -7,6 +7,9 @@ changes may land in minor versions and are called out).
 ## [Unreleased]
 
 ### Added
+- `atp mcp init` prints, for each tool mapped to a destructive capability
+  it did not delegate, the exact line to grant it:
+  `  to allow delete_note: add "notes:destroy" to authority.capabilities in atp-mcp.yaml`.
 - A working `REQUIRE_APPROVAL` path. `POST /approvals/{trace_id}` (operator
   key; body `{approver, decision: "approve"|"deny", expires_in: "15m"}`) and
   `atp approve TRACE_ID --as APPROVER_ID [--deny] [--expires 15m]` (local
