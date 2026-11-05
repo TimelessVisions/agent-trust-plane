@@ -28,9 +28,9 @@ def test_payment_capability_requires_approved_destination_for_any_mcp_tool(
 ) -> None:
     service = fresh_service()
     grant = build_chain(service)["ap"]
-    envelope = payment_envelope(
-        grant_id=grant, amount="640", destination=ATTACKER
-    ).model_copy(update={"tool": tool})
+    envelope = payment_envelope(grant_id=grant, amount="640", destination=ATTACKER).model_copy(
+        update={"tool": tool}
+    )
     decision = PolicyEngine().evaluate(payments_v2(), context_for(envelope, service))
     assert decision.outcome is DecisionOutcome.DENY
     assert decision.reason_code is ReasonCode.PAYMENT_DESTINATION_RESOURCE_MISMATCH
@@ -61,7 +61,9 @@ def test_mcp_payment_capability_preserves_amount_and_approval(
     service = fresh_service()
     grant = build_chain(service)["ap"]
     envelope = payment_envelope(
-        grant_id=grant, amount=amount, destination="acct-nw-4471",
+        grant_id=grant,
+        amount=amount,
+        destination="acct-nw-4471",
     ).model_copy(update={"tool": "mcp.payments"})
     decision = PolicyEngine().evaluate(payments_v2(), context_for(envelope, service))
     assert decision.reason_code is reason
