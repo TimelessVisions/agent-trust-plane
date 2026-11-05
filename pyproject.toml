@@ -172,7 +172,7 @@ filterwarnings = ["error::DeprecationWarning:atp_.*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["apps", ".venv"]
+extend-exclude = ["apps", ".venv", "docs/superpowers"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "W", "SIM", "RUF"]
