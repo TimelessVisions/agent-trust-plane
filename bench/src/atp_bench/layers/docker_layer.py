@@ -60,8 +60,9 @@ def _docker_mcp_plugin() -> None:
         raise EnvBlocked(f"Docker MCP Gateway plugin unavailable: {exc}") from exc
     if result.returncode != 0:
         raise EnvBlocked(
-            f"Docker MCP Gateway plugin unavailable: {(result.stderr or result.stdout).strip()}"
-            [:1200]
+            f"Docker MCP Gateway plugin unavailable: {(result.stderr or result.stdout).strip()}"[
+                :1200
+            ]
         )
 
 
@@ -150,12 +151,20 @@ class DockerMcpLayer:
         environment = os.environ.copy()
         environment.update({"HOME": str(home), "DOCKER_CONFIG": str(docker_config)})
         args = [
-            "docker", "mcp", "gateway", "run",
-            "--catalog", "atp-dojo.yaml",
-            "--servers", "dojo",
-            "--port", str(gw_port),
-            "--host", "127.0.0.1",
-            "--transport", "streaming",
+            "docker",
+            "mcp",
+            "gateway",
+            "run",
+            "--catalog",
+            "atp-dojo.yaml",
+            "--servers",
+            "dojo",
+            "--port",
+            str(gw_port),
+            "--host",
+            "127.0.0.1",
+            "--transport",
+            "streaming",
             "--allow-unauthenticated",
             "--watch=false",
         ]
