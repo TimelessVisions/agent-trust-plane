@@ -123,3 +123,13 @@ Ruling: fixture not byte-reproducible (0.3.2 has no seed); machine paths rewritt
 Bench full junit: 192/0/0/0. Pins verified against published checksums: agentgateway v1.6.0 linux-amd64 496ed27e…f079d (.sha256 asset); ToolHive v0.55.2 linux_amd64.tar.gz 4336f1fa…612f44 (checksums.txt).
 Ruling: a layer raising EnvBlocked rewrites every item of that layer to ENV_BLOCKED (NOT_APPLICABLE kept), even items already measured — never mix partial numbers with blocked status — cost if wrong: partial results discarded (reviewer suggests noting count in reason).
 Ruling: tool_pins.yaml is per-platform; sha256 is the published hash of the downloaded asset — cost if wrong: schema tweak.
+
+
+### D2 follow-up candidate — 2026-11-05 (ENV_BLOCKED, NOT REVIEWED)
+
+The optional patch at `docs/superpowers/handoff/2026-11-05-d2-fix-partial.patch` was applied to the agentgateway layer, binary-backed tests and competitor documentation on `release/v1/B12-atp-1.0`. Handoff-required tests were expanded for non-finite numbers, malformed and bounded resource IDs, numeric strings, Unicode code-point lengths, and a non-BMP literal. No annotations were changed. This is a candidate fix, **not** a verified D2 completion.
+
+Ruling: preserve agentgateway v1.6.0's real argument-aware CEL enforcement, and treat the optional patch as unverified until its binary tests run — fairness requires the strongest documented/source-supported competitor policy — cost if wrong: CEL compilation/behavior mismatch or an unfair benchmark comparison.
+
+- **ENV_BLOCKED:** This agent's container could not clone the repository: `fatal: unable to access 'https://github.com/TimelessVisions/agent-trust-plane.git/': Could not resolve host: github.com`. It could read and commit branch files via the linked GitHub connector, but had no complete local checkout or pinned agentgateway binary. The root and bench test suites, lint, and binary-backed tests were therefore **NOT_MEASURED** in this execution; no JUnit counts are claimed.
+- **Required before D2 approval:** In a Linux environment with GitHub access, run the documented `bench/tests/test_agentgateway_layer.py` against pinned agentgateway v1.6.0, inspect JUnit counts, run both root and bench gates, obtain an independent code review, and fix any failures. Do not proceed to D3 on assumed success.
