@@ -1,0 +1,56 @@
+name: D2 agentgateway binary verification
+
+on:
+  push:
+    branches:
+      - release/v1/B12-atp-1.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: d2-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  d2-real-binary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Install benchmark dependencies
+        working-directory: bench
+        run: uv sync --python 3.13
+      - name: Execute D2 against pinned agentgateway v1.6.0
+        working-directory: bench
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/d2.xml" tests/test_agentgateway_layer.py
+      - name: Report exact D2 results or environment blocker
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          import os
+          p = Path(os.environ["RUNNER_TEMP"]) / "d2.xml"
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              if not p.exists():
+                  f.write("## D2: NOT_MEASURED\nNo JUnit file was created. Inspect the failed setup/test step; never infer PASS.\n")
+              else:
+                  root = ElementTree.parse(p).getroot()
+                  suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
+                  counts = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
+                  f.write(f"## D2 JUnit\n\n{counts}\n\n")
+                  if counts["tests"] == 0:
+                      f.write("NOT_MEASURED: no tests were executed.\n")
+                  elif counts["failures"] or counts["errors"]:
+                      f.write("FAIL: inspect the test logs and reproduce.\n")
+                  else:
+                      f.write("Candidate PASS: independent review and full gates are still required.\n")
+          PY
