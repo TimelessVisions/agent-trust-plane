@@ -99,7 +99,7 @@ def test_argument_rules_listed_as_dropped():
     )  # fmt: skip
     policy = render_agentgateway_config(suite, ann, "http://127.0.0.1:9/mcp", 4000)
     (send,) = [r for r in _rules(policy) if '"send_money"' in r]
-    assert "double(a.amount) <= 50.0" in send
+    assert "n - n == 0.0 && n <= 50.0" in send  # finite, as ATP's _to_decimal requires
     assert "size(a.subject) <= 10" in send
     (dropped,) = policy.dropped
     assert isinstance(dropped, DroppedConstraint)
@@ -235,12 +235,27 @@ def test_rendered_rules_match_atp_semantics_on_binary(tmp_path):
         (Call("send_money", {"recipient": "UK1*", "amount": 1, **send}), "DENIED"),
         (Call("send_money", {"amount": 1, **send}), "DENIED"),
         (Call("send_money", {"recipient": "UK12", "amount": "lots", **send}), "DENIED"),
+        # ATP's _to_decimal rejects infinities and NaN; Decimal trims and takes 1_0.
+        (Call("send_money", {"recipient": "UK12", "amount": "-inf", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "UK12", "amount": "-Infinity", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "UK12", "amount": "NaN", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "UK12", "amount": " 50 ", **send}), "ALLOWED"),
+        (Call("send_money", {"recipient": "UK12", "amount": "1_0", **send}), "ALLOWED"),
+        (Call("send_money", {"recipient": "UK12", "amount": "1__0", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "UK12", "amount": True, **send}), "DENIED"),
+        # Resource id validity (RESOURCE_PATTERN): <= 255 code points, no control characters.
+        (Call("send_money", {"recipient": "UK1\u0001", "amount": 1, **send}), "DENIED"),
+        (Call("send_money", {"recipient": "UK1\n", "amount": 1, **send}), "DENIED"),
+        (Call("send_money", {"recipient": "UK1" + "\u00e9" * 252, "amount": 1, **send}), "ALLOWED"),
+        (Call("send_money", {"recipient": "UK1" + "\u00e9" * 253, "amount": 1, **send}), "DENIED"),
         (Call("schedule_transaction", {**sched, "recurring": True}), "ALLOWED"),
         (Call("schedule_transaction", {**sched, "recurring": False}), "DENIED"),
         (Call("schedule_transaction", {**sched, "recurring": 1}), "DENIED"),
         (Call("update_scheduled_transaction", {"id": 7}), "ALLOWED"),
         (Call("update_scheduled_transaction", {"id": 7, "amount": None}), "ALLOWED"),
         (Call("update_scheduled_transaction", {"id": 7, "amount": 0.5}), "DENIED"),
+        (Call("update_scheduled_transaction", {"id": 7, "amount": "inf"}), "DENIED"),
+        (Call("update_scheduled_transaction", {"id": 7, "amount": "NaN"}), "DENIED"),
         (Call("update_user_info", {"city": "c"}), "ALLOWED"),
         (Call("update_user_info", {"city": None}), "DENIED"),
         (Call("update_user_info", {"city": "c", "first_name": None}), "DENIED"),
@@ -265,3 +280,73 @@ def test_rendered_rules_match_atp_semantics_on_binary(tmp_path):
     assert [g[2] for g in got] == [want for _, want in cases], got
     allowed = [c.function for c, want in cases if want == "ALLOWED"]
     assert [c.function for c in read_journal(journal)] == allowed
+
+
+def test_resource_ids_and_unicode_match_atp_on_binary(tmp_path):
+    """'<type>:*' still applies ATP's resource id grammar; string lengths count code points;
+    non-ASCII (non-BMP) allowed values match exactly."""
+    suite = load_suite("banking")
+    b = {"tool": "dojo.banking"}
+    ann = _ann(
+        capabilities=["send_money", "update_user_info"],
+        resource_scope=["dojo.banking:*", "tool:update_user_info"],
+        resource_args={"send_money": "recipient"},
+        rules=[
+            {"id": "l1", "applies_to": {**b, "action": "send_money"},
+             "kind": "argument_max_length", "argument": "subject", "max_length": 3},
+            {"id": "v1", "applies_to": {**b, "action": "update_user_info"},
+             "kind": "argument_allowed_values", "argument": "city", "values": ["\U0001f600x"]},
+        ],
+    )  # fmt: skip
+    send = {"amount": 1, "date": "2022-01-01"}
+    cases = [
+        (Call("send_money", {"recipient": "", "subject": "s", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "a*", "subject": "s", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "a\u007f", "subject": "s", **send}), "DENIED"),
+        (Call("send_money", {"recipient": "\u00e9" * 255, "subject": "s", **send}), "ALLOWED"),
+        (Call("send_money", {"recipient": "\u00e9" * 256, "subject": "s", **send}), "DENIED"),
+        (Call("send_money", {"recipient": 12, "subject": "s", **send}), "ALLOWED"),
+        (
+            Call("send_money", {"recipient": "US1", "subject": "\u00e9\u00e9\u00e9", **send}),
+            "ALLOWED",
+        ),
+        (Call("send_money", {"recipient": "US1", "subject": "\U0001f600" * 3, **send}), "ALLOWED"),
+        (Call("send_money", {"recipient": "US1", "subject": "a\nb", **send}), "ALLOWED"),
+        (Call("send_money", {"recipient": "US1", "subject": "abcd", **send}), "DENIED"),
+        (Call("update_user_info", {"city": "\U0001f600x"}), "ALLOWED"),
+        (Call("update_user_info", {"city": "x"}), "DENIED"),
+    ]
+    journal = tmp_path / "journal.jsonl"
+    try:
+        cm = AgentgatewayLayer().open(suite, ann, None, journal, tmp_path / "work")
+        session = cm.__enter__()
+    except EnvBlocked as exc:
+        assert exc.reason
+        return
+    try:
+        got = [(c.function, c.args, session.call(c).status) for c, _ in cases]
+    finally:
+        cm.__exit__(None, None, None)
+    assert [g[2] for g in got] == [want for _, want in cases], got
+
+
+def test_resource_guard_in_every_scope_branch():
+    """'*', '<type>:*', exact and prefix scopes all carry the resource id guard."""
+    suite = load_suite("banking")
+    for scope in (["*"], ["dojo.banking:*"], ["dojo.banking:US1"], ["dojo.banking:US*"]):
+        ann = _ann(capabilities=["send_money"], resource_scope=scope,
+                   resource_args={"send_money": "recipient"})  # fmt: skip
+        (rule,) = _rules(render_agentgateway_config(suite, ann, "http://127.0.0.1:9/mcp", 4000))
+        assert "matches(" in rule and "x1f" in rule and "{1,255}" in rule, (scope, rule)
+
+
+def test_long_max_length_is_byte_approximation():
+    suite = load_suite("banking")
+    ann = _ann(
+        capabilities=["send_money"], resource_scope=["tool:send_money"],
+        rules=[{"id": "big", "applies_to": {"tool": "dojo.banking", "action": "send_money"},
+                "kind": "argument_max_length", "argument": "subject", "max_length": 20000}],
+    )  # fmt: skip
+    policy = render_agentgateway_config(suite, ann, "http://127.0.0.1:9/mcp", 4000)
+    (dropped,) = policy.dropped
+    assert "enforced on UTF-8 bytes (stricter for non-ASCII)" in dropped.reason
