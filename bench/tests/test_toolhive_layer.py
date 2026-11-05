@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from atp_bench.annotations import Annotation, load_annotations, DEFAULT_ROOT
+from atp_bench.annotations import DEFAULT_ROOT, Annotation, load_annotations
 from atp_bench.dojo import Call, load_suite
 from atp_bench.layers.base import DroppedConstraint, EnvBlocked
 from atp_bench.layers.toolhive_layer import ToolhiveLayer, render_toolhive_config
@@ -72,8 +72,8 @@ def test_scalar_limit_rendered():
     policy = render_toolhive_config(suite, ann, "http://127.0.0.1:9/mcp")
     statements = "\n".join(_policies(policy))
     assert "resource.arg_amount" in statements
-    assert "<= 50" in statements
-    assert ">= 2" in statements
+    assert 'resource.arg_amount.lessThanOrEqual(decimal("50.0"))' in statements
+    assert 'resource.arg_amount.greaterThanOrEqual(decimal("2.0"))' in statements
     assert "resource has arg_amount" in statements
 
 
