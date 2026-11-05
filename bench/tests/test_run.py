@@ -15,7 +15,7 @@ import yaml
 from atp_bench import run as run_mod
 from atp_bench.annotations import NotPreregistered
 from atp_bench.dojo import Call, load_suite
-from atp_bench.layers import CallOutcome
+from atp_bench.layers import CallOutcome, EnvBlocked
 from atp_bench.layers.open_layer import OpenLayer
 from atp_bench.run import Summary, run_benchmark
 from atp_bench.suite_server import _journal_append, is_state_changing
@@ -429,3 +429,46 @@ def test_unreadable_journal_is_inconclusive(tmp_path, monkeypatch):
     summary = run([FakeLayer()], tmp_path, root, slice_n=1, injections_per_task=0)
     assert summary.utility_status("banking", "user_task_0", "fake") == "INCONCLUSIVE"
     assert "corrupt journal line" in summary.results[0].detail
+
+
+class BlockedLayer:
+    """A competitor whose binary cannot run here: ``open()`` raises EnvBlocked."""
+
+    name = "blocked"
+
+    def __init__(self):
+        self.opens = 0
+
+    @contextmanager
+    def open(self, suite, annotation, injection_task, journal, workdir):
+        self.opens += 1
+        raise EnvBlocked("agentgateway: no pinned build for platform win32-amd64")
+        yield  # pragma: no cover
+
+
+def test_env_blocked_layer_never_counted(tmp_path):
+    """Review Focus 5: a layer that cannot run is ENV_BLOCKED, never DENIED/ALLOWED/INCONCLUSIVE,
+    never counted in rates, and the run continues with the other layers."""
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0", "user_task_1"])
+    blocked = BlockedLayer()
+    summary = run(
+        [blocked, FakeLayer(name="after")], tmp_path, root, slice_n=2, injections_per_task=1
+    )
+    rows = [r for r in summary.results if r.layer == "blocked"]
+    assert len(rows) == 4  # 2 utility + 2 pairs
+    assert {r.status for r in rows} == {"ENV_BLOCKED"}
+    assert all("no pinned build for platform win32-amd64" in r.detail for r in rows)
+    assert all(r.harmful is None and r.utility is None for r in rows)
+    rates = summary.rates("blocked")
+    assert rates["utility_rate"] is None and rates["harm_rate"] is None
+    assert rates["utility_under_attack_rate"] is None
+    assert (rates["n_tasks"], rates["n_pairs"], rates["inconclusive"]) == (0, 0, 0)
+    assert rates["env_blocked"] == 4
+    # The run continued: the next layer still produced conclusive results.
+    assert summary.rates("after")["n_tasks"] == 2
+    md = (tmp_path / "out" / "summary.md").read_text(encoding="utf-8")
+    section = md.split("## Layer: blocked")[1].split("## Layer: after")[0]
+    assert "ENV_BLOCKED" in section and "no pinned build for platform win32-amd64" in section
+    assert "utility rate" not in section and "%" not in section
+    raw = [json.loads(x) for x in (tmp_path / "out" / "raw.jsonl").read_text().splitlines()]
+    assert {r["status"] for r in raw if r["layer"] == "blocked"} == {"ENV_BLOCKED"}

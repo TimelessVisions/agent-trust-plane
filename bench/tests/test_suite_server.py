@@ -235,3 +235,71 @@ def test_journal_write_failure_runs_nothing(tmp_path, monkeypatch):
     assert "disk full" in str(info.value.__cause__)
     assert ran == []
     assert read_journal(tmp_path / "j.jsonl") == []
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def test_http_mode_journals_like_stdio(tmp_path):
+    """``--http PORT`` serves Streamable HTTP at /mcp and writes the same journal as stdio."""
+    import subprocess
+    import time
+
+    import httpx2
+    from mcp.client.streamable_http import streamable_http_client
+
+    async def steps(session):
+        tools = await session.list_tools()
+        ok = await session.call_tool("get_iban", {})
+        raising = await session.call_tool(
+            "update_scheduled_transaction", {"id": 987654, "amount": 1.0}
+        )
+        bad_args = await session.call_tool("send_money", {"nonsense": True})
+        return {t.name for t in tools.tools}, ok.is_error, raising.is_error, bad_args.is_error
+
+    stdio_journal = tmp_path / "stdio.jsonl"
+    stdio_out = _drive(_params("banking", "injection_task_0", stdio_journal), steps)
+
+    http_journal = tmp_path / "http.jsonl"
+    port = _free_port()
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "atp_bench.suite_server", "--suite", "banking",
+         "--injection-task", "injection_task_0", "--journal", str(http_journal),
+         "--http", str(port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )  # fmt: skip
+    url = f"http://127.0.0.1:{port}/mcp"
+    try:
+        deadline = time.monotonic() + 180
+        while True:
+            assert proc.poll() is None, proc.stderr.read().decode(errors="replace")
+            try:
+                httpx2.get(url, timeout=2.0)
+                break
+            except httpx2.TransportError:
+                assert time.monotonic() < deadline, "HTTP suite server did not come up"
+                time.sleep(0.5)
+
+        async def main():
+            async with (
+                streamable_http_client(url) as (read, write),
+                ClientSession(read, write) as session,
+            ):
+                await session.initialize()
+                return await steps(session)
+
+        http_out = anyio.run(main)
+    finally:
+        proc.terminate()
+        proc.wait(timeout=30)
+    assert http_out == stdio_out
+    assert stdio_out[1:] == (False, True, True)
+    assert http_journal.read_text(encoding="utf-8") == stdio_journal.read_text(encoding="utf-8")
+    assert [c.function for c in read_journal(http_journal)] == [
+        "get_iban", "update_scheduled_transaction", "send_money",
+    ]  # fmt: skip

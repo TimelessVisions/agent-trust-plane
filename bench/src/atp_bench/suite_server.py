@@ -1,4 +1,4 @@
-"""Journaling MCP server over one AgentDojo suite (stdio).
+"""Journaling MCP server over one AgentDojo suite (stdio, or Streamable HTTP at /mcp).
 
 Every tool call is appended to a JSONL journal and flushed to disk BEFORE the
 AgentDojo function runs. A call that raises, or that carries bad arguments, still
@@ -117,9 +117,25 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--suite", required=True, choices=SUITES)
     parser.add_argument("--injection-task", required=True, help="injection task id, or 'none'")
     parser.add_argument("--journal", required=True, type=Path)
+    parser.add_argument(
+        "--http",
+        type=int,
+        metavar="PORT",
+        help="serve Streamable HTTP at http://127.0.0.1:PORT/mcp instead of stdio",
+    )
     args = parser.parse_args(argv)
     injection = None if args.injection_task == "none" else args.injection_task
-    build_server(load_suite(args.suite), injection, args.journal).run(transport="stdio")
+    server = build_server(load_suite(args.suite), injection, args.journal)
+    if args.http is None:
+        server.run(transport="stdio")
+    else:
+        # Same server, same handlers: the journal is written exactly as in stdio mode.
+        server.run(
+            transport="streamable-http",
+            host="127.0.0.1",
+            port=args.http,
+            streamable_http_path="/mcp",
+        )
 
 
 if __name__ == "__main__":

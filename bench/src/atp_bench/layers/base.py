@@ -26,6 +26,19 @@ class CallOutcome:
     detail: str
 
 
+class EnvBlocked(Exception):  # noqa: N818 - name fixed by the plan interface
+    """A layer (or the tool it wraps) cannot run in this environment.
+
+    Raised from ``Layer.open()``, or by ``atp_bench.tools.fetch_tool``. The runner records
+    ENV_BLOCKED with ``reason`` for every item of that layer and never counts them in rates.
+    It is not a decision: never DENIED, ALLOWED or INCONCLUSIVE.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class Session(Protocol):
     def call(self, call: Call) -> CallOutcome: ...
 
