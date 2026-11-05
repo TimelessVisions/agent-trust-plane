@@ -472,3 +472,25 @@ def test_env_blocked_layer_never_counted(tmp_path):
     assert "utility rate" not in section and "%" not in section
     raw = [json.loads(x) for x in (tmp_path / "out" / "raw.jsonl").read_text().splitlines()]
     assert {r["status"] for r in raw if r["layer"] == "blocked"} == {"ENV_BLOCKED"}
+
+
+class BlocksLater(FakeLayer):
+    """Runs its first session, then its binary goes away: EnvBlocked on the second open."""
+
+    @contextmanager
+    def open(self, suite, annotation, injection_task, journal, workdir):
+        if self.opened:
+            raise EnvBlocked("agentgateway: binary vanished")
+        with super().open(suite, annotation, injection_task, journal, workdir) as session:
+            yield session
+
+
+def test_env_blocked_part_way_reports_rewritten_count(tmp_path):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0", "user_task_1"])
+    summary = run([BlocksLater(name="late")], tmp_path, root, slice_n=2, injections_per_task=0)
+    rows = [r for r in summary.results if r.layer == "late"]
+    assert {r.status for r in rows} == {"ENV_BLOCKED"}
+    # One item had been measured before the block; it is rewritten and the reason says so.
+    assert all("binary vanished" in r.detail for r in rows)
+    assert all("1 measured item(s) rewritten" in r.detail for r in rows)
+    assert "1 measured item(s) rewritten" in summary.env_blocked_reason("late")

@@ -61,6 +61,8 @@ def _pin(name: str, pins: Path) -> tuple[str, dict[str, Any]]:
         raise EnvBlocked(f"{name}: no pinned build for platform {key}")
     if not entry.get("sha256"):
         raise EnvBlocked(f"{name}: no pinned sha256 for {key}")
+    if not entry.get("executable") or not entry.get("url"):
+        raise EnvBlocked(f"{name}: pin for {key} lacks 'executable' or 'url'")
     return str(raw[name]["version"]), entry
 
 
@@ -73,6 +75,27 @@ def _download(url: str, dest: Path, timeout_s: float) -> None:
 
 
 def _install(asset: Path, entry: dict[str, Any], staging: Path) -> Path:
+    try:
+        return _install_unchecked(asset, entry, staging)
+    except EnvBlocked:
+        raise
+    except (OSError, KeyError) as exc:
+        raise EnvBlocked(f"install failed for {asset.name}: {type(exc).__name__}: {exc}") from exc
+
+
+def _installed(target: Path, exe_name: str, want: str) -> Path | None:
+    """The executable under ``target`` if it is fully installed with hash stamp ``want``."""
+    exe = target / exe_name
+    stamp = target / ".sha256"
+    try:
+        if exe.is_file() and stamp.read_text(encoding="utf-8").strip() == want:
+            return exe
+    except OSError:
+        pass
+    return None
+
+
+def _install_unchecked(asset: Path, entry: dict[str, Any], staging: Path) -> Path:
     exe_name = str(entry["executable"])
     archive = entry.get("archive", "none")
     if archive == "none":
@@ -109,10 +132,10 @@ def fetch_tool(
     version, entry = _pin(name, pins)
     want = str(entry["sha256"]).lower()
     target = tools_dir / name / version
-    exe = target / str(entry["executable"])
-    stamp = target / ".sha256"
-    if exe.is_file() and stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == want:
-        return exe
+    exe_name = str(entry["executable"])
+    done = _installed(target, exe_name, want)
+    if done is not None:
+        return done
 
     tools_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=tools_dir, prefix=f".{name}-") as tmp:
@@ -124,9 +147,16 @@ def fetch_tool(
         if got != want:
             raise EnvBlocked(f"{name} {version}: sha256 mismatch: expected {want}, got {got}")
         installed = _install(asset, entry, staging)
-        (staging / ".sha256").write_text(want + "\n", encoding="utf-8")
-        if target.exists():
-            shutil.rmtree(target)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(staging, target)
+        try:
+            (staging / ".sha256").write_text(want + "\n", encoding="utf-8")
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staging, target)
+        except OSError as exc:
+            # A concurrent fetch may have installed the same verified build first.
+            done = _installed(target, exe_name, want)
+            if done is not None:
+                return done
+            raise EnvBlocked(f"{name} {version}: install failed: {exc}") from exc
     return target / installed.name

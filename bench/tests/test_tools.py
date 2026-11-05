@@ -96,3 +96,49 @@ def test_real_pins_are_complete():
         pin = raw[name]["platforms"]["linux-amd64"]
         assert len(pin["sha256"]) == 64 and int(pin["sha256"], 16) >= 0
         assert pin["url"].startswith("https://github.com/")
+
+
+def test_install_errors_are_env_blocked(tmp_path, fake_release, monkeypatch):
+    monkeypatch.setattr(tools, "platform_key", lambda: "linux-amd64")
+    right = hashlib.sha256(PAYLOAD).hexdigest()
+    pins = _pins(tmp_path, fake_release, right)
+    raw = yaml.safe_load(pins.read_text(encoding="utf-8"))
+    del raw["agentgateway"]["platforms"]["linux-amd64"]["executable"]
+    pins.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(EnvBlocked, match="executable"):
+        tools.fetch_tool("agentgateway", pins=pins, tools_dir=tmp_path / ".tools")
+
+    def boom(self, target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "replace", boom)
+    with pytest.raises(EnvBlocked, match="disk full"):
+        tools.fetch_tool("agentgateway", pins=_pins(tmp_path, fake_release, right),
+                         tools_dir=tmp_path / ".tools2")  # fmt: skip
+
+
+def test_lost_install_race_is_success(tmp_path, fake_release, monkeypatch):
+    """A concurrent fetch installed the target first: our failing os.replace is not an error."""
+    monkeypatch.setattr(tools, "platform_key", lambda: "linux-amd64")
+    right = hashlib.sha256(PAYLOAD).hexdigest()
+    pins = _pins(tmp_path, fake_release, right)
+    tools_dir = tmp_path / ".tools"
+    real_replace = tools.os.replace
+
+    def racing(src, dst):
+        real_replace(src, dst)
+        if Path(dst).name == "v1.6.0":  # the other process wins the final rename ...
+            raise OSError(39, "Directory not empty")  # ... and ours fails
+
+    monkeypatch.setattr(tools.os, "replace", racing)
+    exe = tools.fetch_tool("agentgateway", pins=pins, tools_dir=tools_dir)
+    assert exe.read_bytes() == PAYLOAD
+
+    def lost(src, dst):
+        if Path(dst).name == "v1.6.0":
+            raise OSError(39, "Directory not empty")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(tools.os, "replace", lost)
+    with pytest.raises(EnvBlocked, match="Directory not empty"):
+        tools.fetch_tool("agentgateway", pins=pins, tools_dir=tmp_path / ".other")
