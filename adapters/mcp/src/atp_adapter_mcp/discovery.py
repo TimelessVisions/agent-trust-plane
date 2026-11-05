@@ -18,7 +18,7 @@ from typing import Any
 from mcp import types
 
 from atp_adapter_mcp.config import AuthorityConfig, ProxyConfig, UpstreamConfig
-from atp_adapter_mcp.mapping import PathNormalization, ToolMapping
+from atp_adapter_mcp.mapping import PathNormalization, ToolMapping, tool_definition_sha256
 
 PATH_ARGUMENTS = ("path", "file_path", "filepath", "filename", "directory", "dir", "source")
 ID_ARGUMENTS = (
@@ -121,6 +121,7 @@ def propose_config(
                 resource_template=template,
                 path_normalization=norm,
                 description=_clean(tool.description),
+                schema_sha256=tool_definition_sha256(tool),
             )
         except ValueError:
             # A tool name outside the MCP naming guidance cannot be mapped; it

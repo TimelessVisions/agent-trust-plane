@@ -17,13 +17,33 @@ import posixpath
 import re
 from typing import Any
 
+from mcp import types
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from atp_core import canonical_json, sha256_hex
 from atp_core.resources import RESOURCE_PATTERN
 
 UNMAPPED_CAPABILITY = "mcp:unmapped"
 _RESOURCE_RE = re.compile(RESOURCE_PATTERN)
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def tool_definition_sha256(tool: types.Tool) -> str:
+    """SHA256 of exactly the security-relevant MCP tools/list definition fields.
+
+    Dictionaries are recursively key-sorted; whitespace and key insertion order
+    cannot invalidate a pin. Description changes and schema changes always can.
+    Tool annotations are excluded: they are untrusted hints, not executable schema.
+    """
+    return sha256_hex(
+        canonical_json(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.input_schema,
+            }
+        )
+    )
 
 
 class PathNormalization(BaseModel):
@@ -105,6 +125,14 @@ class ToolMapping(BaseModel):
         description="Apply path normalisation to every placeholder argument before formatting.",
     )
     description: str = Field(default="", max_length=500)
+    schema_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description=(
+            "Optional SHA256 of the approved tools/list name, description and inputSchema. "
+            "Absent in legacy configs; atp mcp init writes it for new configs."
+        ),
+    )
 
     @model_validator(mode="after")
     def _template_shape(self) -> ToolMapping:

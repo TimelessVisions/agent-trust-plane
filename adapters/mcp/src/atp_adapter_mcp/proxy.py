@@ -47,7 +47,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 
 from atp_adapter_http import AgentClient, GatewayError, TrustPlaneClient
 from atp_adapter_mcp.config import ProxyConfig, UpstreamConfig, shared_upstream_warning
-from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY
+from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY, tool_definition_sha256
 from atp_core import ActionEnvelope, Provenance, canonical_hash, canonical_json, new_trace_id
 
 log = logging.getLogger("atp.mcp-proxy")
@@ -83,6 +83,7 @@ class Upstream:
     tools: list[types.Tool]
     transport: str
     protocol_version: str | None = None
+    tool_list_state: dict[str, bool] | None = None
 
     def tool(self, name: str) -> types.Tool | None:
         return next((t for t in self.tools if t.name == name), None)
@@ -97,6 +98,15 @@ def upstream_process_env(up: UpstreamConfig) -> dict[str, str]:
 
 @contextlib.asynccontextmanager
 async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
+    state = {"dirty": False}
+
+    async def on_notification(message: types.ServerNotification | Exception) -> None:
+        # No I/O in the notification handler: MCP dispatchers can invoke it
+        # inline. The next tools/list refreshes; pinned tools/call always
+        # revalidates independently of whether the notification was delivered.
+        if isinstance(message, types.ToolListChangedNotification):
+            state["dirty"] = True
+
     up = config.upstream
     if up.url:
         import httpx2
@@ -112,7 +122,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
         async with (
             http,
             streamable_http_client(up.url, http_client=http) as (read, write),
-            ClientSession(read, write) as session,
+            ClientSession(read, write, message_handler=on_notification) as session,
         ):
             init = await session.initialize()
             listed = await session.list_tools()
@@ -121,6 +131,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
                 tools=list(listed.tools),
                 transport="http",
                 protocol_version=_negotiated_protocol(init),
+                tool_list_state=state,
             )
         return
     assert up.command is not None
@@ -130,7 +141,10 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
         env=upstream_process_env(up),
         cwd=up.cwd,
     )
-    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write, message_handler=on_notification) as session,
+    ):
         init = await session.initialize()
         listed = await session.list_tools()
         yield Upstream(
@@ -138,6 +152,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
             tools=list(listed.tools),
             transport="stdio",
             protocol_version=_negotiated_protocol(init),
+            tool_list_state=state,
         )
 
 
@@ -183,13 +198,36 @@ class TrustPlaneProxy:
         )
 
     # ------------------------------------------------------------ tools/list
+    async def _refresh_upstream_tools(self) -> bool:
+        """Re-read the source of truth; never forward if pinned verification fails."""
+        try:
+            listed = await self.upstream.session.list_tools()
+        except Exception as exc:
+            log.warning("could not revalidate upstream tools/list: %s", type(exc).__name__)
+            return False
+        self.upstream.tools = list(listed.tools)
+        if self.upstream.tool_list_state is not None:
+            self.upstream.tool_list_state["dirty"] = False
+        return True
+
+    def _pin_matches(self, tool: types.Tool) -> bool:
+        mapping = self.config.mapping_for(tool.name)
+        if mapping is None or mapping.schema_sha256 is None:
+            return True
+        return tool_definition_sha256(tool) == mapping.schema_sha256
+
     async def _list_tools(
         self, _ctx: ServerRequestContext[Any], _params: types.PaginatedRequestParams | None
     ) -> types.ListToolsResult:
+        state = self.upstream.tool_list_state
+        if state is not None and state["dirty"]:
+            if not await self._refresh_upstream_tools():
+                return types.ListToolsResult(tools=[])
         tools = [
             t
             for t in self.upstream.tools
-            if self.config.expose_unmapped_tools or self.config.mapping_for(t.name) is not None
+            if self._pin_matches(t)
+            and (self.config.expose_unmapped_tools or self.config.mapping_for(t.name) is not None)
         ]
         return types.ListToolsResult(tools=tools)
 
@@ -199,6 +237,25 @@ class TrustPlaneProxy:
     ) -> types.CallToolResult:
         name = params.name
         arguments: dict[str, Any] = dict(params.arguments or {})
+        mapping = self.config.mapping_for(name)
+        if mapping is not None and mapping.schema_sha256 is not None:
+            # Refresh at the execution boundary, even if an untrusted upstream
+            # omits tools/list_changed. Never execute based only on a stale list.
+            if not await self._refresh_upstream_tools():
+                return _denied(
+                    {
+                        "reason_code": "UPSTREAM_ERROR",
+                        "message": "could not revalidate pinned tool definition",
+                    }
+                )
+            tool = self.upstream.tool(name)
+            if tool is None or not self._pin_matches(tool):
+                return _denied(
+                    {
+                        "reason_code": "TOOL_DEFINITION_CHANGED",
+                        "message": f"tool {name!r} differs from its approved definition pin",
+                    }
+                )
         if self.upstream.tool(name) is None:
             return _denied({"reason_code": "TOOL_UNKNOWN", "message": f"no such tool: {name}"})
 

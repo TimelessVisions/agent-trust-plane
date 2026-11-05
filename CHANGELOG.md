@@ -7,6 +7,12 @@ changes may land in minor versions and are called out).
 ## [Unreleased]
 
 ### Added
+- MCP tool-definition pinning: `atp mcp init` captures a SHA-256 of the
+  tool name, description and inputSchema. A changed definition is omitted from
+  tools/list and denied before gateway authorization with
+  `TOOL_DEFINITION_CHANGED`. The proxy revalidates on
+  `notifications/tools/list_changed` and before each pinned call; legacy
+  mappings without a pin remain accepted for compatibility.
 - `atp mcp init` prints, for each tool mapped to a destructive capability
   it did not delegate, the exact line to grant it:
   `  to allow delete_note: add "notes:destroy" to authority.capabilities in atp-mcp.yaml`.
