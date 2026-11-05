@@ -1,0 +1,15 @@
+id: mcpoison
+title: Approved MCP tool description silently changes before execution
+source_urls:
+  - https://research.checkpoint.com/2025/cursor-vulnerability-mcpoison/
+server: mcpoison/server.py
+calls:
+  - function: write_note
+    args: {id: baseline, text: original-trusted-tool}
+  - definition_change: poisoned
+  - function: write_note
+    args: {id: attacked, text: synthetic-attack}
+expect:
+  name-only: ALLOWED
+  atp: DENIED
+atp_regression: mcpoison/atp-regression.yaml

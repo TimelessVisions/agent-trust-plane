@@ -1,0 +1,37 @@
+# Decision-only companion. Tool definition hashes are checked by the MCP proxy,
+# not by atp test: tests/test_incident_cases.py must independently check the
+# post-approval mutation and upstream journal before claiming this case passes.
+version: 1
+name: mcpoison base delegation decision
+description: A normal note write is allowed before a tool definition changes.
+policy_set: mcpoison-v1
+policies: policies.yaml
+delegations:
+  principals:
+    human: {id: incident-human, kind: human}
+    assistant: {id: incident-agent, kind: agent}
+  grants:
+    - id: root
+      grantor: human
+      grantee: human
+      capabilities: [notes:write]
+      resource_scope: ["note:*"]
+      expires_in: 1d
+    - id: leaf
+      grantor: human
+      grantee: assistant
+      parent: root
+      capabilities: [notes:write]
+      resource_scope: ["note:*"]
+      expires_in: 1h
+cases:
+  - name: a regular approved note write remains allowed
+    agent: assistant
+    principal: human
+    delegation: leaf
+    capability: notes:write
+    tool: mcp.notes
+    action: write_note
+    resource: note:baseline
+    arguments: {id: baseline, text: original-trusted-tool}
+    expect: {outcome: ALLOW, reason_code: ALLOWED}

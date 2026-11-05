@@ -1,0 +1,5 @@
+version: 1
+policy_sets:
+  - version: mcpoison-v1
+    description: Pinned incident policy, allowing ordinary note writes
+    rules: []
