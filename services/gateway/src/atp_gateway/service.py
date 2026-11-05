@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -138,9 +138,16 @@ class ReplayResult(BaseModel):
     summary: str
 
 
+TRACE_FORMAT: Final = "atp-trace/1"
+
+
 class TraceView(BaseModel):
+    """A trace as exported over HTTP (``GET /traces/{id}``) and by
+    ``atp trace show --json``. ``format`` names the export format."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    format: Literal["atp-trace/1"] = TRACE_FORMAT
     trace_id: str
     events: list[TraceEvent]
     integrity: IntegrityReport

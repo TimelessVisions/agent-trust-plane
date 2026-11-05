@@ -6,10 +6,11 @@
 | Regression suite | `version:` | 1 | Only `version: 1` loads; any other value is an error ("unsupported regression suite version 2; this atp supports 1"), never a guess. A file without `version:` loads as 1 with one `DeprecationWarning` per file; `atp migrate` adds it |
 | Policy file (`policies.yaml`) | top-level `version:` | 1 | Same rule. `policy_sets[].version` is a set's name, not a format version |
 | Proxy config (`atp-mcp.yaml`) | `version:` | 1 | Same rule; `atp mcp init` writes it. Strict models (`extra=forbid`) |
+| Trace export (`GET /traces/{id}`, `atp trace show --json`) | `format:` | `atp-trace/1` | Added in 1.0 |
 | Trace events | implicit (event types + payload shapes) | — | Additive only: new event types and payload keys may appear; existing keys are never reinterpreted |
 | Decision | fields with defaults (`enforcement` added in 0.3.0) | — | Old stored decisions validate with defaults (`enforce`) |
 | Execution grant token | header `v: atp-grant/2` | 2 | A new format gets a new tag; old tokens are rejected, not reinterpreted (`atp-grant/1` HMAC tokens are GRANT_MALFORMED since 1.0) |
-| Evidence bundle | `bundle_version` | 1 | Verifier rejects unknown versions |
+| Evidence bundle | `bundle_version` | 2 | Verifier reads 1 (0.3.x) and 2 (1.0: adds `trace_format`) and rejects any other version |
 | HTTP API | path-versionless while 0.x | — | Additive changes only within a minor; removals/renames bump the minor and are listed |
 
 ## Migration rules

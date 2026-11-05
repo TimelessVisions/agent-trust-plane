@@ -46,6 +46,17 @@ changes may land in minor versions and are called out).
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Changed
+- **BREAKING:** versioned evidence and trace formats, and a 422 that does not
+  echo input. Evidence bundles are now `bundle_version: 2`, which adds one
+  field, `trace_format: "atp-trace/1"`; `atp evidence verify` (and
+  `verify_bundle`) still accepts version 1 bundles from 0.3.x and rejects
+  any other version with `unsupported bundle_version`. Trace exports
+  (`GET /traces/{id}`, `atp trace show --json`) carry
+  `format: "atp-trace/1"`. A request that fails validation now gets
+  `422 {"error": "request_invalid", "fields": ["body.grantor", ...]}`
+  instead of FastAPI's default body, which echoed the submitted values; an
+  invalid approval `expires_in` and invalid payment arguments no longer echo
+  the value either.
 - **BREAKING:** root delegations are signed by the human's own key. A root
   grant (`parent_grant_id: null`) must carry `signature` and `signer_kid`:
   an Ed25519 signature by the human grantor's principal key over the

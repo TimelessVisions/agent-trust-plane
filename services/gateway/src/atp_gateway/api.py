@@ -187,7 +187,11 @@ def approve(trace_id: str, body: ApprovalRequest, request: Request, _: Operator)
     try:
         ttl = parse_duration(body.expires_in)
     except ValueError as exc:
-        raise ATPError(ReasonCode.APPROVAL_INVALID, str(exc)) from exc
+        # The message must not echo the submitted value.
+        raise ATPError(
+            ReasonCode.APPROVAL_INVALID,
+            "expires_in must be a duration such as 15m, 900s or 1h, between 1s and 24h",
+        ) from exc
     record = _tp(request).approve(trace_id, body.approver, body.decision, expires_in=ttl)
     c = record.claims
     return ApprovalView(

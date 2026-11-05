@@ -151,8 +151,12 @@ class PaymentsTool:
         try:
             args = PaymentArguments.model_validate(envelope.arguments)
         except ValidationError as exc:
+            # Name the fields, never the submitted values.
+            fields = ", ".join(
+                sorted({".".join(str(p) for p in e["loc"]) or "<root>" for e in exc.errors()})
+            )
             raise ToolError(
-                ReasonCode.EXECUTION_FAILED, f"invalid payment arguments: {exc}"
+                ReasonCode.EXECUTION_FAILED, f"invalid payment arguments: {fields}"
             ) from exc
         vendor_id = envelope.resource.split(":", 1)[-1]
         vendor = self._vendors.lookup(vendor_id)
