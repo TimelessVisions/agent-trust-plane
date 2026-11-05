@@ -31,6 +31,7 @@ from atp_adapter_mcp.mapping import ToolMapping
 from atp_core import (
     SCOPE_PATTERN,
     Budget,
+    Money,
     PrincipalKind,
     PrincipalRef,
     check_file_version,
@@ -104,6 +105,14 @@ class AuthorityConfig(BaseModel):
     capabilities: tuple[str, ...] = Field(min_length=1)
     resource_scope: tuple[str, ...] = Field(min_length=1)
     expires_in: str = Field(default="12h", pattern=r"^\d+[smhd]$")
+    max_amount: Money | None = Field(
+        default=None,
+        description="Explicit maximum value per payment. If omitted, payment policies deny.",
+    )
+    currencies: frozenset[str] | None = Field(
+        default=None,
+        description="Explicit currency allowlist for delegated payment actions.",
+    )
     budget: Budget | None = Field(
         default=None,
         description="Cumulative spend per UTC day/week/month for actions whose arguments "
@@ -120,6 +129,14 @@ class AuthorityConfig(BaseModel):
         for c in self.capabilities:
             if not re.fullmatch(r"^[A-Za-z0-9._:-]{1,128}$", c):
                 raise ValueError(f"invalid capability {c!r}")
+        if self.currencies is not None:
+            for currency in self.currencies:
+                if not re.fullmatch(r"[A-Z]{3}", currency):
+                    raise ValueError(f"invalid delegated currency {currency!r}")
+            if self.max_amount is not None and self.max_amount.currency not in self.currencies:
+                raise ValueError(
+                    "maximum payment currency must be present in delegated currencies"
+                )
         return self
 
 
