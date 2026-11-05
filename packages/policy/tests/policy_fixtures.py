@@ -11,7 +11,13 @@ from atp_core import (
     PrincipalKind,
     PrincipalRef,
 )
-from atp_identity import DelegationRequest, DelegationService, InMemoryDelegationStore
+from atp_identity import (
+    DelegationRequest,
+    DelegationService,
+    InMemoryDelegationStore,
+    InMemoryPrincipalKeys,
+    sign_root_request,
+)
 from atp_policy import InMemoryVendorDirectory, PolicyContext, Vendor
 
 NOW = datetime(2026, 9, 16, 12, 0, 0, tzinfo=UTC)
@@ -34,15 +40,22 @@ def vendors() -> InMemoryVendorDirectory:
 
 def build_chain(service: DelegationService) -> dict[str, str]:
     """Human ($10k) -> orchestrator ($10k) -> AP agent ($1k) -> document agent (read-only)."""
+    keys = service.principal_keys
+    assert isinstance(keys, InMemoryPrincipalKeys)
     root = service.issue(
-        DelegationRequest(
-            label="Human authority: payments <= $10,000",
-            grantor=HUMAN,
-            grantee=HUMAN,
-            capabilities=frozenset({"read:invoice", "pay:vendor", "admin:vendors"}),
-            resource_scope=("vendor:*", "invoice:*"),
-            constraints=AuthorityConstraints(max_amount=usd(10_000), currencies=frozenset({"USD"})),
-            expires_at=NOW + timedelta(days=30),
+        _signed(
+            DelegationRequest(
+                label="Human authority: payments <= $10,000",
+                grantor=HUMAN,
+                grantee=HUMAN,
+                capabilities=frozenset({"read:invoice", "pay:vendor", "admin:vendors"}),
+                resource_scope=("vendor:*", "invoice:*"),
+                constraints=AuthorityConstraints(
+                    max_amount=usd(10_000), currencies=frozenset({"USD"})
+                ),
+                expires_at=NOW + timedelta(days=30),
+            ),
+            keys,
         ),
         now=NOW,
     )
@@ -138,4 +151,12 @@ def context_for(
 
 
 def fresh_service() -> DelegationService:
-    return DelegationService(InMemoryDelegationStore())
+    keys = InMemoryPrincipalKeys()
+    keys.generate(HUMAN.id)
+    return DelegationService(InMemoryDelegationStore(), principal_keys=keys)
+
+
+def _signed(request: DelegationRequest, keys: InMemoryPrincipalKeys) -> DelegationRequest:
+    """A root request signed by the human's own key (C5)."""
+    body = sign_root_request(request.model_dump(mode="json", exclude_none=True), keys, now=NOW)
+    return DelegationRequest.model_validate(body)

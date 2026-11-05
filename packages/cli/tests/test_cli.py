@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from atp_adapter_http import TrustPlaneClient
 from atp_cli.main import main
 from atp_gateway.local import LocalGateway
 from finance_agent import (
@@ -53,7 +52,7 @@ def test_record_from_live_gateway(
 ) -> None:
     monkeypatch.delenv("ATP_OPERATOR_KEY", raising=False)
     with LocalGateway() as gw:
-        operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+        operator = gw.operator_client()
         seed = seed_delegation_graph(operator)
         result = run_accounts_payable(
             operator.as_agent(seed.identities.accounts_payable_token),
@@ -145,7 +144,8 @@ def test_generated_keys_never_start_with_a_dash(
     values = [line.split("=", 1)[1] for line in lines if line.startswith("ATP_")]
     values += [settings.operator_key_value()]
 
-    # home: operator key, grant kid; keygen: operator key, keys dir, grant kid; settings:
-    # the ephemeral operator key. (The Ed25519 grant key is a file, not a pasted value.)
-    assert len(values) == 6
+    # home: operator key, grant kid; keygen: operator key, keys dir, grant kid, principal
+    # keys dir; settings: the ephemeral operator key. (The Ed25519 keys are files, not
+    # pasted values.)
+    assert len(values) == 7
     assert not [v for v in values if v.startswith("-")]

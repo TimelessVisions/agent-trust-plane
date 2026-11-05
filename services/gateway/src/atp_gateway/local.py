@@ -15,7 +15,14 @@ from typing import Any
 
 import uvicorn
 
-from atp_adapter_http import AuthorizeResponse, ExecuteResponse, ExecutionGrant, GatewayError
+from atp_adapter_http import (
+    AuthorizeResponse,
+    ExecuteResponse,
+    ExecutionGrant,
+    GatewayError,
+    TrustPlaneClient,
+)
+from atp_adapter_http.client import RootSigner
 from atp_core import ActionEnvelope, ATPError
 from atp_gateway.app import create_app, status_for
 from atp_gateway.settings import GatewaySettings
@@ -53,6 +60,17 @@ class LocalGateway:
     @property
     def operator_key(self) -> str:
         return self.runtime.operator_key
+
+    def root_signer(self) -> RootSigner:
+        """Signs root delegations with the keys this gateway's process holds
+        (per-process human keys when ephemeral)."""
+        return self.runtime.root_signer()
+
+    def operator_client(self) -> TrustPlaneClient:
+        """An HTTP client with the operator key that signs root delegations."""
+        return TrustPlaneClient(
+            self.url, operator_key=self.operator_key, sign_root=self.root_signer()
+        )
 
     def start(self, timeout: float = 10.0) -> LocalGateway:
         self._thread.start()

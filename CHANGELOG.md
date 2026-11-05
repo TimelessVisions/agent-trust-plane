@@ -46,6 +46,30 @@ changes may land in minor versions and are called out).
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Changed
+- **BREAKING:** root delegations are signed by the human's own key. A root
+  grant (`parent_grant_id: null`) must carry `signature` and `signer_kid`:
+  an Ed25519 signature by the human grantor's principal key over the
+  canonical JSON of the grant without `signature`, `signer_kid` and
+  `revoked_at`. `DelegationGrant` gains `signature` and `signer_kid`; a root
+  `POST /delegations` body carries the signed `grant_id`, `issued_at`,
+  `signature` and `signer_kid` (still with the operator key). Issuance and
+  every chain resolution verify it; failures deny with the new reason codes
+  `DELEGATION_ROOT_UNSIGNED` and `DELEGATION_ROOT_SIGNATURE_INVALID`. The
+  operator key alone can no longer create a root grant for a human. Child
+  grants stay unsigned. Principal keys live at `<dir>/<id>.key` (mode 0600)
+  and `<dir>/<id>.pub`; `atp principal keygen HUMAN_ID [--home H | --dir D]`
+  creates them, and a served gateway trusts the `.pub` files in the new
+  `ATP_PRINCIPAL_KEYS_DIR` (which `atp keygen --write` now sets; unset on a
+  persistent gateway, every root is denied). An ephemeral `:memory:`
+  gateway generates per-process human keys. `AtpHome.ensure()` creates the
+  local human's key in `.atp/principals/` (`local-user`, or the
+  `atp-mcp.yaml` `principal` under `atp mcp wrap`) and signs, in place, a
+  0.3.x home's unsigned roots whose grantor has a key there, so existing
+  chains and traces keep working. `TrustPlaneClient` takes `sign_root=`
+  (`for_app` uses the in-process runtime's keys; `LocalGateway.operator_client()`
+  signs too). `kid_for` and `write_file_atomic` moved to
+  `atp_identity.keys` (re-exported by the gateway); `atp-identity` now
+  depends on `cryptography`.
 - **BREAKING:** a failure outcome reported with the grant's own agent
   credential no longer releases a held budget reservation; it stays counted
   until the operator confirms the failure on

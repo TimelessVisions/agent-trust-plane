@@ -10,7 +10,6 @@ import anyio
 from mcp import ClientSession
 from test_proxy_e2e import HUMAN, _run, _seed, _text, _write_config
 
-from atp_adapter_http import TrustPlaneClient
 from atp_gateway import GatewaySettings
 from atp_gateway.local import LocalGateway
 
@@ -38,7 +37,7 @@ def test_proxy_require_approval_then_approve_then_retry(tmp_path: Path) -> None:
         approver_roles=f"{HUMAN['kind']}:{HUMAN['id']}=editor",
     )
     with LocalGateway(settings) as gateway:
-        operator = TrustPlaneClient(gateway.url, operator_key=gateway.operator_key)
+        operator = gateway.operator_client()
         token, grant = _seed(operator, scope=["note:*"])
         notes_dir = tmp_path / "notes"
         cfg = tmp_path / "atp-mcp.yaml"

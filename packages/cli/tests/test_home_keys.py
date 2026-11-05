@@ -216,13 +216,24 @@ def test_keygen_write_and_rotate_a_serve_env(
     from atp_gateway import GatewaySettings
 
     monkeypatch.chdir(tmp_path)
-    for var in ("ATP_GRANT_SIGNING_KID", "ATP_GRANT_KEYS_DIR", "ATP_GRANT_SIGNING_KEY"):
+    for var in (
+        "ATP_GRANT_SIGNING_KID",
+        "ATP_GRANT_KEYS_DIR",
+        "ATP_GRANT_SIGNING_KEY",
+        "ATP_PRINCIPAL_KEYS_DIR",
+    ):
         monkeypatch.delenv(var, raising=False)
     with pytest.raises(SystemExit) as exc:
         main(["keygen", "--write", ".env"])
     assert exc.value.code in (0, None)
     env = read_env_file(tmp_path / ".env")
-    assert set(env) == {"ATP_OPERATOR_KEY", "ATP_GRANT_KEYS_DIR", "ATP_GRANT_SIGNING_KID"}
+    assert set(env) == {
+        "ATP_OPERATOR_KEY",
+        "ATP_GRANT_KEYS_DIR",
+        "ATP_GRANT_SIGNING_KID",
+        "ATP_PRINCIPAL_KEYS_DIR",
+    }
+    assert Path(env["ATP_PRINCIPAL_KEYS_DIR"]) == (tmp_path / "atp-keys" / "principals").resolve()
     assert "PRIVATE KEY" not in (tmp_path / ".env").read_text(encoding="utf-8")
     assert _private(tmp_path / ".env")
     keys_dir = Path(env["ATP_GRANT_KEYS_DIR"])

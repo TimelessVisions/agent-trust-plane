@@ -49,11 +49,46 @@ def _fixture_grant_key() -> tuple[dict[str, str], str]:
     (keys_dir / f"grant-{kid}.pub").write_bytes(
         key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
     )
-    return {"grant_keys_dir": str(keys_dir), "grant_signing_kid": kid}, pem.decode("ascii")
+    # The human principal's own key (root delegations are signed with it):
+    # deterministic too, in a principals directory the gateway trusts.
+    principals = keys_dir / "principals"
+    human_key = Ed25519PrivateKey.from_private_bytes(bytes(range(32, 64)))
+    principals.mkdir()
+    (principals / f"{HUMAN.id}.key").write_bytes(
+        human_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    )
+    (principals / f"{HUMAN.id}.pub").write_bytes(
+        human_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
+    return {
+        "grant_keys_dir": str(keys_dir),
+        "grant_signing_kid": kid,
+        "principal_keys_dir": str(principals),
+    }, pem.decode("ascii")
 
 
 # ``SIGNING_KEY`` is the private grant key's PEM: tests assert it never leaks.
 GRANT_KEY_SETTINGS, SIGNING_KEY = _fixture_grant_key()
+
+
+def sign_root_body(body: dict[str, Any], now: datetime = NOW) -> dict[str, Any]:
+    """Sign a root ``POST /delegations`` body with the human's fixture key,
+    as the human's own client would."""
+    from atp_identity import FilePrincipalKeys, sign_root_request
+
+    keys = FilePrincipalKeys(GRANT_KEY_SETTINGS["principal_keys_dir"])
+    keys.ensure(body["grantor"]["id"])  # a test human other than HUMAN gets a key too
+    return sign_root_request(body, keys, now=now)
+
+
+def signed_root(request: Any, now: datetime = NOW) -> Any:
+    """``sign_root_body`` for a ``DelegationRequest``."""
+    from atp_identity import DelegationRequest
+
+    body = sign_root_body(request.model_dump(mode="json", exclude_none=True), now)
+    return DelegationRequest.model_validate(body)
+
+
 OPERATOR_KEY = "test-operator-key-that-is-at-least-32-bytes-long!"
 
 
@@ -142,15 +177,18 @@ def seed_chain(client: TestClient, now: datetime = NOW) -> dict[str, Any]:
         return grant_id
 
     root = issue(
-        {
-            "label": "Human authority: payments <= $10,000",
-            "grantor": HUMAN.model_dump(mode="json"),
-            "grantee": HUMAN.model_dump(mode="json"),
-            "capabilities": ["read:invoice", "pay:vendor", "admin:vendors"],
-            "resource_scope": ["vendor:*", "invoice:*"],
-            "constraints": {"max_amount": usd("10000"), "currencies": ["USD"]},
-            "expires_at": (now + timedelta(days=30)).isoformat(),
-        },
+        sign_root_body(
+            {
+                "label": "Human authority: payments <= $10,000",
+                "grantor": HUMAN.model_dump(mode="json"),
+                "grantee": HUMAN.model_dump(mode="json"),
+                "capabilities": ["read:invoice", "pay:vendor", "admin:vendors"],
+                "resource_scope": ["vendor:*", "invoice:*"],
+                "constraints": {"max_amount": usd("10000"), "currencies": ["USD"]},
+                "expires_at": (now + timedelta(days=30)).isoformat(),
+            },
+            now,
+        ),
         op(),
     )
     orch = issue(

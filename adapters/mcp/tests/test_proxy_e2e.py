@@ -38,7 +38,7 @@ def gateway() -> Iterator[LocalGateway]:
 
 @pytest.fixture
 def operator(gateway: LocalGateway) -> TrustPlaneClient:
-    return TrustPlaneClient(gateway.url, operator_key=gateway.operator_key)
+    return gateway.operator_client()
 
 
 def _seed(operator: TrustPlaneClient, *, scope: list[str]) -> tuple[str, str]:

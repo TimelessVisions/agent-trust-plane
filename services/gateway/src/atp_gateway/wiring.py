@@ -4,6 +4,7 @@ tests and the eval harness can build one without FastAPI."""
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,10 +35,12 @@ from atp_identity import (
     InMemoryCredentialStore,
     InMemoryDelegationStore,
     InMemoryReservationStore,
+    PrincipalKeys,
     ReservationStore,
     SqliteCredentialStore,
     SqliteDelegationStore,
     SqliteReservationStore,
+    sign_root_request,
 )
 from atp_policy import InMemoryVendorDirectory, PolicySetRegistry, Vendor
 
@@ -63,6 +66,7 @@ class Runtime:
         settings: GatewaySettings,
         conn: sqlite3.Connection | None,
         operator_key: str,
+        principal_keys: PrincipalKeys | None = None,
     ) -> None:
         self.trust_plane = trust_plane
         self.ledger = ledger
@@ -71,6 +75,22 @@ class Runtime:
         self.settings = settings
         self.conn = conn
         self.operator_key = operator_key
+        self.principal_keys = principal_keys
+
+    def root_signer(self) -> Callable[[dict[str, Any]], dict[str, Any]]:
+        """Sign a root ``POST /delegations`` body with the grantor's key, where
+        this process holds it (the ATP home's local human; any human on an
+        ephemeral gateway). A client in this process passes it to
+        ``TrustPlaneClient(sign_root=...)``; ``TrustPlaneClient.for_app`` picks it
+        up by itself."""
+        keys = self.principal_keys
+
+        def sign(body: dict[str, Any]) -> dict[str, Any]:
+            if keys is None:
+                return dict(body)
+            return sign_root_request(body, keys, now=self.trust_plane.clock())
+
+        return sign
 
     def close(self) -> None:
         if self.conn is not None:
@@ -91,6 +111,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     reports: EvalReportStore
     approvals: ApprovalStore
     reservations: ReservationStore
+    principal_keys = settings.principal_keys()
     # Parsed before the database is touched: a bad role map refuses to start.
     approver_roles = parse_approver_roles(settings.approver_roles)
 
@@ -136,7 +157,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
             policy_sets = PolicySetRegistry(policy_sets.versions(), settings.default_policy_set)
 
     trust_plane = TrustPlane(
-        delegations=DelegationService(delegation_store),
+        delegations=DelegationService(delegation_store, principal_keys=principal_keys),
         credentials=CredentialService(credential_store),
         traces=trace_store,
         grants=grant_store,
@@ -160,4 +181,5 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         settings=settings,
         conn=conn,
         operator_key=settings.operator_key_value(),
+        principal_keys=principal_keys,
     )

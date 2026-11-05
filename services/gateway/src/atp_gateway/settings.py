@@ -12,6 +12,7 @@ from atp_core import new_secret_key
 
 if TYPE_CHECKING:
     from atp_gateway.grant_keys import GrantKeyring
+    from atp_identity import PrincipalKeys
 
 log = logging.getLogger("atp.gateway")
 
@@ -47,6 +48,12 @@ class GatewaySettings(BaseSettings):
         description="Removed in 1.0: the HMAC key of atp-grant/1. A persistent gateway "
         "configured only with it refuses to start; run `atp keygen` (or let the ATP "
         "home migrate it).",
+    )
+    principal_keys_dir: str = Field(
+        default="",
+        description="Directory of human principal public keys (<id>.pub) that root "
+        "delegations must be signed with. Unset: an ephemeral gateway generates per-process "
+        "human keys; a persistent one trusts no human key, so every root grant is denied.",
     )
     operator_key: str = Field(
         default="",
@@ -121,6 +128,21 @@ class GatewaySettings(BaseSettings):
             "ATP_GRANT_SIGNING_KID is not set. A persistent gateway will not start with "
             "generated keys. Run: atp keygen --write .env"
         )
+
+    def principal_keys(self) -> PrincipalKeys:
+        """Whose root signatures this gateway trusts (see ``principal_keys_dir``)."""
+        from atp_identity import EphemeralPrincipalKeys, FilePrincipalKeys, InMemoryPrincipalKeys
+
+        if self.principal_keys_dir:
+            return FilePrincipalKeys(self.principal_keys_dir)
+        if self.ephemeral:
+            return EphemeralPrincipalKeys()
+        log.warning(
+            "ATP_PRINCIPAL_KEYS_DIR is not set: no human key is trusted, so every root "
+            "delegation is denied (DELEGATION_ROOT_SIGNATURE_INVALID). Create keys with "
+            "`atp principal keygen HUMAN_ID --dir DIR`."
+        )
+        return InMemoryPrincipalKeys()  # empty: trusts nobody
 
     def operator_key_value(self) -> str:
         return self._resolve("ATP_OPERATOR_KEY", self.operator_key)

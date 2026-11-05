@@ -118,7 +118,7 @@ def test_http_upstream_is_authorized_like_stdio(
 ) -> None:
     url, notes = http_notes
     with LocalGateway() as gw:
-        operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+        operator = gw.operator_client()
         token, grant = _seed(operator)
         cfg = {
             "version": 1,

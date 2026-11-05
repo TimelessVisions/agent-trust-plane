@@ -203,7 +203,7 @@ Two credential kinds, never interchangeable:
 | Credential | Header | Who holds it | What it permits |
 |---|---|---|---|
 | Agent credential `atpa_<id>.<secret>` | `Authorization: Bearer …` | one agent | authorize, execute, write its own provenance, delegate *from its own* grants, revoke grants it issued |
-| Operator key | `X-ATP-Operator-Key` | the deployment operator | issue/list/revoke agent credentials, human-rooted delegations, policy-set override, run evals, read traces/ledger/delegations, replay |
+| Operator key | `X-ATP-Operator-Key` | the deployment operator | issue/list/revoke agent credentials, human-rooted delegations (a root also needs the human's own signature), policy-set override, run evals, read traces/ledger/delegations, replay |
 
 Credentials are issued by `POST /agents/{id}/credentials` (token shown once,
 SHA-256 stored), listed without secrets, and revoked by id. Revocation and

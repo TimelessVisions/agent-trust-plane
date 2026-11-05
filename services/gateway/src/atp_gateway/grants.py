@@ -34,7 +34,6 @@ import threading
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from enum import StrEnum
-from hashlib import sha256
 from typing import Any, Final, Literal, Protocol
 
 from cryptography.exceptions import InvalidSignature
@@ -42,11 +41,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from atp_core import GrantError, ReasonCode, canonical_json, new_id, utcnow
 from atp_core.sqlite import commit_if_implicit
+from atp_identity.keys import kid_for as kid_for
 
 TOKEN_VERSION: Final[Literal["atp-grant/2"]] = "atp-grant/2"
 LEGACY_TOKEN_VERSION: Final = "atp-grant/1"
@@ -84,12 +83,6 @@ def _b64d(text: str) -> bytes:
     if _b64e(data) != text:
         raise ValueError("non-canonical base64url")
     return data
-
-
-def kid_for(public_key: Ed25519PublicKey) -> str:
-    """``sha256(raw public key).hexdigest()[:16]``."""
-    raw = public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
-    return sha256(raw).hexdigest()[:16]
 
 
 def _malformed(message: str = "execution grant is malformed") -> GrantError:

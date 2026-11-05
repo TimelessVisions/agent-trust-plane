@@ -40,7 +40,8 @@ def test_cli_payment_at_limit_approve_retry_executes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("ATP_APPROVER_ROLES", "human:cfo=finance-manager")
-    home = AtpHome(tmp_path / ".atp").ensure()
+    # The demo's human signs its own root delegation: it needs a key in the home.
+    home = AtpHome(tmp_path / ".atp").ensure(human="company-user-42")
     rt = build_runtime(home.settings())
     try:
         app = create_app(rt.settings, runtime=rt)
@@ -84,7 +85,7 @@ def test_cli_approve_against_a_gateway(
         approver_roles="human:cfo=finance-manager",
     )
     with LocalGateway(settings) as gw:
-        operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+        operator = gw.operator_client()
         seed = seed_delegation_graph(operator)
         agent = operator.as_agent(seed.identities.accounts_payable_token)
         env = _payment(seed.graph.accounts_payable)

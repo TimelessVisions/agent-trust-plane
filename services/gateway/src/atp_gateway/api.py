@@ -10,7 +10,7 @@ Who may call what:
 | POST /traces/{id}/events         | required         |              |
 | POST /executions/{grant}/outcome | grant audience   | or operator (frees budget) |
 | POST /traces/{id}/shadow-outcome | trace owner      |              |
-| POST /delegations                | grantor (agent)  | grantor (human) |
+| POST /delegations                | grantor (agent)  | grantor (human); root: + human signature |
 | POST /delegations/{id}/revoke    | grantor (agent)  | or operator  |
 | GET  /delegations                |                  | required     |
 | POST /agents/{id}/credentials    |                  | required     |
@@ -210,9 +210,12 @@ def approve(trace_id: str, body: ApprovalRequest, request: Request, _: Operator)
 def issue_delegation(
     body: DelegationRequest, request: Request, caller: MaybeAgent, operator: IsOperator
 ) -> DelegationGrant:
-    """Issue a grant. A human grantor is represented by the operator key (the
-    MVP's trust anchor for human authority); an agent grantor must present its
-    own credential. Nobody can delegate on another principal's behalf."""
+    """Issue a grant. A human grantor is represented by the operator key; an
+    agent grantor must present its own credential. Nobody can delegate on
+    another principal's behalf. A root grant (no parent) must also carry the
+    human's own Ed25519 signature (``signature``, ``signer_kid``, with the
+    signed ``grant_id`` and ``issued_at``): the operator key alone cannot
+    create one (DELEGATION_ROOT_UNSIGNED / DELEGATION_ROOT_SIGNATURE_INVALID)."""
     if body.grantor.kind is PrincipalKind.HUMAN:
         if not operator:
             raise ATPError(

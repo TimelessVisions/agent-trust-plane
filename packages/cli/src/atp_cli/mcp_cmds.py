@@ -26,8 +26,8 @@ from atp_adapter_mcp import (
     render_header,
     serve,
 )
-from atp_cli.home import AtpHome
-from atp_core import utcnow
+from atp_cli.home import LOCAL_HUMAN, AtpHome
+from atp_core import PrincipalKind, utcnow
 from atp_evals.regression.format import parse_duration
 from atp_gateway import create_app
 
@@ -146,7 +146,9 @@ def wrap(
         _err(f"{config_path} has no `authority` section; `atp mcp wrap` needs one to delegate")
         return 2
 
-    home = AtpHome(home_dir).ensure()
+    # The session's human gets its own key; the home signs its root grant.
+    human = config.principal.id if config.principal.kind is PrincipalKind.HUMAN else LOCAL_HUMAN
+    home = AtpHome(home_dir).ensure(human=human)
     settings = home.settings(
         enforcement_mode=mode,
         default_policy_set=config.policy_set,

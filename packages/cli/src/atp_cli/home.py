@@ -5,13 +5,22 @@ needs so that nothing has to be copied, exported or typed.
       atp.db          SQLite: credentials, delegations, grants, traces, ledger
       keys.env        ATP_OPERATOR_KEY and ATP_GRANT_SIGNING_KID, generated once, mode 600
       keys/           grant-<kid>.key (Ed25519, mode 600), grant-<kid>.pub, grant-<kid>.retired
+      principals/     <human id>.key (Ed25519, mode 600) and .pub: the local human's own key,
+                      which signs its root delegations
       policies.yaml   optional declared policy sets (see docs/policies.md)
 
 Location: ``$ATP_HOME`` if set, else ``./.atp``. Offline commands
 (``regression add``, ``policy explain``, ``evidence export``) open the same
 store directly; no HTTP, no operator key to paste. Treat the directory as
 secret: whoever can read ``keys.env`` is the operator, and whoever can read
-``keys/`` can mint execution grants.
+``keys/`` can mint execution grants, and whoever can read ``principals/`` can
+sign root delegations as the local human.
+
+Root delegations must be signed by the human's own key (C5). ``ensure()``
+creates the local human's key (``local-user``, or the ``principal`` of
+``atp-mcp.yaml``) and signs, in place, every unsigned root grant in the
+database whose human grantor has a private key here: a 0.3.x home's roots
+keep their ids and content, so their chains resolve and old traces verify.
 
 A 0.3.x home kept an HMAC ``ATP_GRANT_SIGNING_KEY`` in ``keys.env``. ``ensure()``
 (and ``settings()``) migrate it once: a new Ed25519 key is generated, then the
@@ -22,6 +31,7 @@ nothing recorded before the migration needs the old key to verify.
 from __future__ import annotations
 
 import os
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -37,10 +47,13 @@ from atp_gateway.grant_keys import (
     update_env_file,
     write_file_atomic,
 )
+from atp_identity import FilePrincipalKeys, SqliteDelegationStore, sign_root
 
 KEYS_FILE = "keys.env"
 KEYS_DIR = "keys"
-_GITIGNORE_ENTRIES = ("keys.env", "keys/", "atp.db", "atp.db-*")
+PRINCIPALS_DIR = "principals"
+LOCAL_HUMAN = "local-user"
+_GITIGNORE_ENTRIES = ("keys.env", "keys/", "principals/", "atp.db", "atp.db-*")
 DB_FILE = "atp.db"
 POLICY_FILE = "policies.yaml"
 
@@ -53,6 +66,13 @@ class AtpHome:
     @property
     def keys_dir(self) -> Path:
         return self.path / KEYS_DIR
+
+    @property
+    def principals_dir(self) -> Path:
+        return self.path / PRINCIPALS_DIR
+
+    def principal_keys(self) -> FilePrincipalKeys:
+        return FilePrincipalKeys(self.principals_dir)
 
     @property
     def db_path(self) -> Path:
@@ -70,9 +90,10 @@ class AtpHome:
     def exists(self) -> bool:
         return self.db_path.exists()
 
-    def ensure(self) -> AtpHome:
+    def ensure(self, *, human: str = LOCAL_HUMAN) -> AtpHome:
         """Create the directory and keys if missing; migrate a 0.3.x HMAC grant
-        key to Ed25519. Idempotent."""
+        key to Ed25519; create ``human``'s principal key and sign the home's
+        unsigned root grants. Idempotent."""
         self.path.mkdir(parents=True, exist_ok=True)
         if not self.keys_path.exists():
             kid = generate_grant_key(self.keys_dir)
@@ -84,8 +105,37 @@ class AtpHome:
             write_file_atomic(self.keys_path, text.encode("utf-8"), private=True)
         else:
             self.migrate_keys()
+        self.principal_keys().ensure(human)
+        self.sign_unsigned_roots()
         self._ensure_gitignore()
         return self
+
+    def sign_unsigned_roots(self) -> list[str]:
+        """Sign every unsigned root grant whose human grantor has a private key
+        in this home (0.3.x stored roots unsigned). The signature covers the
+        unchanged grant, so its id and content stay as they were. Roots of
+        humans without a key here stay unsigned and are denied
+        (DELEGATION_ROOT_UNSIGNED) until re-issued. Returns the signed ids."""
+        if not self.db_path.exists():
+            return []
+        keys = self.principal_keys()
+        conn = sqlite3.connect(str(self.db_path), isolation_level=None)
+        try:
+            store = SqliteDelegationStore(conn)
+            done: list[str] = []
+            for grant in store.all():
+                if not grant.is_root or grant.signature is not None:
+                    continue
+                private = keys.private_key(grant.grantor.id)
+                if private is None:
+                    continue
+                signed = sign_root(grant, private)
+                assert signed.signature is not None and signed.signer_kid is not None
+                if store.sign_unsigned_root(grant.grant_id, signed.signature, signed.signer_kid):
+                    done.append(grant.grant_id)
+            return done
+        finally:
+            conn.close()
 
     def migrate_keys(self) -> bool:
         """Give ``keys.env`` an Ed25519 grant key if it has none, and drop the
@@ -187,6 +237,7 @@ policy_sets:
             "database_path": str(self.db_path),
             "grant_keys_dir": str(self.keys_dir),
             "grant_signing_kid": keys[KID_ENV],
+            "principal_keys_dir": str(self.principals_dir),
             "grant_signing_key": "",  # a stray 0.3.x $ATP_GRANT_SIGNING_KEY is ignored
             "operator_key": keys["ATP_OPERATOR_KEY"],
             "enforcement_mode": enforcement_mode,

@@ -49,6 +49,7 @@ from gateway_fixtures import (
     OPERATOR_KEY,
     ORCHESTRATOR,
     Clock,
+    signed_root,
 )
 
 
@@ -67,14 +68,17 @@ def _runtime(clock: Clock) -> Runtime:
 def _chain(rt: Runtime, limit: str = "1000") -> str:
     tp = rt.trust_plane
     root = tp.issue_delegation(
-        DelegationRequest(
-            label="root",
-            grantor=HUMAN,
-            grantee=HUMAN,
-            capabilities=frozenset({"pay:vendor", "read:invoice"}),
-            resource_scope=("vendor:*", "invoice:*"),
-            constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
-            expires_at=NOW + timedelta(days=30),
+        signed_root(
+            DelegationRequest(
+                label="root",
+                grantor=HUMAN,
+                grantee=HUMAN,
+                capabilities=frozenset({"pay:vendor", "read:invoice"}),
+                resource_scope=("vendor:*", "invoice:*"),
+                constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
+                expires_at=NOW + timedelta(days=30),
+            ),
+            NOW,
         )
     )
     orch = tp.issue_delegation(

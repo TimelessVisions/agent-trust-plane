@@ -13,12 +13,17 @@ from __future__ import annotations
 
 import contextlib
 import weakref
+from collections.abc import Callable
 from typing import Any, Protocol
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 
 from atp_core import ActionEnvelope, Decision, ReasonCode
+
+# Signs a root ``POST /delegations`` body with the human grantor's own key
+# (e.g. ``atp_identity.sign_root_request`` bound to a key directory).
+RootSigner = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 class GatewayError(Exception):
@@ -131,32 +136,57 @@ class TrustPlaneClient:
         timeout: float = 10.0,
         operator_key: str | None = None,
         agent_token: str | None = None,
+        sign_root: RootSigner | None = None,
     ) -> None:
+        """``sign_root`` signs a root delegation body with the human grantor's
+        own key before it is sent (see ``issue_delegation``); the operator key
+        alone cannot create a root grant."""
         self._http = httpx.Client(base_url=base_url, timeout=timeout)
         self._operator_key = operator_key
         self._agent_token = agent_token
+        self._sign_root = sign_root
 
     @classmethod
     def for_app(
-        cls, app: Any, *, operator_key: str | None = None, agent_token: str | None = None
+        cls,
+        app: Any,
+        *,
+        operator_key: str | None = None,
+        agent_token: str | None = None,
+        sign_root: RootSigner | None = None,
     ) -> TrustPlaneClient:
-        """In-process client over an ASGI app (no sockets, real routing)."""
+        """In-process client over an ASGI app (no sockets, real routing).
+
+        Without ``sign_root`` it signs roots with the keys the app's runtime
+        holds in this process (``Runtime.root_signer``): the ATP home's local
+        human, or any human on an ephemeral gateway."""
         client = cls.__new__(cls)
         client._http = httpx.Client(
             transport=_SyncASGITransport(app), base_url="http://trust-plane"
         )
         client._operator_key = operator_key
         client._agent_token = agent_token
+        if sign_root is None:
+            runtime = getattr(getattr(app, "state", None), "runtime", None)
+            make = getattr(runtime, "root_signer", None)
+            sign_root = make() if callable(make) else None
+        client._sign_root = sign_root
         return client
 
     @classmethod
     def from_http(
-        cls, http: httpx.Client, *, operator_key: str | None = None, agent_token: str | None = None
+        cls,
+        http: httpx.Client,
+        *,
+        operator_key: str | None = None,
+        agent_token: str | None = None,
+        sign_root: RootSigner | None = None,
     ) -> TrustPlaneClient:
         client = cls.__new__(cls)
         client._http = http
         client._operator_key = operator_key
         client._agent_token = agent_token
+        client._sign_root = sign_root
         return client
 
     def as_agent(self, agent_token: str) -> TrustPlaneClient:
@@ -166,6 +196,7 @@ class TrustPlaneClient:
         client._http = self._http
         client._operator_key = None
         client._agent_token = agent_token
+        client._sign_root = None
         return client
 
     def as_operator(self, operator_key: str) -> TrustPlaneClient:
@@ -173,6 +204,7 @@ class TrustPlaneClient:
         client._http = self._http
         client._operator_key = operator_key
         client._agent_token = None
+        client._sign_root = self._sign_root
         return client
 
     def with_operator(self, operator_key: str) -> TrustPlaneClient:
@@ -181,6 +213,7 @@ class TrustPlaneClient:
         client._http = self._http
         client._operator_key = operator_key
         client._agent_token = self._agent_token
+        client._sign_root = self._sign_root
         return client
 
     @property
@@ -326,7 +359,17 @@ class TrustPlaneClient:
         return result
 
     def issue_delegation(self, request: dict[str, Any]) -> dict[str, Any]:
-        result: dict[str, Any] = self._request("POST", "/delegations", json=request)
+        """Issue a grant. A root grant (no ``parent_grant_id``) must be signed
+        by the human grantor's own key: with ``sign_root`` set and no
+        ``signature`` in the body, the client signs it first."""
+        body = dict(request)
+        if (
+            self._sign_root is not None
+            and body.get("parent_grant_id") is None
+            and not body.get("signature")
+        ):
+            body = self._sign_root(body)
+        result: dict[str, Any] = self._request("POST", "/delegations", json=body)
         return result
 
     def revoke_delegation(self, grant_id: str) -> dict[str, Any]:

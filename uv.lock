@@ -334,10 +334,14 @@ version = "0.3.2"
 source = { editable = "packages/identity" }
 dependencies = [
     { name = "atp-core" },
+    { name = "cryptography" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "atp-core", editable = "packages/core" }]
+requires-dist = [
+    { name = "atp-core", editable = "packages/core" },
+    { name = "cryptography", specifier = ">=50" },
+]
 
 [[package]]
 name = "atp-policy"

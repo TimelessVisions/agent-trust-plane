@@ -625,6 +625,32 @@ def _cmd_keygen(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_principal_keygen(args: argparse.Namespace) -> int:
+    """Create a human principal's Ed25519 key pair. Root delegations for that
+    human must be signed with it; the gateway trusts the ``.pub``."""
+    from atp_identity import FilePrincipalKeys
+
+    if args.dir:
+        directory = Path(args.dir)
+    else:
+        from atp_cli.home import AtpHome
+
+        directory = AtpHome(args.home).principals_dir
+    keys = FilePrincipalKeys(directory)
+    try:
+        kid = keys.generate(args.human_id)
+    except FileExistsError as exc:
+        raise UsageError(f"{exc}; refusing to overwrite a principal key") from exc
+    except ValueError as exc:
+        raise UsageError(f"invalid principal id {args.human_id!r}") from exc
+    print(
+        f"wrote {keys.private_path(args.human_id)} (private, mode 600) and "
+        f"{keys.public_path(args.human_id)}; kid {kid}. Give the gateway the .pub "
+        "(ATP_PRINCIPAL_KEYS_DIR); keep the .key with the human, who signs root delegations."
+    )
+    return 0
+
+
 def _cmd_mcp_proxy(args: argparse.Namespace) -> int:
     from atp_adapter_mcp.proxy import main as proxy_main
 
@@ -876,6 +902,16 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("--home", help="ATP home to rotate (default: $ATP_HOME or ./.atp)")
     k.add_argument("--env", metavar="PATH", help="serve .env to rotate instead of the home")
     k.set_defaults(func=_cmd_keygen)
+
+    pr = sub.add_parser("principal", help="human principal keys (root delegations are signed)")
+    pr_sub = pr.add_subparsers(dest="principal_command", required=True)
+    pk = pr_sub.add_parser(
+        "keygen", help="create HUMAN_ID's Ed25519 key pair (<id>.key mode 600, <id>.pub)"
+    )
+    pk.add_argument("human_id", metavar="HUMAN_ID")
+    pk.add_argument("--home", help="ATP home (default: $ATP_HOME or ./.atp); keys in principals/")
+    pk.add_argument("--dir", metavar="DIR", help="write the key pair to DIR instead of a home")
+    pk.set_defaults(func=_cmd_principal_keygen)
     return p
 
 

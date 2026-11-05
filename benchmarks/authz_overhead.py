@@ -111,22 +111,23 @@ def _payment_envelope(grant_id: str) -> ActionEnvelope:
 # ------------------------------------------------------------ A: engine only
 def bench_engine(n: int) -> list[dict[str, Any]]:
     from atp_core import AuthorityConstraints, Money
-    from atp_identity import DelegationRequest
+    from atp_identity import DelegationRequest, EphemeralPrincipalKeys, sign_root_request
 
-    svc = DelegationService(InMemoryDelegationStore())
+    keys = EphemeralPrincipalKeys()
+    svc = DelegationService(InMemoryDelegationStore(), principal_keys=keys)
     now = datetime.now(UTC)
-    root = svc.issue(
-        DelegationRequest(
-            label="root",
-            grantor=HUMAN,
-            grantee=HUMAN,
-            capabilities=frozenset({"pay:vendor"}),
-            resource_scope=("vendor:*",),
-            constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
-            expires_at=now + timedelta(days=1),
-        ),
-        now=now,
+    unsigned = DelegationRequest(
+        label="root",
+        grantor=HUMAN,
+        grantee=HUMAN,
+        capabilities=frozenset({"pay:vendor"}),
+        resource_scope=("vendor:*",),
+        constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
+        expires_at=now + timedelta(days=1),
     )
+    # The human signs its own root (C5).
+    signed = sign_root_request(unsigned.model_dump(mode="json", exclude_none=True), keys, now=now)
+    root = svc.issue(DelegationRequest.model_validate(signed), now=now)
     ap = svc.issue(
         DelegationRequest(
             label="ap",
@@ -233,7 +234,7 @@ def bench_gateway_sqlite(n: int) -> dict[str, Any]:
 
 
 def bench_gateway_http(n: int, gw: LocalGateway) -> dict[str, Any]:
-    client = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+    client = gw.operator_client()
     return _bench_gateway(client, n, "C. gateway authorize+execute (HTTP loopback)")
 
 
@@ -277,7 +278,7 @@ def bench_mcp(n: int, gw: LocalGateway) -> tuple[dict[str, Any], dict[str, Any],
     direct_dir, proxy_dir = tmp / "direct", tmp / "proxy"
     direct_dir.mkdir()
     proxy_dir.mkdir()
-    operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+    operator = gw.operator_client()
     agent = PrincipalRef(id="bench-agent", kind=PrincipalKind.AGENT)
     human = PrincipalRef(id="bench-human", kind=PrincipalKind.HUMAN)
     token = operator.issue_credential(agent.model_dump(mode="json"), label="bench")["token"]

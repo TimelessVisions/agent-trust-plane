@@ -36,6 +36,7 @@ from gateway_fixtures import (
     issue_credential,
     op,
     payment_envelope,
+    sign_root_body,
     usd,
 )
 
@@ -66,15 +67,17 @@ def budget_chain(
     if currencies:
         root_constraints["currencies"] = currencies
     root = issue(
-        {
-            "label": "root",
-            "grantor": HUMAN.model_dump(mode="json"),
-            "grantee": HUMAN.model_dump(mode="json"),
-            "capabilities": ["pay:vendor"],
-            "resource_scope": ["vendor:*"],
-            "constraints": root_constraints,
-            "expires_at": (NOW + timedelta(days=90)).isoformat(),
-        },
+        sign_root_body(
+            {
+                "label": "root",
+                "grantor": HUMAN.model_dump(mode="json"),
+                "grantee": HUMAN.model_dump(mode="json"),
+                "capabilities": ["pay:vendor"],
+                "resource_scope": ["vendor:*"],
+                "constraints": root_constraints,
+                "expires_at": (NOW + timedelta(days=90)).isoformat(),
+            }
+        ),
         op(),
     )
     orch_constraints: dict[str, Any] = {"max_amount": usd("10000")}

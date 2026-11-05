@@ -186,7 +186,7 @@ def demo_mcp(out_dir: Path | None = None) -> int:
     notes_dir.mkdir(parents=True, exist_ok=True)
 
     with LocalGateway() as gw:
-        operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+        operator = gw.operator_client()
         agent = {"id": "notes-assistant", "kind": "agent"}
         human = {"id": "alice", "kind": "human"}
         token = operator.issue_credential(agent, label="demo")["token"]

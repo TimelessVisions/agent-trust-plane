@@ -17,9 +17,7 @@ A ``.pub`` that is neither active nor retired is never trusted.
 from __future__ import annotations
 
 import contextlib
-import os
 import re
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -39,6 +37,7 @@ from cryptography.hazmat.primitives.serialization import (
 
 from atp_core import utcnow
 from atp_gateway.grants import GrantSigner, GrantVerifier, kid_for
+from atp_identity.keys import ensure_private_dir, write_file_atomic
 
 KID_ENV = "ATP_GRANT_SIGNING_KID"
 KEYS_DIR_ENV = "ATP_GRANT_KEYS_DIR"
@@ -64,37 +63,8 @@ def _check_kid(kid: str) -> str:
     return kid
 
 
-def write_file_atomic(path: Path, data: bytes, *, private: bool) -> None:
-    """Write via a temp file in the same directory and ``os.replace``.
-
-    ``private``: the temp file is created with mode 0600 before any byte is
-    written, so the secret is never world-readable, even briefly. Windows
-    ignores the mode bits; the directory ACL applies there.
-    """
-    path = Path(path)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        if private:
-            with contextlib.suppress(OSError):
-                os.chmod(tmp, 0o600)
-        else:
-            with contextlib.suppress(OSError):
-                os.chmod(tmp, 0o644)
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
-
-
 def _ensure_dir(keys_dir: Path) -> None:
-    keys_dir.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(OSError):
-        os.chmod(keys_dir, 0o700)
+    ensure_private_dir(keys_dir)
 
 
 def generate_grant_key(keys_dir: Path) -> str:
