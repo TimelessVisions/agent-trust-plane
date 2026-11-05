@@ -6,17 +6,31 @@ approval or an approver without the role denies; one approval, one grant.
 
 from __future__ import annotations
 
+import sqlite3
 import threading
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
-from atp_core import ActionEnvelope
+from atp_core import ActionEnvelope, PrincipalKind, PrincipalRef
 from atp_gateway import GatewaySettings, Runtime, build_runtime, create_app
+from atp_gateway.approvals import (
+    SIGNATURE_DOMAIN,
+    ApprovalClaims,
+    ApprovalRecord,
+    ApprovalStatus,
+    InMemoryApprovalStore,
+    SqliteApprovalStore,
+    decode_signature,
+    encode_signature,
+)
 
 from gateway_fixtures import (
     GRANT_KEY_SETTINGS,
+    NOW,
     OPERATOR_KEY,
     Clock,
     authorize,
@@ -189,3 +203,109 @@ def test_concurrent_retries_mint_one_grant(tmp_path: Path) -> None:
     finally:
         a.close()
         b.close()
+
+
+# ------------------------------------------------- store and signature hardening
+def _stored_record(runtime: Runtime, trace_id: str) -> Any:
+    records = runtime.trust_plane.approvals.for_trace(trace_id)
+    assert len(records) == 1
+    return records[0]
+
+
+def _overwrite(runtime: Runtime, record: Any) -> None:
+    """Simulate someone with write access to the store editing a row."""
+    store = runtime.trust_plane.approvals
+    if isinstance(store, InMemoryApprovalStore):
+        store._records[record.claims.approval_id] = record
+    else:
+        assert isinstance(store, SqliteApprovalStore)
+        store._conn.execute(
+            "UPDATE approvals SET claims = ?, signature = ? WHERE approval_id = ?",
+            (record.claims.model_dump_json(), record.signature, record.claims.approval_id),
+        )
+        store._conn.commit()
+
+
+def test_tampered_approval_claims_invalid(
+    client: TestClient, runtime: Runtime, clock: Clock
+) -> None:
+    _, token, env = _setup(client, runtime)
+    assert _approve(client, env["trace_id"], expires_in="60s").status_code == 201
+    record = _stored_record(runtime, env["trace_id"])
+    later = record.claims.expires_at + timedelta(hours=12)
+    _overwrite(
+        runtime,
+        record.model_copy(
+            update={"claims": record.claims.model_copy(update={"expires_at": later})}
+        ),
+    )
+    clock.advance(seconds=120)
+    out = authorize(client, env, token)
+    assert out["decision"]["outcome"] == "DENY"
+    assert out["decision"]["reason_code"] == "APPROVAL_INVALID"
+    assert out["execution_grant"] is None
+
+
+def test_tampered_approval_signature_invalid(client: TestClient, runtime: Runtime) -> None:
+    _, token, env = _setup(client, runtime)
+    assert _approve(client, env["trace_id"]).status_code == 201
+    record = _stored_record(runtime, env["trace_id"])
+    sig = bytearray(decode_signature(record.signature))
+    sig[0] ^= 0x01
+    _overwrite(runtime, record.model_copy(update={"signature": encode_signature(bytes(sig))}))
+    out = authorize(client, env, token)
+    assert out["decision"]["outcome"] == "DENY"
+    assert out["decision"]["reason_code"] == "APPROVAL_INVALID"
+    assert out["execution_grant"] is None
+
+
+def test_sign_detached_rejects_grant_style_input(runtime: Runtime) -> None:
+    signer = runtime.trust_plane.signer
+    grant_like = b"eyJhbGciOiJFZERTQSIsImtpZCI6ImsxIiwidiI6ImF0cC1ncmFudC8yIn0.eyJ4IjoxfQ"
+    with pytest.raises(ValueError, match="domain-tag"):
+        signer.sign_detached(grant_like)
+    # An approval signing input carries the domain tag and is accepted.
+    assert signer.sign_detached(SIGNATURE_DOMAIN + b"{}")
+
+
+def _claims(approval_id: str) -> ApprovalClaims:
+    return ApprovalClaims(
+        approval_id=approval_id,
+        trace_id="0123456789ab",
+        envelope_id="env_x",
+        action_hash="h" * 64,
+        decision_id="dec_x",
+        approver=PrincipalRef(id="alice", kind=PrincipalKind.HUMAN),
+        approver_role="finance-manager",
+        decision="approve",
+        issued_at=NOW,
+        expires_at=NOW + timedelta(minutes=15),
+        kid="k1",
+    )
+
+
+def test_sqlite_use_is_single_winner_across_connections(tmp_path: Path) -> None:
+    db = tmp_path / "approvals.db"
+    conns = [sqlite3.connect(db, check_same_thread=False, timeout=30) for _ in range(2)]
+    try:
+        stores = [SqliteApprovalStore(c) for c in conns]
+        stores[0].put(
+            ApprovalRecord(claims=_claims("apr_1"), signature="sig", status=ApprovalStatus.APPROVED)
+        )
+        barrier = threading.Barrier(2)
+        results: list[bool] = []
+
+        def use(store: SqliteApprovalStore) -> None:
+            barrier.wait()
+            results.append(store.use("apr_1", NOW))
+
+        threads = [threading.Thread(target=use, args=(s,)) for s in stores]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert sorted(results) == [False, True]
+        assert stores[1].for_trace("0123456789ab")[0].status is ApprovalStatus.USED
+    finally:
+        for c in conns:
+            c.close()

@@ -101,3 +101,24 @@ grant itself is still single-use and short-lived, so an approval authorizes
 at most one execution. Policy is re-evaluated on the retry: if the delegation
 was revoked, or the action is now denied outright, the approval does not
 help.
+
+## What the trace shows afterwards
+
+A trace keeps its first decision as its headline. After an approved retry
+executes, `atp trace list` and `GET /traces/{trace_id}` (`get_trace`) still
+show `REQUIRE_APPROVAL`, the decision that opened the trace. The approval and
+the ALLOW that followed it are in the trace's events: `approval_requested`,
+`approval_granted`, then the retry's `decision_made` (ALLOW, with the
+`approval_id`), `grant_issued` and the execution events.
+
+## Denial and expiry are final for the trace
+
+A denial (`--deny`) and an expired approval close the question for that
+trace: retrying the identical envelope keeps returning `APPROVAL_DENIED` or
+`APPROVAL_EXPIRED`, and the trace cannot be approved again
+(`APPROVAL_ALREADY_DECIDED`). To try again, the agent makes the call afresh:
+an identical tool call made as a new action gets a new trace id, so it opens
+a new trace and, if policy still says so, a new approval request. Through the MCP proxy this happens on its own: the
+proxy re-sends the original envelope only once, for the retry right after a
+`REQUIRE_APPROVAL`; the call after a denial or expiry gets a new envelope and
+trace.
