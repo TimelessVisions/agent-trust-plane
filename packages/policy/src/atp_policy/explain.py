@@ -151,7 +151,10 @@ def _changes(
         ReasonCode.APPROVAL_REQUIRED_BY_POLICY,
     ):
         role = decision.approval.approver_role if decision.approval else "an approver"
-        out.append(f"obtain {role} approval (no approval endpoint exists in this release)")
+        out.append(
+            f"obtain {role} approval (`atp approve {decision.trace_id} --as <id>`), "
+            "then retry the identical action"
+        )
         if lim is not None:
             out.append(f"or stay at or under the auto-approval threshold {_fmt(lim)}")
     elif rc.value.startswith("DELEGATION_"):

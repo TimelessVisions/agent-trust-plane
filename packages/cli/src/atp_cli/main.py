@@ -10,6 +10,7 @@ The loop:
   atp policy impact --from A --to B         what a policy change does to recorded actions
   atp mutate TRACE                          probe the policy around a recorded action, offline
   atp evidence export TRACE                 portable, hash-checked bundle for review
+  atp approve TRACE --as ID                 approve a REQUIRE_APPROVAL decision; retry runs once
   atp migrate FILE...                       add `version: 1` to older atp-mcp.yaml,
                                             policies.yaml and regression suites
 
@@ -499,6 +500,71 @@ def _cmd_evidence_verify(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _approver(raw: str) -> dict[str, str]:
+    kind, _, ident = raw.rpartition(":")
+    return {"id": ident, "kind": kind or "human"}
+
+
+def _cmd_approve(args: argparse.Namespace) -> int:
+    """Approve (or --deny) a REQUIRE_APPROVAL trace in the local home, or on a
+    gateway with --gateway (operator key)."""
+    from pydantic import ValidationError
+
+    from atp_core import ATPError, PrincipalRef
+
+    decision = "deny" if args.deny else "approve"
+    try:
+        approver = PrincipalRef.model_validate(_approver(args.approver))
+    except ValidationError as exc:
+        raise UsageError(f"invalid --as {args.approver!r}") from exc
+    if args.gateway:
+        from atp_adapter_http import GatewayError, TrustPlaneClient
+
+        key = args.operator_key or os.environ.get("ATP_OPERATOR_KEY")
+        if not key:
+            raise UsageError(
+                "--gateway needs the operator key (--operator-key or $ATP_OPERATOR_KEY)"
+            )
+        try:
+            with TrustPlaneClient(args.gateway, operator_key=key) as client:
+                body = client.approve(
+                    args.trace,
+                    approver.model_dump(mode="json"),
+                    decision=decision,
+                    expires_in=args.expires,
+                )
+        except GatewayError as exc:
+            raise UsageError(f"{exc.reason_code}: {exc.message}") from exc
+        expires_at = body["expires_at"]
+        approval_id = body["approval_id"]
+        role = body["approver_role"]
+    else:
+        from atp_gateway.approvals import parse_duration
+
+        try:
+            ttl = parse_duration(args.expires)
+        except ValueError as exc:
+            raise UsageError(str(exc)) from exc
+        runtime = _open_home(args.home)
+        try:
+            record = runtime.trust_plane.approve(args.trace, approver, decision, expires_in=ttl)
+        except ATPError as exc:
+            raise UsageError(f"{exc.reason_code.value}: {exc.message}") from exc
+        finally:
+            runtime.close()
+        expires_at = record.claims.expires_at.isoformat()
+        approval_id = record.claims.approval_id
+        role = record.claims.approver_role
+    if decision == "deny":
+        print(f"denied trace {args.trace} as {approver} ({role}); approval {approval_id}")
+    else:
+        print(
+            f"approved trace {args.trace} as {approver} ({role}); approval {approval_id} "
+            f"is good for one retry of the identical action until {expires_at}"
+        )
+    return 0
+
+
 def _cmd_migrate(args: argparse.Namespace) -> int:
     from atp_cli.migrate import run_migrate
 
@@ -703,6 +769,25 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--name")
     r.add_argument("--operator-key")
     r.set_defaults(func=_cmd_record)
+
+    ap = sub.add_parser(
+        "approve", help="approve or deny a REQUIRE_APPROVAL decision (one grant on retry)"
+    )
+    ap.add_argument("trace")
+    ap.add_argument(
+        "--as",
+        dest="approver",
+        required=True,
+        metavar="APPROVER_ID",
+        help="who approves: an id (human) or kind:id; must hold the approver role "
+        "($ATP_APPROVER_ROLES)",
+    )
+    ap.add_argument("--deny", action="store_true", help="record a final denial instead")
+    ap.add_argument("--expires", default="15m", help="approval lifetime (default 15m, max 24h)")
+    ap.add_argument("--gateway", metavar="URL", help="approve on a remote gateway instead")
+    ap.add_argument("--operator-key", help="for --gateway (default: $ATP_OPERATOR_KEY)")
+    _home_arg(ap)
+    ap.set_defaults(func=_cmd_approve)
 
     # policy
     po = sub.add_parser("policy", help="explain, diff, impact and coverage")

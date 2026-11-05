@@ -17,6 +17,7 @@ Who may call what:
 | GET  /agents/{id}/credentials    |                  | required     |
 | POST /credentials/{id}/revoke    |                  | required     |
 | POST /evals/run                  |                  | required     |
+| POST /approvals/{trace_id}       |                  | required     |
 | GET  /traces*, /ledger/payments,        |                  |              |
 |      /delegations/{id}[/chain], /vendors,|                  |              |
 |      /evals/results; POST /replay        |                  | required     |
@@ -31,8 +32,11 @@ from fastapi import APIRouter, Query, Request
 
 from atp_audit import TraceSummary
 from atp_core import ActionEnvelope, ATPError, PrincipalKind, ReasonCode
+from atp_gateway.approvals import parse_duration
 from atp_gateway.auth import Agent, IsOperator, MaybeAgent, Operator
 from atp_gateway.schemas import (
+    ApprovalRequest,
+    ApprovalView,
     CredentialIssued,
     CredentialIssueRequest,
     CredentialView,
@@ -163,6 +167,36 @@ def replay(
     set. Never executes, never mints a grant."""
     version = body.policy_set_version if body else None
     return _tp(request).replay(trace_id, policy_set_version=version)
+
+
+# ------------------------------------------------------------------ approvals
+@router.post(
+    "/approvals/{trace_id}", response_model=ApprovalView, status_code=201, tags=["control"]
+)
+def approve(trace_id: str, body: ApprovalRequest, request: Request, _: Operator) -> ApprovalView:
+    """Approve or deny a REQUIRE_APPROVAL decision. Operator key required; the
+    approver must hold the decision's ``approver_role``. The approval is bound
+    to the trace's ``action_hash``, signed with the active grant key, and good
+    for one grant: the agent re-submits the identical envelope to get it."""
+    try:
+        ttl = parse_duration(body.expires_in)
+    except ValueError as exc:
+        raise ATPError(ReasonCode.APPROVAL_INVALID, str(exc)) from exc
+    record = _tp(request).approve(trace_id, body.approver, body.decision, expires_in=ttl)
+    c = record.claims
+    return ApprovalView(
+        approval_id=c.approval_id,
+        trace_id=c.trace_id,
+        action_hash=c.action_hash,
+        approver=c.approver,
+        approver_role=c.approver_role,
+        decision=c.decision,
+        status=record.status.value,
+        issued_at=c.issued_at,
+        expires_at=c.expires_at,
+        kid=c.kid,
+        signature=record.signature,
+    )
 
 
 # ----------------------------------------------------------------- delegation

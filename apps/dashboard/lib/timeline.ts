@@ -127,6 +127,12 @@ export function buildTimeline(view: TraceView): TimelineStep[] {
       case "approval_requested":
         steps.push(step(ev, i, "Human approval requested", "warn", str(p["approver_role"])));
         break;
+      case "approval_granted":
+        steps.push(step(ev, i, "Approved by a human", "ok", `${str(p["approver_role"])}, expires ${str(p["expires_at"])}`));
+        break;
+      case "approval_denied":
+        steps.push(step(ev, i, "Denied by a human approver", "bad", str(p["approver_role"])));
+        break;
       case "grant_issued":
         steps.push(step(ev, i, "Single-use execution grant issued", "ok", `expires ${str(p["expires_at"])}`));
         break;

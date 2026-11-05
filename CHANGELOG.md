@@ -7,6 +7,21 @@ changes may land in minor versions and are called out).
 ## [Unreleased]
 
 ### Added
+- A working `REQUIRE_APPROVAL` path. `POST /approvals/{trace_id}` (operator
+  key; body `{approver, decision: "approve"|"deny", expires_in: "15m"}`) and
+  `atp approve TRACE_ID --as APPROVER_ID [--deny] [--expires 15m]` (local
+  home, or `--gateway URL` with `$ATP_OPERATOR_KEY`) record a decision bound
+  to the trace's `action_hash` and signed with the active grant key. The
+  approver must hold the decision's `approver_role` in the new
+  `ATP_APPROVER_ROLES` setting (`human:alice=finance-manager;...`). When the
+  agent re-submits the identical envelope, the gateway mints exactly one
+  grant; a second retry is `APPROVAL_ALREADY_USED`. New reason codes
+  `APPROVAL_ALREADY_USED`, `APPROVAL_DENIED`, `APPROVAL_EXPIRED`,
+  `APPROVAL_INVALID`, `APPROVAL_NOT_REQUESTED`, `APPROVAL_ALREADY_DECIDED`,
+  `APPROVER_ROLE_MISSING`; new audit events `approval_granted` and
+  `approval_denied`. The MCP proxy's REQUIRE_APPROVAL denial names the trace
+  and `atp approve <trace>`, and re-sends the same envelope when the agent
+  repeats the identical call. See `docs/policies/approvals.md`.
 - `atp keygen --rotate` makes a new active grant key for the ATP home
   (`--home`, `$ATP_HOME` or `./.atp`), or for a serve `.env` with
   `--env PATH`. The old private key is deleted, and its public key keeps

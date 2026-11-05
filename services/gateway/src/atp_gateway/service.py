@@ -13,16 +13,17 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atp_audit import EventType, IntegrityReport, TraceEvent, TraceStore, TraceSummary
 from atp_core import (
     ActionEnvelope,
+    ApprovalRequirement,
     ATPError,
     Decision,
     DecisionOutcome,
@@ -30,11 +31,23 @@ from atp_core import (
     EffectiveAuthority,
     EnforcementMode,
     GrantError,
+    PrincipalRef,
     ReasonCode,
     ToolError,
+    new_id,
     utcnow,
 )
 from atp_core.sqlite import no_transaction
+from atp_gateway.approvals import (
+    ApprovalClaims,
+    ApprovalRecord,
+    ApprovalStatus,
+    ApprovalStore,
+    InMemoryApprovalStore,
+    decode_signature,
+    encode_signature,
+    roles_for,
+)
 from atp_gateway.grants import (
     GrantClaims,
     GrantSigner,
@@ -139,6 +152,8 @@ class TrustPlane:
         identity: IdentityProvider | None = None,
         transaction: Callable[[], AbstractContextManager[None]] = no_transaction,
         verifier: GrantVerifier | None = None,
+        approvals: ApprovalStore | None = None,
+        approver_roles: Mapping[str, frozenset[str]] | None = None,
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
@@ -159,6 +174,10 @@ class TrustPlane:
         # grant-state change commit together (one fsync) or roll back together.
         self.transaction = transaction
         self.engine = PolicyEngine()
+        self.approvals: ApprovalStore = approvals or InMemoryApprovalStore()
+        # "kind:id" -> roles. Operator-configured (ATP_APPROVER_ROLES); the only
+        # place a principal holds a role.
+        self.approver_roles: dict[str, frozenset[str]] = dict(approver_roles or {})
         # One lock around each state-changing operation: the MVP stores share a
         # single SQLite connection and the trace chain must not interleave.
         self._lock = threading.RLock()
@@ -313,6 +332,9 @@ class TrustPlane:
         decision = self.engine.evaluate(policy_set, ctx).model_copy(
             update={"enforcement": self.enforcement_mode}
         )
+        used_approval: ApprovalRecord | None = None
+        if decision.outcome is DecisionOutcome.REQUIRE_APPROVAL and decision.approval:
+            decision, used_approval = self._apply_approval(envelope, decision, now)
         self._record_decision(decision)
 
         grant: IssuedGrant | None = None
@@ -340,6 +362,7 @@ class TrustPlane:
                     "action_hash": claims.action_hash,
                     "single_use": True,
                     "kid": self.signer.kid,
+                    **({"approval_id": used_approval.claims.approval_id} if used_approval else {}),
                 },
             )
         elif decision.outcome is DecisionOutcome.REQUIRE_APPROVAL and decision.approval:
@@ -365,6 +388,153 @@ class TrustPlane:
             )
 
         return AuthorizationResult(decision=decision, execution_grant=grant)
+
+    # -------------------------------------------------------------- approvals
+    def _apply_approval(
+        self, envelope: ActionEnvelope, decision: Decision, now: datetime
+    ) -> tuple[Decision, ApprovalRecord | None]:
+        """Turn a REQUIRE_APPROVAL into ALLOW when a valid, unused approval for
+        this trace and this exact ``action_hash`` exists, and use it up. Runs
+        inside the authorize transaction, so the use and the grant commit
+        together. No matching approval: the decision is unchanged."""
+        requirement = decision.approval
+        assert requirement is not None
+        matching = [
+            r
+            for r in self.approvals.for_trace(envelope.trace_id)
+            if r.claims.action_hash == envelope.action_hash
+        ]
+        if not matching:
+            return decision, None
+        record = matching[-1]
+        claims = record.claims
+
+        def deny(code: ReasonCode, message: str) -> tuple[Decision, None]:
+            return (
+                decision.model_copy(
+                    update={
+                        "outcome": DecisionOutcome.DENY,
+                        "reason_code": code,
+                        "explanation": message,
+                    }
+                ),
+                None,
+            )
+
+        try:
+            self.verifier.verify_detached(
+                claims.kid, claims.signing_input(), decode_signature(record.signature), now=now
+            )
+        except (GrantError, ValueError):
+            return deny(ReasonCode.APPROVAL_INVALID, "the recorded approval does not verify")
+        if record.status is ApprovalStatus.DENIED:
+            return deny(
+                ReasonCode.APPROVAL_DENIED,
+                f"{claims.approver} ({claims.approver_role}) denied this action",
+            )
+        if claims.approver_role != requirement.approver_role:
+            return deny(
+                ReasonCode.APPROVER_ROLE_MISSING,
+                f"the approval was given as {claims.approver_role}; this action requires "
+                f"{requirement.approver_role}",
+            )
+        if record.status is ApprovalStatus.USED:
+            return deny(
+                ReasonCode.APPROVAL_ALREADY_USED,
+                f"approval {claims.approval_id} was already used for one execution grant",
+            )
+        if claims.is_expired(now):
+            return deny(
+                ReasonCode.APPROVAL_EXPIRED,
+                f"approval {claims.approval_id} expired at {claims.expires_at.isoformat()}",
+            )
+        if not self.approvals.use(claims.approval_id, now):
+            return deny(
+                ReasonCode.APPROVAL_ALREADY_USED,
+                f"approval {claims.approval_id} was already used for one execution grant",
+            )
+        allowed = decision.model_copy(
+            update={
+                "outcome": DecisionOutcome.ALLOW,
+                "reason_code": ReasonCode.ALLOWED,
+                "explanation": f"{decision.explanation}; approved by {claims.approver} "
+                f"({claims.approver_role}), approval {claims.approval_id}",
+                "approval": None,
+            }
+        )
+        return allowed, record
+
+    def approve(
+        self,
+        trace_id: str,
+        approver: PrincipalRef,
+        decision: Literal["approve", "deny"],
+        *,
+        expires_in: timedelta,
+    ) -> ApprovalRecord:
+        """Record a human decision on a REQUIRE_APPROVAL trace. The caller has
+        already authenticated as the operator; the approver must hold the
+        decision's ``approver_role`` in the configured role map. One decision
+        per trace: approve or deny, and it is final."""
+        with self._lock, self.transaction():
+            now = self.clock()
+            view = self.get_trace(trace_id)
+            original = view.decision
+            if (
+                original is None
+                or view.envelope is None
+                or original.outcome is not DecisionOutcome.REQUIRE_APPROVAL
+                or original.approval is None
+            ):
+                raise ATPError(
+                    ReasonCode.APPROVAL_NOT_REQUESTED,
+                    f"trace {trace_id} has no REQUIRE_APPROVAL decision to approve",
+                )
+            requirement: ApprovalRequirement = original.approval
+            if requirement.approver_role not in roles_for(self.approver_roles, approver):
+                raise ATPError(
+                    ReasonCode.APPROVER_ROLE_MISSING,
+                    f"{approver} does not hold the role {requirement.approver_role!r} "
+                    "this action requires (configure ATP_APPROVER_ROLES)",
+                )
+            existing = self.approvals.for_trace(trace_id)
+            if existing:
+                prior = existing[-1]
+                raise ATPError(
+                    ReasonCode.APPROVAL_ALREADY_DECIDED,
+                    f"trace {trace_id} already has a {prior.status.value} decision by "
+                    f"{prior.claims.approver}; approvals are final",
+                )
+            claims = ApprovalClaims(
+                approval_id=new_id("apr"),
+                trace_id=trace_id,
+                envelope_id=view.envelope.envelope_id,
+                action_hash=original.action_hash,
+                decision_id=original.decision_id,
+                approver=approver,
+                approver_role=requirement.approver_role,
+                decision=decision,
+                issued_at=now,
+                expires_at=now + expires_in,
+                kid=self.signer.kid,
+            )
+            record = ApprovalRecord(
+                claims=claims,
+                signature=encode_signature(self.signer.sign_detached(claims.signing_input())),
+                status=ApprovalStatus.APPROVED if decision == "approve" else ApprovalStatus.DENIED,
+            )
+            self.approvals.put(record)
+            self.traces.append(
+                trace_id,
+                EventType.APPROVAL_GRANTED if decision == "approve" else EventType.APPROVAL_DENIED,
+                GATEWAY_ACTOR,
+                {
+                    **claims.model_dump(mode="json"),
+                    "signature": record.signature,
+                    "authorized_by": "operator",
+                },
+            )
+            return record
 
     def report_shadow_outcome(
         self,

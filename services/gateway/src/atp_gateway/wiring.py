@@ -9,6 +9,12 @@ from typing import Any
 
 from atp_audit import InMemoryTraceStore, SqliteTraceStore, TraceStore
 from atp_core.sqlite import SqliteUnitOfWork, no_transaction
+from atp_gateway.approvals import (
+    ApprovalStore,
+    InMemoryApprovalStore,
+    SqliteApprovalStore,
+    parse_approver_roles,
+)
 from atp_gateway.grants import GrantStore, InMemoryGrantStore, SqliteGrantStore
 from atp_gateway.reports import EvalReportStore, InMemoryEvalReportStore, SqliteEvalReportStore
 from atp_gateway.service import TrustPlane
@@ -80,6 +86,9 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     credential_store: CredentialStore
     ledger: PaymentLedger
     reports: EvalReportStore
+    approvals: ApprovalStore
+    # Parsed before the database is touched: a bad role map refuses to start.
+    approver_roles = parse_approver_roles(settings.approver_roles)
 
     if settings.database_path == ":memory:":
         conn = None
@@ -89,6 +98,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         credential_store = InMemoryCredentialStore()
         ledger = InMemoryPaymentLedger()
         reports = InMemoryEvalReportStore()
+        approvals = InMemoryApprovalStore()
     else:
         path = Path(settings.database_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +112,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         credential_store = SqliteCredentialStore(conn)
         ledger = SqlitePaymentLedger(conn)
         reports = SqliteEvalReportStore(conn)
+        approvals = SqliteApprovalStore(conn)
 
     vendors = InMemoryVendorDirectory(DEMO_VENDORS)
     tools = ToolRegistry()
@@ -131,6 +142,8 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         grant_ttl_seconds=settings.grant_ttl_seconds,
         enforcement_mode=settings.enforcement_mode,
         transaction=transaction,
+        approvals=approvals,
+        approver_roles=approver_roles,
     )
     return Runtime(
         trust_plane=trust_plane,

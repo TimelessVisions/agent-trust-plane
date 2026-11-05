@@ -31,6 +31,7 @@ import json
 import logging
 import re
 import sys
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -47,7 +48,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 from atp_adapter_http import AgentClient, GatewayError, TrustPlaneClient
 from atp_adapter_mcp.config import ProxyConfig, UpstreamConfig, shared_upstream_warning
 from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY
-from atp_core import ActionEnvelope, Provenance, canonical_json, new_trace_id
+from atp_core import ActionEnvelope, Provenance, canonical_hash, canonical_json, new_trace_id
 
 log = logging.getLogger("atp.mcp-proxy")
 
@@ -165,6 +166,10 @@ class TrustPlaneProxy:
         self.client = client
         self.upstream = upstream
         self.delegation_grant_id: str = config.delegation_grant_id or ""
+        # Calls that got REQUIRE_APPROVAL, keyed by (tool, arguments). The same
+        # call again re-submits the same envelope (same trace, same action
+        # hash) so an approval recorded on that trace can authorize it once.
+        self._awaiting_approval: OrderedDict[str, ActionEnvelope] = OrderedDict()
         self.server: Server[Any] = Server(
             f"atp-proxy:{config.server_name}",
             version=PROXY_VERSION,
@@ -198,7 +203,10 @@ class TrustPlaneProxy:
             return _denied({"reason_code": "TOOL_UNKNOWN", "message": f"no such tool: {name}"})
 
         try:
-            envelope = self._envelope_for(name, arguments)
+            call_key = canonical_hash({"tool": name, "arguments": arguments})
+            envelope = self._awaiting_approval.pop(call_key, None) or self._envelope_for(
+                name, arguments
+            )
         except ArgumentsTooLargeError as exc:
             return _denied({"reason_code": "TOOL_ARGUMENTS_TOO_LARGE", "message": str(exc)})
         except ValueError as exc:
@@ -226,6 +234,28 @@ class TrustPlaneProxy:
                     envelope.trace_id,
                 )
                 return await self._forward_shadow(name, arguments, envelope.trace_id)
+            if decision.outcome.value == "REQUIRE_APPROVAL":
+                self._awaiting_approval[call_key] = envelope
+                while len(self._awaiting_approval) > MAX_AWAITING_APPROVAL:
+                    self._awaiting_approval.popitem(last=False)
+                role = decision.approval.approver_role if decision.approval else "an approver"
+                return _denied(
+                    {
+                        "reason_code": decision.reason_code.value,
+                        "outcome": decision.outcome.value,
+                        "message": (
+                            f"{decision.explanation}. Needs {role} approval on trace "
+                            f"{envelope.trace_id}: run `atp approve {envelope.trace_id} "
+                            f"--as <approver-id>`, then retry this exact call once."
+                        ),
+                        "approver_role": role,
+                        "approve_command": f"atp approve {envelope.trace_id}",
+                        "matched_policy": (
+                            decision.matched_policy.qualified if decision.matched_policy else None
+                        ),
+                        "trace_id": envelope.trace_id,
+                    }
+                )
             return _denied(
                 {
                     "reason_code": decision.reason_code.value,
@@ -365,6 +395,7 @@ class TrustPlaneProxy:
 
 
 MAX_ARGUMENT_BYTES = 15 * 1024
+MAX_AWAITING_APPROVAL = 256
 
 
 class ArgumentsTooLargeError(ValueError):

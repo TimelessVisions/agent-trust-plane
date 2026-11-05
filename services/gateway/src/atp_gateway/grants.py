@@ -120,6 +120,13 @@ class GrantSigner:
     def public_key(self) -> Ed25519PublicKey:
         return self._key.public_key()
 
+    def sign_detached(self, data: bytes) -> bytes:
+        """Sign ``data`` with the grant key. Callers prefix a domain tag (e.g.
+        ``atp-approval/1``) so the bytes can never be a grant signing input."""
+        if b"\n" not in data[:32]:  # base64url grant inputs never contain one
+            raise ValueError("detached signatures need a domain-tag prefix")
+        return self._key.sign(data)
+
     def mint(self, claims: GrantClaims) -> str:
         header = _b64e(canonical_json({"alg": ALG, "kid": self._kid, "v": TOKEN_VERSION}))
         body = _b64e(canonical_json(claims.model_dump(mode="json")))
@@ -148,6 +155,22 @@ class GrantVerifier:
     @property
     def kids(self) -> frozenset[str]:
         return frozenset(self._keys)
+
+    def verify_detached(
+        self, kid: str, data: bytes, signature: bytes, *, now: datetime | None = None
+    ) -> None:
+        """Check a detached signature by ``kid`` under the same trust rules as
+        tokens (unknown or retired-out kid: GRANT_SIGNATURE_INVALID)."""
+        key = self._keys.get(kid)
+        if key is None:
+            raise _invalid(f"kid {kid!r} is not a key this gateway trusts")
+        deadline = self._not_after.get(kid)
+        if deadline is not None and (now or self._clock()) >= deadline:
+            raise _invalid(f"kid {kid!r} was retired")
+        try:
+            key.verify(signature, data)
+        except InvalidSignature as exc:
+            raise _invalid("signature does not verify") from exc
 
     def verify(self, token: str, *, now: datetime | None = None) -> GrantClaims:
         """``now`` (default: the clock) decides whether a retired kid still verifies;

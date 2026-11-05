@@ -67,6 +67,12 @@ class GatewaySettings(BaseSettings):
         default="",
         description="Optional YAML file of declared policy sets, loaded next to the built-ins.",
     )
+    approver_roles: str = Field(
+        default="",
+        description="Who may approve REQUIRE_APPROVAL decisions, as "
+        "'human:alice=finance-manager,approver; human:bob=approver' (a bare id means "
+        "human:<id>). An approver must hold the decision's approver_role. Operator-set.",
+    )
     external_tool_prefixes: str = Field(
         default="mcp.",
         description="Comma-separated tool-name prefixes executed by an external, trusted "

@@ -31,6 +31,7 @@ _FORBIDDEN = {
     ReasonCode.AGENT_IDENTITY_MISMATCH,
     ReasonCode.OPERATOR_KEY_REQUIRED,
     ReasonCode.POLICY_SET_OVERRIDE_FORBIDDEN,
+    ReasonCode.APPROVER_ROLE_MISSING,
 }
 
 
@@ -41,6 +42,8 @@ def status_for(exc: ATPError) -> int:
         return 403
     if exc.reason_code in _NOT_FOUND:
         return 404
+    if exc.reason_code is ReasonCode.APPROVAL_INVALID:
+        return 422
     if isinstance(exc, DelegationError):
         return 422
     if isinstance(exc, GrantError):

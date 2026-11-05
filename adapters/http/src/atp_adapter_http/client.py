@@ -309,6 +309,22 @@ class TrustPlaneClient:
         )
         return result
 
+    def approve(
+        self,
+        trace_id: str,
+        approver: dict[str, Any],
+        *,
+        decision: str = "approve",
+        expires_in: str = "15m",
+    ) -> dict[str, Any]:
+        """Operator: approve or deny a REQUIRE_APPROVAL trace."""
+        result: dict[str, Any] = self._request(
+            "POST",
+            f"/approvals/{trace_id}",
+            json={"approver": approver, "decision": decision, "expires_in": expires_in},
+        )
+        return result
+
     def issue_delegation(self, request: dict[str, Any]) -> dict[str, Any]:
         result: dict[str, Any] = self._request("POST", "/delegations", json=request)
         return result
