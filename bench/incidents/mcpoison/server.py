@@ -117,18 +117,12 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
                 args=params[1:],
                 env=get_default_environment(),
             )
-            with StdioMcpSession(
-                transport, _classify_open, call_timeout_s=45
-            ) as upstream:
-                yield _IncidentSession(
-                    _NameOnlySession(upstream, frozenset({"write_note"})), flag
-                )
+            with StdioMcpSession(transport, _classify_open, call_timeout_s=45) as upstream:
+                yield _IncidentSession(_NameOnlySession(upstream, frozenset({"write_note"})), flag)
         elif layer.name == "atp":
             home = root / "atp-home"
             AtpHome(home).ensure()
-            (home / "policies.yaml").write_text(
-                yaml.safe_dump(POLICY), encoding="utf-8"
-            )
+            (home / "policies.yaml").write_text(yaml.safe_dump(POLICY), encoding="utf-8")
             original = anyio.run(build_server(root).list_tools)
             matching = [t for t in original if t.name == "write_note"]
             if len(matching) != 1:
@@ -156,9 +150,7 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
                 ],
             }
             path = root / "atp-mcp.yaml"
-            path.write_text(
-                yaml.safe_dump(config, sort_keys=False), encoding="utf-8"
-            )
+            path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
             wrapped = StdioServerParameters(
                 command=sys.executable,
                 args=[
@@ -177,9 +169,7 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
                 ],
                 env={**get_default_environment(), "ATP_HOME": str(home)},
             )
-            with StdioMcpSession(
-                wrapped, atp_classify, call_timeout_s=50
-            ) as proxy:
+            with StdioMcpSession(wrapped, atp_classify, call_timeout_s=50) as proxy:
                 yield _IncidentSession(proxy, flag)
         else:
             from atp_bench.layers.base import EnvBlocked
@@ -188,13 +178,10 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
 
         # Reaching the upstream is the final proof, independent of a tool response.
         recorded = (root / "journal.txt").read_text(encoding="utf-8").splitlines()
-        expected = ["write_note", "write_note"] if layer.name == "name-only" else [
-            "write_note"
-        ]
+        expected = ["write_note", "write_note"] if layer.name == "name-only" else ["write_note"]
         if recorded != expected:
             raise AssertionError(
-                f"{layer.name}: upstream journal mismatch; actual={recorded}, "
-                f"expected={expected}"
+                f"{layer.name}: upstream journal mismatch; actual={recorded}, expected={expected}"
             )
 
 
