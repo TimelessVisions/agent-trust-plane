@@ -28,6 +28,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from atp_adapter_mcp.mapping import ToolMapping
 from atp_core import SCOPE_PATTERN, PrincipalKind, PrincipalRef, read_bounded_text
 
+# Tools the gateway executes itself (its ToolRegistry's registered tools, as
+# opposed to the external prefixes it releases to a trusted executor). The
+# adapter must not import atp_gateway, so this is the one copy of that list;
+# a test builds the gateway runtime and asserts the two agree. A mapping onto
+# one of these would have the gateway run the action on ALLOW (a payment
+# settles) while the proxy reports the call as denied, so it is refused.
+GATEWAY_EXECUTED_TOOLS: frozenset[str] = frozenset({"payments"})
+
 
 class UpstreamConfig(BaseModel):
     """How to reach the upstream MCP server: launch it over stdio (``command``)
@@ -151,6 +159,17 @@ class ProxyConfig(BaseModel):
             if m.mcp_tool in seen:
                 raise ValueError(f"tool {m.mcp_tool!r} is mapped twice")
             seen.add(m.mcp_tool)
+        return self
+
+    @model_validator(mode="after")
+    def _no_mapping_onto_gateway_executed_tools(self) -> ProxyConfig:
+        """Refuse, in every mode, a mapping whose ``tool`` the gateway runs itself."""
+        native = sorted({m.envelope_tool for m in self.tools}.intersection(GATEWAY_EXECUTED_TOOLS))
+        if native:
+            raise ValueError(
+                f"mapping tool(s) {native} name a tool the gateway executes itself; "
+                "a proxied MCP tool needs its own tool name (e.g. 'mcp.<server_name>')"
+            )
         return self
 
     @model_validator(mode="after")

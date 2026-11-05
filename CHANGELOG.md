@@ -32,10 +32,11 @@ changes may land in minor versions and are called out).
   declared rule whose `applies_to.tool` named the mapping's `tool` never
   matched. `atp mcp init` still writes `tool: mcp.<server_name>`, so its
   configs behave as before; unmapped calls keep `mcp.<server_name>`.
-  `atp mcp wrap` releases every mapping `tool` to the proxy and refuses a
-  mapping onto a tool the gateway executes itself (`payments`). A remote
-  gateway needs any mapping `tool` outside `mcp.` in
-  `ATP_EXTERNAL_TOOL_PREFIXES`. The benchmark no longer retargets rules to
+  A mapping onto a tool the gateway executes itself (`payments`) is refused
+  when the config loads, in `atp mcp wrap` and `atp mcp proxy` alike.
+  `atp mcp wrap` releases every mapping `tool` to the proxy by adding it to
+  `ATP_EXTERNAL_TOOL_PREFIXES` (default `mcp.`). A remote gateway needs any
+  mapping `tool` outside `mcp.` in its own `ATP_EXTERNAL_TOOL_PREFIXES`. The benchmark no longer retargets rules to
   `mcp.<server_name>`.
 - `argument_max_length` denies a non-optional explicit `null` argument with
   `ARGUMENT_INVALID`; it was measured as the 4-character string `"null"` and

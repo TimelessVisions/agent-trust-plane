@@ -238,3 +238,24 @@ def test_home_is_authoritative_over_stray_env(
     assert settings.operator_key == home.keys()["ATP_OPERATOR_KEY"]
     assert settings.enforcement_mode == "enforce"
     assert os.path.basename(settings.database_path) == "atp.db"
+
+
+def test_wrap_external_tools_extend_env_prefixes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mapped tools are added to $ATP_EXTERNAL_TOOL_PREFIXES, not swapped in for it."""
+    from atp_cli.home import AtpHome
+
+    home = AtpHome(tmp_path / "h").ensure()
+    monkeypatch.delenv("ATP_EXTERNAL_TOOL_PREFIXES", raising=False)
+    assert home.settings(external_tools=("dojo.banking",)).external_tool_prefix_list() == [
+        "mcp.",
+        "dojo.banking",
+    ]
+    monkeypatch.setenv("ATP_EXTERNAL_TOOL_PREFIXES", "mcp.,ext.")
+    assert home.settings().external_tool_prefix_list() == ["mcp.", "ext."]
+    assert home.settings(external_tools=("dojo.banking",)).external_tool_prefix_list() == [
+        "mcp.",
+        "ext.",
+        "dojo.banking",
+    ]

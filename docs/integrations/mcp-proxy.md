@@ -106,10 +106,15 @@ proposal you review (`../security/safe-defaults.md`).
 
 Each mapping's `tool` is the envelope tool for calls it matches, so a
 declared rule's `applies_to.tool` must name it. `atp mcp init` writes
-`tool: mcp.<server_name>` for every mapping. `atp mcp wrap` releases every
-mapping `tool` to the proxy for execution and refuses one that names a tool
-the gateway runs itself (`payments`). In proxy mode, a remote gateway must
-list any mapping `tool` outside `mcp.` in `ATP_EXTERNAL_TOOL_PREFIXES`.
+`tool: mcp.<server_name>` for every mapping. A mapping whose `tool` the
+gateway runs itself (`payments`) is refused when the config loads, in both
+`atp mcp wrap` and `atp mcp proxy`: on ALLOW the gateway would execute the
+action itself while the proxy reported the call as denied. `atp mcp wrap`
+releases every mapping `tool` to the proxy for execution by appending the
+mapping tools to `ATP_EXTERNAL_TOOL_PREFIXES` (or to the default `mcp.` when
+it is unset); it adds to that variable, it does not override it. In proxy
+mode, a remote gateway must list any mapping `tool` outside `mcp.` in its
+own `ATP_EXTERNAL_TOOL_PREFIXES`.
 
 ## Policies that apply
 

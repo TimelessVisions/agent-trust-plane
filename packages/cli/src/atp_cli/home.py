@@ -117,6 +117,13 @@ policy_sets:
         default_policy_set: str | None = None,
         external_tools: tuple[str, ...] = (),
     ) -> GatewaySettings:
+        """Gateway settings for this home. Keys, database, enforcement mode and policy
+        file come from the home, not from the environment or a ``.env``.
+
+        ``external_tools`` (``atp mcp wrap`` passes its mapping tools) are appended to
+        the external tool prefixes in effect: ``$ATP_EXTERNAL_TOOL_PREFIXES`` if set,
+        else the default ``mcp.``. They add to that list; they do not override it.
+        """
         keys = self.keys()
         kwargs: dict[str, object] = {
             "database_path": str(self.db_path),
@@ -127,12 +134,17 @@ policy_sets:
         }
         if default_policy_set:
             kwargs["default_policy_set"] = default_policy_set
-        if external_tools:
-            # The wrapped proxy executes its mapped tools; the gateway only decides and binds.
-            default = GatewaySettings.model_fields["external_tool_prefixes"].default
-            kwargs["external_tool_prefixes"] = ",".join([default, *external_tools])
         # _env_file=None: the home is authoritative; a stray .env must not override it.
-        return GatewaySettings(_env_file=None, **kwargs)  # type: ignore[arg-type]
+        settings = GatewaySettings(_env_file=None, **kwargs)  # type: ignore[arg-type]
+        if external_tools:
+            # The wrapped proxy executes its mapped tools; the gateway only decides and
+            # binds. They extend the prefixes already in effect ($ATP_EXTERNAL_TOOL_PREFIXES
+            # or the default), never replace them.
+            kwargs["external_tool_prefixes"] = ",".join(
+                [*settings.external_tool_prefix_list(), *external_tools]
+            )
+            settings = GatewaySettings(_env_file=None, **kwargs)  # type: ignore[arg-type]
+        return settings
 
     def open(self, **kwargs: str) -> Runtime:
         """Open the store for offline commands."""

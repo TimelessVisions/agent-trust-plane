@@ -218,3 +218,61 @@ def test_wrap_refuses_mapping_onto_gateway_tool(
     config.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
     assert _run("mcp", "wrap", "--config", str(config), "--home", str(home)) == 2
     assert "gateway executes itself" in capsys.readouterr().err
+
+
+def _payments_mapping_config() -> dict[str, Any]:
+    """A remote-gateway (`atp mcp proxy`) config mapping a call onto ``payments``."""
+    return {
+        "server_name": "bank",
+        "gateway": "https://gateway.example",
+        "delegation_grant_id": "dg_1",
+        "upstream": {"command": sys.executable, "args": ["-c", "pass"]},
+        "tools": [
+            {
+                "mcp_tool": "send_money",
+                "tool": "payments",
+                "action": "send_payment",
+                "capability": "payments:send",
+                "resource_template": "vendor:{recipient}",
+            }
+        ],
+    }
+
+
+def test_config_refuses_mapping_onto_gateway_tool(tmp_path: Path) -> None:
+    """In remote mode the gateway would run PaymentsTool itself on ALLOW and the
+    proxy would then report the call as denied. The config is refused in every mode."""
+    config = tmp_path / "atp-mcp.yaml"
+    config.write_text(yaml.safe_dump(_payments_mapping_config()), encoding="utf-8")
+    with pytest.raises(ValueError, match="gateway executes itself"):
+        load_config(config)
+
+
+@pytest.mark.parametrize("command", [("mcp", "proxy"), ("mcp-proxy",)])
+def test_remote_proxy_refuses_mapping_onto_gateway_tool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: tuple[str, ...],
+) -> None:
+    monkeypatch.setenv("ATP_AGENT_TOKEN", "t" * 40)
+    config = tmp_path / "atp-mcp.yaml"
+    config.write_text(yaml.safe_dump(_payments_mapping_config()), encoding="utf-8")
+    assert _run(*command, "--config", str(config)) == 2
+    err = capsys.readouterr().err
+    assert "gateway executes itself" in err
+    assert "payments" in err
+
+
+def test_gateway_executed_tools_match_the_gateway_registry() -> None:
+    """The adapter cannot import the gateway, so it keeps its own list of the
+    tools the gateway runs itself. It must name exactly what the registry holds."""
+    from atp_adapter_mcp.config import GATEWAY_EXECUTED_TOOLS
+    from atp_gateway import GatewaySettings, build_runtime
+
+    runtime = build_runtime(GatewaySettings(_env_file=None, database_path=":memory:"))  # type: ignore[call-arg]
+    try:
+        native = {n for n in runtime.trust_plane.tools.names() if not n.endswith("*")}
+    finally:
+        runtime.close()
+    assert native == set(GATEWAY_EXECUTED_TOOLS)
