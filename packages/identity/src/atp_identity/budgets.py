@@ -7,7 +7,9 @@ Lifecycle of a reservation (its id is the execution grant id):
   two concurrent reservations can never together exceed a budget.
 * ``settle`` on a successful outcome: the reservation becomes spend, counted
   at ``actual`` (default: the reserved amount).
-* ``release`` on a failed outcome: it stops counting.
+* ``release`` on a failed outcome the gateway itself observed (a tool error)
+  or one the operator reports: it stops counting. A failure reported by the
+  grant's own agent does not release a held reservation (fail closed).
 * ``hold`` once the grant is consumed (the gateway hands the action to a tool
   or an external executor): the reservation is exempt from expiry and counts
   until ``settle`` or ``release``. Money released to an external executor
@@ -146,8 +148,13 @@ class ReservationStore(Protocol):
         against every line, or against none if any line would be exceeded."""
         ...
 
-    def hold(self, reservation_id: str) -> None:
-        """Exempt a (consumed) reservation from expiry until settled or released."""
+    def hold(self, reservation_id: str) -> bool:
+        """Exempt a (consumed) reservation from expiry until settled or released.
+
+        True when the reservation is now held, or when there is none (the
+        action is unbudgeted). False when it exists but can no longer be held:
+        it was released, e.g. expired by a peer gateway whose clock runs
+        ahead. The caller must then not run the action."""
         ...
 
     def settle(self, reservation_id: str, actual: Money | None = None) -> None: ...
@@ -228,11 +235,13 @@ class InMemoryReservationStore:
                     self._rows.append(_Row(reservation_id, line.bucket, amount.amount, expires_at))
             return result
 
-    def hold(self, reservation_id: str) -> None:
+    def hold(self, reservation_id: str) -> bool:
         with self._lock:
-            for row in self._rows:
-                if row.reservation_id == reservation_id and row.status == RESERVED:
+            rows = [r for r in self._rows if r.reservation_id == reservation_id]
+            for row in rows:
+                if row.status == RESERVED:
                     row.status = HELD
+            return all(r.status == HELD for r in rows)
 
     def settle(self, reservation_id: str, actual: Money | None = None) -> None:
         with self._lock:
@@ -387,12 +396,17 @@ class SqliteReservationStore:
                 ),
             )
 
-    def hold(self, reservation_id: str) -> None:
+    def hold(self, reservation_id: str) -> bool:
         with self._immediate():
             self._conn.execute(
                 "UPDATE budget_reservations SET status = ? WHERE reservation_id = ? AND status = ?",
                 (HELD, reservation_id, RESERVED),
             )
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM budget_reservations WHERE reservation_id = ? AND status != ?",
+                (reservation_id, HELD),
+            ).fetchone()
+            return bool(row[0] == 0)
 
     def release(self, reservation_id: str) -> None:
         with self._immediate():

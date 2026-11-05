@@ -152,15 +152,32 @@ In serve mode, put it in `constraints` on any grant in a chain
   execution grant, atomically (SQLite `BEGIN IMMEDIATE` plus a sum check;
   two concurrent authorizations, even from two gateways on one file,
   cannot together exceed the budget). A completed execution *settles* the
-  reservation into spend; a failed one (tool error, or a failure report)
-  *releases* it. A reservation whose grant expires **unused** is released
+  reservation into spend. A failure the gateway itself observes (a tool it
+  runs raises an error) *releases* it. A reservation whose grant expires **unused** is released
   lazily, on the next reservation and whenever traces are listed
   (`atp trace list`, `GET /traces`). Once the grant is consumed the
   reservation is *held*: an action released to an external executor keeps
-  counting, past the grant's expiry, until its outcome is reported (success
-  settles, failure releases). If an executor never reports, an operator
-  reconciles it on the store (`reservations.settle(grant_id)` or
-  `reservations.release(grant_id)`); there is no CLI for this yet. Settling a
+  counting, past the grant's expiry, until its outcome is reported. A
+  success report settles it. A **failure** report from the grant's own agent
+  credential does **not** release it (fail closed): an agent that lied about
+  a payment that really moved could otherwise free the budget and repeat.
+  The reservation stays held until the operator confirms the failure with
+  `POST /executions/{grant_id}/outcome` and `X-ATP-Operator-Key` (no agent
+  credential needed, accepted once, also after the agent's own report),
+  which releases it. If an executor never reports, an operator reconciles it
+  the same way, or on the store (`reservations.settle(grant_id)` or
+  `reservations.release(grant_id)`); there is no CLI for this yet.
+- **The outcome reporter must be trusted.** A success report is believed
+  (at the reserved amount; a lower "actual" from the agent side is not), so
+  whoever holds the agent credential must be the real executor, not the
+  model. In `atp mcp wrap` that holds: the proxy, not the model, holds the
+  agent credential and reports what the upstream tool returned. A
+  deployment that hands the agent credential to an untrusted process
+  trusts that process's reports.
+- **Clock skew:** if a reservation was already released when its grant is
+  consumed (for example a peer gateway with a clock ahead expired it), the
+  execution is blocked with `PAYMENT_EXCEEDS_BUDGET` rather than run
+  unbudgeted; authorize again. Settling a
   reservation that was already released records it as spent, even past the
   limit, because the money moved; a released reservation can only come from
   an unused grant or an explicit failure, so this is reconciliation only.

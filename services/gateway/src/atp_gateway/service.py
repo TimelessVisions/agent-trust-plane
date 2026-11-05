@@ -754,9 +754,18 @@ class TrustPlane:
             self.grants.consume(claims.grant_id, now)
             # Consumed: from here the action may happen, so its reservation
             # no longer lapses with the grant; only an outcome ends it.
-            self.reservations.hold(claims.grant_id)
+            held = self.reservations.hold(claims.grant_id)
         except (GrantError, DelegationError) as exc:
             return self._blocked(envelope, exc.reason_code, exc.message)
+        if not held:
+            # The reservation was already released: expired by a peer gateway
+            # whose clock runs ahead. Never run a budgeted action unbudgeted.
+            return self._blocked(
+                envelope,
+                ReasonCode.PAYMENT_EXCEEDS_BUDGET,
+                "the budget reservation for this grant was released before execution "
+                "(clock skew between gateways?); authorize again",
+            )
 
         try:
             tool = self.tools.get(envelope.tool)
@@ -814,20 +823,35 @@ class TrustPlane:
     def report_outcome(
         self,
         grant_id: str,
-        caller: AuthenticatedAgent,
+        caller: AuthenticatedAgent | None,
         *,
         succeeded: bool,
         summary: dict[str, Any],
+        operator: bool = False,
     ) -> TraceEvent:
         """An external executor reports what happened after a release.
 
         Bound to the consumed grant: only its audience may report, only once,
         and only for a grant the gateway actually released.
+
+        The report is trusted for budgets only one way. Success settles the
+        reservation. A failure reported by the grant's own agent does NOT
+        release it (fail closed): otherwise an agent could lie about a payment
+        that moved, free the budget and repeat. Only the operator can confirm
+        a failure and release the reservation, once, also after the agent's
+        own report.
         """
         with self._lock, self.transaction():
-            self._check_credential_live(caller)
+            if not operator:
+                if caller is None:
+                    raise AuthError(
+                        ReasonCode.AGENT_CREDENTIAL_MISSING, "agent credential required"
+                    )
+                self._check_credential_live(caller)
             record = self.grants.get(grant_id)
-            if record is None or record.claims.agent_id != caller.agent.id:
+            if record is None or (
+                not operator and caller is not None and record.claims.agent_id != caller.agent.id
+            ):
                 raise GrantError(
                     ReasonCode.GRANT_AUDIENCE_MISMATCH,
                     "no released grant for this agent with that id",
@@ -847,6 +871,7 @@ class TrustPlane:
             already = any(
                 e.event_type in (EventType.EXECUTION_COMPLETED, EventType.EXECUTION_FAILED)
                 and e.payload.get("grant_id") == grant_id
+                and (not operator or e.payload.get("reported_by") == "operator")
                 for e in events
             )
             if already:
@@ -859,8 +884,17 @@ class TrustPlane:
             # side, so a lower "actual" in it is not trusted to free budget.
             if succeeded:
                 self.reservations.settle(grant_id)
-            else:
+            elif operator:
                 self.reservations.release(grant_id)
+            # else: an agent-reported failure leaves the reservation held.
+            if operator:
+                return self.traces.append(
+                    trace_id,
+                    event_type,
+                    GATEWAY_ACTOR,
+                    {"grant_id": grant_id, "reported_by": "operator", "summary": summary},
+                )
+            assert caller is not None
             return self.traces.append(
                 trace_id,
                 event_type,
@@ -870,6 +904,7 @@ class TrustPlane:
                     "reported_by": "external_executor",
                     "credential_id": caller.credential_id,
                     "summary": summary,
+                    **({} if succeeded else {"budget": "held_until_operator_confirms"}),
                 },
             )
 

@@ -46,6 +46,15 @@ changes may land in minor versions and are called out).
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Changed
+- **BREAKING:** a failure outcome reported with the grant's own agent
+  credential no longer releases a held budget reservation; it stays counted
+  until the operator confirms the failure on
+  `POST /executions/{grant_id}/outcome` with `X-ATP-Operator-Key`, which the
+  route now accepts. Failures the gateway observes itself (a tool error)
+  still release. If a reservation was released before its grant is consumed
+  (clock skew between gateways), execution is blocked with
+  `PAYMENT_EXCEEDS_BUDGET`. `ReservationStore.hold` returns whether the
+  reservation is held.
 - **BREAKING:** cumulative spend budgets with reservation semantics. A
   delegation grant's `constraints` take `budget: {amount: Money, period:
   day|week|month}` (UTC calendar periods; a week starts on Monday), and

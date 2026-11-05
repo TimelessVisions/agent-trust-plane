@@ -8,7 +8,7 @@ Who may call what:
 | POST /authorize                  | required         | for policy-set override |
 | POST /execute                    | required         |              |
 | POST /traces/{id}/events         | required         |              |
-| POST /executions/{grant}/outcome | grant audience   |              |
+| POST /executions/{grant}/outcome | grant audience   | or operator (frees budget) |
 | POST /traces/{id}/shadow-outcome | trace owner      |              |
 | POST /delegations                | grantor (agent)  | grantor (human) |
 | POST /delegations/{id}/revoke    | grantor (agent)  | or operator  |
@@ -126,12 +126,18 @@ def report_shadow_outcome(
 
 @router.post("/executions/{grant_id}/outcome", tags=["control"])
 def report_outcome(
-    grant_id: str, body: ExecutionOutcomeRequest, request: Request, caller: Agent
+    grant_id: str,
+    body: ExecutionOutcomeRequest,
+    request: Request,
+    caller: MaybeAgent,
+    operator: IsOperator,
 ) -> dict[str, Any]:
     """External executors (e.g. the MCP proxy) report the result of a released
-    execution. Bound to the consumed grant's audience; accepted once."""
+    execution. Bound to the consumed grant's audience; accepted once. A
+    failure reported by the agent keeps the budget reservation counted; the
+    operator (``X-ATP-Operator-Key``) can confirm a failure, which releases it."""
     event = _tp(request).report_outcome(
-        grant_id, caller, succeeded=body.succeeded, summary=body.summary
+        grant_id, caller, succeeded=body.succeeded, summary=body.summary, operator=operator
     )
     return event.model_dump(mode="json")
 

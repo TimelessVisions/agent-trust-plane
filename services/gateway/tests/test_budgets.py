@@ -355,7 +355,7 @@ def test_external_outcome_settles_or_releases(tmp_path: Path) -> None:
         with TestClient(create_app(settings, runtime=rt)) as client:
             chain = budget_chain(client, ap_budget=_budget("500"))
 
-            def run(amount: str, succeeded: bool) -> None:
+            def run(amount: str, succeeded: bool, headers: dict[str, str]) -> None:
                 out = pay(client, chain, amount, tool="ext.pay")
                 assert out["decision"]["outcome"] == "ALLOW", out["decision"]
                 grant = out["execution_grant"]
@@ -364,12 +364,13 @@ def test_external_outcome_settles_or_releases(tmp_path: Path) -> None:
                 r = client.post(
                     f"/executions/{grant['grant_id']}/outcome",
                     json={"succeeded": succeeded, "summary": {}},
-                    headers=bearer(chain["token"]),
+                    headers=headers,
                 )
                 assert r.status_code == 200, r.text
 
-            run("400.00", succeeded=False)  # released: the 400 is free again
-            run("400.00", succeeded=True)  # settled
+            # A failure the operator reports releases: the 400 is free again.
+            run("400.00", succeeded=False, headers=op())
+            run("400.00", succeeded=True, headers=bearer(chain["token"]))  # settled
             out = pay(client, chain, "200.00", tool="ext.pay")
             assert out["decision"]["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
     finally:
@@ -472,11 +473,18 @@ def _release_external(client: TestClient, chain: dict[str, Any], amount: str) ->
     return grant_id
 
 
-def _report(client: TestClient, chain: dict[str, Any], grant_id: str, succeeded: bool) -> None:
+def _report(
+    client: TestClient,
+    chain: dict[str, Any],
+    grant_id: str,
+    succeeded: bool,
+    *,
+    operator: bool = False,
+) -> None:
     r = client.post(
         f"/executions/{grant_id}/outcome",
         json={"succeeded": succeeded, "summary": {}},
-        headers=bearer(chain["token"]),
+        headers=op() if operator else bearer(chain["token"]),
     )
     assert r.status_code == 200, r.text
 
@@ -519,7 +527,7 @@ def test_late_external_failure_releases_held_reservation(tmp_path: Path) -> None
             assert pay(client, chain, "200.00")["decision"]["reason_code"] == (
                 "PAYMENT_EXCEEDS_BUDGET"
             )
-            _report(client, chain, held, succeeded=False)
+            _report(client, chain, held, succeeded=False, operator=True)
             assert pay(client, chain, "500.00")["decision"]["outcome"] == "ALLOW"
     finally:
         rt.close()
@@ -635,3 +643,101 @@ def test_unusable_amount_denied_as_invalid(client: TestClient, amount: str) -> N
 def test_money_rejects_huge_or_padded_amounts_as_value_error(amount: str) -> None:
     with pytest.raises(ValueError):
         Money.model_validate({"amount": amount, "currency": "USD"})
+
+
+# ------------------------------------------------------ fix round 2 (C4)
+def test_agent_failure_report_does_not_free_budget(tmp_path: Path) -> None:
+    """Ruling: the grant's own agent cannot free budget by claiming failure.
+    A released external payment stays counted (held) after an agent-reported
+    failure; it cannot be repeated to spend past the limit. Only the operator
+    can confirm a failure and release it."""
+    settings, rt, clk = _external_runtime(tmp_path)
+    try:
+        with TestClient(create_app(settings, runtime=rt)) as client:
+            chain = budget_chain(client, ap_budget=_budget("500"))
+            first = _release_external(client, chain, "400.00")
+            _report(client, chain, first, succeeded=False)
+            for _ in range(2):
+                again = pay(client, chain, "200.00", tool="ext.pay")
+                assert again["decision"]["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
+            clk.advance(seconds=121)  # and grant expiry does not free it either
+            assert pay(client, chain, "200.00")["decision"]["reason_code"] == (
+                "PAYMENT_EXCEEDS_BUDGET"
+            )
+            usage = rt.trust_plane.reservations.usage([_line(chain, "500")], _usd("0"), clk())
+            assert usage.usages[0].reserved == Decimal("400.00")
+            events = client.get(f"/traces/{again['envelope']['trace_id']}", headers=op())
+            assert events.status_code == 200
+            # The agent cannot report a second time; the operator can confirm.
+            r = client.post(
+                f"/executions/{first}/outcome",
+                json={"succeeded": False, "summary": {}},
+                headers=bearer(chain["token"]),
+            )
+            assert r.json()["reason_code"] == "EXECUTION_OUTCOME_ALREADY_REPORTED"
+            _report(client, chain, first, succeeded=False, operator=True)
+            assert pay(client, chain, "500.00")["decision"]["outcome"] == "ALLOW"
+            r = client.post(
+                f"/executions/{first}/outcome",
+                json={"succeeded": False, "summary": {}},
+                headers=op(),
+            )
+            assert r.json()["reason_code"] == "EXECUTION_OUTCOME_ALREADY_REPORTED"
+    finally:
+        rt.close()
+
+
+def test_outcome_report_needs_agent_or_operator(tmp_path: Path) -> None:
+    settings, rt, _ = _external_runtime(tmp_path)
+    try:
+        with TestClient(create_app(settings, runtime=rt)) as client:
+            chain = budget_chain(client, ap_budget=_budget("500"))
+            first = _release_external(client, chain, "400.00")
+            r = client.post(
+                f"/executions/{first}/outcome", json={"succeeded": False, "summary": {}}
+            )
+            assert r.json()["reason_code"] == "AGENT_CREDENTIAL_MISSING"
+    finally:
+        rt.close()
+
+
+def test_hold_after_peer_expired_reservation_blocks_execution(tmp_path: Path) -> None:
+    """Two gateways, one database; the peer's clock runs ahead and expires the
+    reservation before this gateway consumes the grant. ``hold`` then changes
+    nothing, and the payment must not run unbudgeted."""
+    settings = GatewaySettings(
+        database_path=str(tmp_path / "atp.db"), **GRANT_KEY_SETTINGS, operator_key=OPERATOR_KEY
+    )
+    a, b = build_runtime(settings), build_runtime(settings)
+    a.trust_plane.clock = Clock()
+    b.trust_plane.clock = Clock(NOW + timedelta(seconds=121))  # skewed ahead
+    try:
+        with TestClient(create_app(settings, runtime=a)) as client:
+            chain = budget_chain(client, ap_budget=_budget("500"))
+            out = pay(client, chain, "400.00")
+            assert out["decision"]["outcome"] == "ALLOW"
+            b.trust_plane.list_traces()  # the peer releases what it sees as expired
+            done = execute(client, out["envelope"], out["execution_grant"]["token"], chain["token"])
+            assert done["status"] == "blocked"
+            assert done["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
+            assert client.get("/ledger/payments", headers=op()).json() == []
+    finally:
+        a.close()
+        b.close()
+
+
+def test_store_hold_reports_whether_reservation_is_held(tmp_path: Path) -> None:
+    conn = sqlite3.connect(tmp_path / "b.db", check_same_thread=False)
+    try:
+        for store in (SqliteReservationStore(conn), InMemoryReservationStore()):
+            line = _line({"ap": "grt_x"}, "500.00")
+            exp = NOW + timedelta(minutes=2)
+            assert store.hold("no-such-reservation")  # unbudgeted: nothing to hold
+            assert store.reserve("h", [line], _usd("100"), expires_at=exp, now=NOW).ok
+            assert store.hold("h")
+            assert store.hold("h")  # idempotent
+            assert store.reserve("e", [line], _usd("100"), expires_at=exp, now=NOW).ok
+            assert store.release_expired(exp) == 1
+            assert not store.hold("e")
+    finally:
+        conn.close()
