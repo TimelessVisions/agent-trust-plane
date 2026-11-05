@@ -31,3 +31,27 @@ def test_mcpoison_companion_atp_regression_is_not_a_schema_pin() -> None:
     except SystemExit as exc:
         outcome = exc.code
     assert outcome in (None, 0), outcome
+
+
+def test_tool_description_poisoning_scope_with_real_proxy() -> None:
+    case = load_incident_case(
+        CASE_ROOT.parent / "tool-description-poisoning" / "case.yaml"
+    )
+    reference = run_incident(case, NameOnlyLayer())
+    assert reference.status == "PASS", reference
+    assert reference.outcomes == ("ALLOWED", "ALLOWED"), reference
+
+    protected = run_incident(case, AtpLayer())
+    assert protected.status == "PASS", protected
+    assert protected.outcomes == ("ALLOWED", "DENIED"), protected
+
+
+def test_tool_description_companion_scope_regression() -> None:
+    from atp_cli.main import main
+
+    suite = CASE_ROOT.parent / "tool-description-poisoning" / "atp-regression.yaml"
+    try:
+        exit_code = main(["test", str(suite)])
+    except SystemExit as exc:
+        exit_code = exc.code
+    assert exit_code in (None, 0), exit_code

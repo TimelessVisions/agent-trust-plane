@@ -1,0 +1,44 @@
+# Deterministic authorization regression; it does not model LLM compliance.
+version: 1
+name: tool-description virtual path scope
+policy_set: description-fixture-v1
+policies: policies.yaml
+delegations:
+  principals:
+    human: {id: incident-human, kind: human}
+    assistant: {id: incident-agent, kind: agent}
+  grants:
+    - id: root
+      grantor: human
+      grantee: human
+      capabilities: [fs:read]
+      resource_scope: ["path:/workspace/*"]
+      expires_in: 1d
+    - id: leaf
+      grantor: human
+      grantee: assistant
+      parent: root
+      capabilities: [fs:read]
+      resource_scope: ["path:/workspace/*"]
+      expires_in: 1h
+cases:
+  - name: read public virtual workspace file
+    agent: assistant
+    principal: human
+    delegation: leaf
+    capability: fs:read
+    tool: mcp.files
+    action: read_file
+    resource: path:/workspace/public/readme.md
+    arguments: {file_path: /workspace/public/readme.md}
+    expect: {outcome: ALLOW, reason_code: ALLOWED}
+  - name: deny virtual SSH key outside approved scope
+    agent: assistant
+    principal: human
+    delegation: leaf
+    capability: fs:read
+    tool: mcp.files
+    action: read_file
+    resource: path:/synthetic/home/.ssh/id_rsa
+    arguments: {file_path: /synthetic/home/.ssh/id_rsa}
+    expect: {outcome: DENY, reason_code: RESOURCE_OUT_OF_SCOPE}
