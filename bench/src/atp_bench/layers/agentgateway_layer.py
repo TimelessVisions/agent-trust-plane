@@ -109,7 +109,8 @@ def _is_int(expr: str) -> str:
 
 # ATP's resource id grammar (``atp_core.resources.RESOURCE_PATTERN``): 1-255 code points, no
 # '*', no control characters. agentgateway's CEL regex (Rust ``regex``) is Unicode-aware, so
-# ``{1,255}`` counts code points exactly like Python's ``re`` (to be checked against the pinned binary before D2 approval).
+# ``{1,255}`` counts code points, not bytes (as Python's ``re`` does).
+# A pinned-binary test checks this before D2 can be approved.
 _RESOURCE_ID_RE = r"\A[^*\x00-\x1f\x7f]{1,255}\z"
 # Largest max_length rendered as a code-point regex; ``(?s:.){0,100000}`` exceeds the regex size
 # limit in agentgateway 1.6.0 (checked on the binary), 10000 compiles.
