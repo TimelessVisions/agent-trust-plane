@@ -1,5 +1,4 @@
 import pytest
-
 from atp_bench.dojo import SUITES, Call, load_suite
 
 EXPECTED_COUNTS: dict[str, tuple[int, int]] = {

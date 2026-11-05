@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
-
 from atp_bench.annotations import Annotation
 from atp_bench.dojo import Call, load_suite
 from atp_bench.layers.atp_layer import AtpLayer, render_atp_config
@@ -107,7 +107,8 @@ def test_render_config_uses_absolute_quoted_paths(tmp_path):
     assert up["command"] == sys.executable
     assert Path(up["command"]).is_absolute()
     assert str(journal) in up["args"]  # path with a space stays one argv element
-    assert all(Path(a).is_absolute() for a in up["args"] if a.startswith(("/", "\\")) or ":" in a[:3])
+    paths = [a for a in up["args"] if a.startswith(("/", "\\")) or ":" in a[:3]]
+    assert all(Path(a).is_absolute() for a in paths)
     by_tool = {m["mcp_tool"]: m for m in cfg["tools"]}
     assert set(by_tool) == set(suite.tool_names)
     assert by_tool["send_money"]["resource_template"] == "dojo.banking:{recipient}"
@@ -152,9 +153,8 @@ def test_render_config_passes_argument_subset_of_through(tmp_path):
 def test_classify_only_policy_decisions_are_denials():
     import json
 
-    from mcp import types
-
     from atp_bench.layers.atp_layer import classify
+    from mcp import types
 
     def result(code):
         payload = {"reason_code": code, "message": "m"}
@@ -163,13 +163,30 @@ def test_classify_only_policy_decisions_are_denials():
             structured_content=payload, is_error=True,
         )  # fmt: skip
 
-    for code in ("CAPABILITY_NOT_GRANTED", "RESOURCE_OUT_OF_SCOPE", "ACTION_DENIED_BY_POLICY",
-                 "ARGUMENT_TOO_LONG", "ARGUMENT_NOT_ALLOWED", "PAYMENT_EXCEEDS_DELEGATED_AUTHORITY",
-                 "DELEGATION_EXPIRED", "APPROVAL_REQUIRED_BY_POLICY", "TOOL_ARGUMENTS_INVALID"):
+    for code in (
+        "CAPABILITY_NOT_GRANTED",
+        "RESOURCE_OUT_OF_SCOPE",
+        "ACTION_DENIED_BY_POLICY",
+        "ARGUMENT_TOO_LONG",
+        "ARGUMENT_NOT_ALLOWED",
+        "PAYMENT_EXCEEDS_DELEGATED_AUTHORITY",
+        "DELEGATION_EXPIRED",
+        "APPROVAL_REQUIRED_BY_POLICY",
+        "TOOL_ARGUMENTS_INVALID",
+    ):
         assert classify(result(code)).status == "DENIED", code
-    for code in ("POLICY_SET_NOT_FOUND", "TOOL_NOT_REGISTERED", "OPERATOR_KEY_REQUIRED",
-                 "AGENT_CREDENTIAL_INVALID", "GRANT_EXPIRED", "EXECUTION_FAILED",
-                 "TRACE_NOT_FOUND", "EVENT_TYPE_RESERVED", "UPSTREAM_ERROR", "SOMETHING_NEW"):
+    for code in (
+        "POLICY_SET_NOT_FOUND",
+        "TOOL_NOT_REGISTERED",
+        "OPERATOR_KEY_REQUIRED",
+        "AGENT_CREDENTIAL_INVALID",
+        "GRANT_EXPIRED",
+        "EXECUTION_FAILED",
+        "TRACE_NOT_FOUND",
+        "EVENT_TYPE_RESERVED",
+        "UPSTREAM_ERROR",
+        "SOMETHING_NEW",
+    ):
         assert classify(result(code)).status == "INCONCLUSIVE", code
 
 
@@ -189,9 +206,11 @@ def test_atp_missing_policy_set_is_inconclusive_not_denied(tmp_path, monkeypatch
 
     # The wrapper refuses to start on an unknown policy set: a harness failure that surfaces
     # as an error from open(), never as a DENIED outcome.
-    with pytest.raises(RuntimeError, match="failed to start"):
-        with AtpLayer().open(suite, _annotation(), None, journal, tmp_path):
-            pass
+    with (
+        pytest.raises(RuntimeError, match="failed to start"),
+        AtpLayer().open(suite, _annotation(), None, journal, tmp_path),
+    ):
+        pass
     assert read_journal(journal) == []
 
 
@@ -213,3 +232,107 @@ def test_atp_declared_rule_is_loaded_and_enforced(tmp_path):
     assert too_long.detail.startswith("ARGUMENT_TOO_LONG")
     assert fine.status == "ALLOWED"
     assert [c.args["subject"] for c in read_journal(journal)] == ["ok"]
+
+
+def _rule_ann(applies_to, resource_args=None) -> Annotation:
+    return Annotation(
+        user_task="user_task_0", status="ok", capabilities=("send_money",),
+        resource_scope=("dojo.banking:*",),
+        resource_args=resource_args or {"send_money": "recipient"},
+        rules=({"id": "r", "applies_to": applies_to, "kind": "argument_max",
+                "argument": "amount", "max": 100},),
+        rationale=RATIONALE,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "applies_to, match",
+    [
+        ({"tool": "dojo.slack", "action": "send_money"}, "tool"),
+        ({"tool": "mcp.dojo-banking", "action": "send_money"}, "tool"),
+        ({"tool": "*", "action": "send_money"}, "tool"),
+        ({"tool": "dojo.banking", "action": "send_monie"}, "action"),
+        ({"tool": "dojo.banking"}, "action"),  # action defaults to "*"
+    ],
+)
+def test_render_rejects_unknown_rule_tool_or_action(tmp_path, applies_to, match):
+    ann = _rule_ann(applies_to)
+    with pytest.raises(ValueError, match=match):
+        render_atp_config(
+            load_suite("banking"), ann, _server_argv("banking", tmp_path / "j"), tmp_path / "h"
+        )
+
+
+def test_render_rejects_resource_arg_not_in_tool_schema(tmp_path):
+    ann = _rule_ann(
+        {"tool": "dojo.banking", "action": "send_money"}, resource_args={"send_money": "payee"}
+    )
+    with pytest.raises(ValueError, match=r"payee.*send_money"):
+        render_atp_config(
+            load_suite("banking"), ann, _server_argv("banking", tmp_path / "j"), tmp_path / "h"
+        )
+
+
+def test_denial_codes_raises_without_assert(monkeypatch):
+    """The ReasonCode drift guard survives ``python -O``: it is an explicit raise."""
+    from enum import StrEnum
+
+    from atp_bench.layers.atp_layer import _denial_codes
+
+    import atp_core
+
+    class Shrunk(StrEnum):
+        CAPABILITY_NOT_GRANTED = "CAPABILITY_NOT_GRANTED"
+
+    monkeypatch.setattr(atp_core, "ReasonCode", Shrunk)
+    with pytest.raises(RuntimeError, match="RESOURCE_OUT_OF_SCOPE"):
+        _denial_codes()
+
+
+def test_classify_narrows_delegation_codes():
+    import json
+
+    from atp_bench.layers.atp_layer import classify
+    from mcp import types
+
+    def result(code):
+        payload = {"reason_code": code, "message": "m"}
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(payload))],
+            structured_content=payload, is_error=True,
+        )  # fmt: skip
+
+    denied = {
+        "DELEGATION_EXCEEDS_PARENT_CAPABILITIES",
+        "DELEGATION_EXCEEDS_PARENT_RESOURCE_SCOPE",
+        "DELEGATION_EXPIRED",
+        "DELEGATION_REVOKED",
+    }
+    from atp_core import ReasonCode
+
+    all_delegation = {r.value for r in ReasonCode if r.value.startswith("DELEGATION_")}
+    assert denied <= all_delegation
+    for code in sorted(all_delegation):
+        want = "DENIED" if code in denied else "INCONCLUSIVE"
+        assert classify(result(code)).status == want, code
+
+
+def test_render_time_annotation_error_is_inconclusive_in_a_run(tmp_path):
+    """A loadable annotation that fails render-time checks never passes silently."""
+    from atp_bench.run import run_benchmark
+
+    item = {
+        "user_task": "user_task_0", "status": "ok", "capabilities": ["get_balance"],
+        "resource_scope": ["dojo.banking:*"], "resource_args": {"get_balance": "no_such_arg"},
+        "rationale": RATIONALE,
+    }  # fmt: skip
+    root = tmp_path / "ann"
+    root.mkdir()
+    (root / "banking.yaml").write_text(yaml.safe_dump([item]), encoding="utf-8")
+    summary = run_benchmark(
+        [AtpLayer()], ["banking"], tmp_path / "out", user_tasks=["user_task_0"],
+        injections_per_task=0, require_preregistration=False, annotations_root=root,
+    )  # fmt: skip
+    assert summary.utility_status("banking", "user_task_0", "atp") == "INCONCLUSIVE"
+    (row,) = summary.results
+    assert "no_such_arg" in row.detail

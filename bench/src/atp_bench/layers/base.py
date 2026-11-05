@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from collections.abc import Callable
 from contextlib import AbstractContextManager
@@ -96,13 +97,15 @@ class StdioMcpSession:
         self._loop = asyncio.get_running_loop()
         self._stop = asyncio.Event()
         try:
-            async with stdio_client(self._params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await asyncio.wait_for(session.initialize(), self._startup_timeout_s)
-                    self._session = session
-                    self._ready.set()
-                    await self._stop.wait()
-        except BaseException as exc:  # noqa: BLE001 - reported to the opener
+            async with (
+                stdio_client(self._params) as (read, write),
+                ClientSession(read, write) as session,
+            ):
+                await asyncio.wait_for(session.initialize(), self._startup_timeout_s)
+                self._session = session
+                self._ready.set()
+                await self._stop.wait()
+        except BaseException as exc:  # reported to the opener
             if not self._ready.is_set():
                 self._error = exc
         finally:
@@ -110,10 +113,8 @@ class StdioMcpSession:
 
     def close(self) -> None:
         if self._loop is not None and self._stop is not None:
-            try:
+            with contextlib.suppress(RuntimeError):  # loop already closed
                 self._loop.call_soon_threadsafe(self._stop.set)
-            except RuntimeError:  # loop already closed
-                pass
         if self._thread.is_alive():
             self._thread.join(timeout=60)
 
@@ -123,7 +124,7 @@ class StdioMcpSession:
             result = await asyncio.wait_for(
                 self._session.call_tool(call.function, call.args), self._call_timeout_s
             )
-        except Exception as exc:  # noqa: BLE001 - timeout or transport failure
+        except Exception as exc:  # timeout or transport failure
             return CallOutcome("INCONCLUSIVE", f"{type(exc).__name__}: {exc}"[:300])
         return self._classify(result)
 
@@ -133,6 +134,6 @@ class StdioMcpSession:
         future = asyncio.run_coroutine_threadsafe(self._call(call), self._loop)
         try:
             return future.result(self._call_timeout_s + 10)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             future.cancel()
             return CallOutcome("INCONCLUSIVE", f"{type(exc).__name__}: {exc}"[:300])

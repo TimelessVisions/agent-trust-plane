@@ -8,9 +8,6 @@ from pathlib import Path
 
 import anyio
 import pytest
-from mcp import ClientSession, StdioServerParameters, types
-from mcp.client.stdio import get_default_environment, stdio_client
-
 from atp_bench.dojo import SUITES, Call, load_suite
 from atp_bench.suite_server import (
     READONLY,
@@ -19,16 +16,22 @@ from atp_bench.suite_server import (
     is_state_changing,
     read_journal,
 )
+from mcp import ClientSession, StdioServerParameters, types
+from mcp.client.stdio import get_default_environment, stdio_client
 
 
 def _params(suite: str, injection: str, journal: Path) -> StdioServerParameters:
     return StdioServerParameters(
         command=sys.executable,
         args=[
-            "-m", "atp_bench.suite_server",
-            "--suite", suite,
-            "--injection-task", injection,
-            "--journal", str(journal),
+            "-m",
+            "atp_bench.suite_server",
+            "--suite",
+            suite,
+            "--injection-task",
+            injection,
+            "--journal",
+            str(journal),
         ],
         env=get_default_environment(),
     )
@@ -38,10 +41,12 @@ def _drive(params: StdioServerParameters, steps):
     """Run ``steps(session)`` against a live server; return its result."""
 
     async def main():
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await steps(session)
+        async with (
+            stdio_client(params) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+            return await steps(session)
 
     return anyio.run(main)
 
@@ -50,17 +55,22 @@ def _text(result: types.CallToolResult) -> str:
     return "".join(b.text for b in result.content if isinstance(b, types.TextContent))
 
 
-def test_lists_every_suite_tool(tmp_path):
-    suite = load_suite("banking")
+@pytest.mark.parametrize("name", SUITES)
+def test_lists_every_suite_tool(tmp_path, name):
+    suite = load_suite(name)
 
     async def steps(session):
         return await session.list_tools()
 
-    listed = _drive(_params("banking", "none", tmp_path / "j.jsonl"), steps)
+    listed = _drive(_params(name, "none", tmp_path / "j.jsonl"), steps)
     assert {t.name for t in listed.tools} == set(suite.tool_names)
-    send = next(t for t in listed.tools if t.name == "send_money")
-    # Argument names come from AgentDojo's parameter models.
-    assert {"recipient", "amount", "subject", "date"} <= set(send.input_schema["properties"])
+    # Argument names come from AgentDojo's parameter models, for every tool.
+    want = {n: set(schema.get("properties", {})) for n, _, schema in suite.tool_specs()}
+    got = {t.name: set(t.input_schema.get("properties", {})) for t in listed.tools}
+    assert got == want
+    if name == "banking":
+        send = next(t for t in listed.tools if t.name == "send_money")
+        assert {"recipient", "amount", "subject", "date"} <= set(send.input_schema["properties"])
 
 
 def test_journals_before_executing(tmp_path):
@@ -121,15 +131,25 @@ def test_journal_line_exists_while_function_runs(tmp_path, monkeypatch):
     assert seen == [[Call("get_iban", {})]]
 
 
+def _strings(obj) -> list[str]:
+    """Every string value nested anywhere in a dumped model."""
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        return [s for v in obj.values() for s in _strings(v)]
+    if isinstance(obj, (list, tuple, set)):
+        return [s for v in obj for s in _strings(v)]
+    return []
+
+
 def test_injection_goal_reaches_tool_output(tmp_path):
     suite = load_suite("banking")
     goal = suite.injection_goal("injection_task_0")
     env = suite.env_with_injection("injection_task_0")
     clean = suite.env_with_injection(None)
-    assert goal in env.model_dump_json().replace("\n", "\n") or goal in json.dumps(
-        env.model_dump()
-    )
-    assert goal not in json.dumps(clean.model_dump())
+    # Compare against the raw string values: JSON escaping would hide a goal with newlines.
+    assert any(goal in v for v in _strings(env.model_dump()))
+    assert not any(goal in v for v in _strings(clean.model_dump()))
 
     async def steps(session):
         return await session.call_tool("get_most_recent_transactions", {})
@@ -180,3 +200,38 @@ def test_every_injection_ground_truth_has_a_state_changing_call(name):
         assert any(is_state_changing(name, c.function) for c in calls), (
             f"{name}/{tid} ground truth {[c.function for c in calls]} has no state-changing call"
         )
+
+
+def test_journal_write_failure_runs_nothing(tmp_path, monkeypatch):
+    """If the journal line cannot be written, the AgentDojo function must not run."""
+    import atp_bench.suite_server as mod
+
+    suite = load_suite("banking")
+    ran: list[Call] = []
+    real_run = type(suite).run
+
+    def spy(self, env, call):
+        ran.append(call)
+        return real_run(self, env, call)
+
+    def fail(journal, call):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(type(suite), "run", spy)
+    monkeypatch.setattr(mod, "_journal_append", fail)
+    server = build_server(suite, None, tmp_path / "j.jsonl")
+
+    async def go():
+        return await server.call_tool("send_money", {
+            "recipient": "GB29NWBK60161331926819", "amount": 1.0,
+            "subject": "x", "date": "2022-01-01",
+        })  # fmt: skip
+
+    with pytest.raises(Exception, match="Error executing tool send_money") as info:
+        anyio.run(go)
+    # The client gets an error result and no journal line; the runner's partial-journal guard
+    # (test_run.py::test_partial_journal_is_inconclusive) then makes the item INCONCLUSIVE.
+    assert isinstance(info.value.__cause__, OSError)
+    assert "disk full" in str(info.value.__cause__)
+    assert ran == []
+    assert read_journal(tmp_path / "j.jsonl") == []

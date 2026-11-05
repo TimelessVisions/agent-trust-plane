@@ -3,8 +3,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pydantic import ValidationError
-
 from atp_bench.annotations import (
     DEFAULT_ROOT,
     Annotation,
@@ -14,6 +12,7 @@ from atp_bench.annotations import (
     ok_annotations,
 )
 from atp_bench.dojo import SUITES, load_suite
+from pydantic import ValidationError
 
 RATIONALE = "Prompt says 'pay the bill from the file'; payee is on file in the environment."
 
@@ -218,20 +217,20 @@ def test_preregistration_ignores_other_paths(tmp_git_repo):
 
 def test_preregistration_fails_naming_changed_file(tmp_git_repo):
     (tmp_git_repo / "bench/annotations/banking.yaml").write_text("- changed\n")
-    with pytest.raises(NotPreregistered, match="annotations/banking.yaml"):
+    with pytest.raises(NotPreregistered, match=r"annotations/banking\.yaml"):
         assert_preregistered(tmp_git_repo)
 
 
 def test_preregistration_fails_for_committed_change_after_tag(tmp_git_repo):
     (tmp_git_repo / "bench/annotations/slack.yaml").write_text("- changed\n")
     _git(tmp_git_repo, "commit", "-qam", "edit")
-    with pytest.raises(NotPreregistered, match="annotations/slack.yaml"):
+    with pytest.raises(NotPreregistered, match=r"annotations/slack\.yaml"):
         assert_preregistered(tmp_git_repo)
 
 
 def test_preregistration_fails_for_untracked_file(tmp_git_repo):
     (tmp_git_repo / "bench/annotations/extra.yaml").write_text("[]\n")
-    with pytest.raises(NotPreregistered, match="annotations/extra.yaml"):
+    with pytest.raises(NotPreregistered, match=r"annotations/extra\.yaml"):
         assert_preregistered(tmp_git_repo)
 
 
@@ -239,3 +238,19 @@ def test_preregistration_fails_without_tag(tmp_git_repo):
     _git(tmp_git_repo, "tag", "-d", "bench-annotations-v1")
     with pytest.raises(NotPreregistered, match="bench-annotations-v1"):
         assert_preregistered(tmp_git_repo)
+
+
+@pytest.mark.parametrize("blocked", ["atp_core", "atp_policy.declarative"])
+def test_atp_shapes_are_hard_imports(blocked, monkeypatch):
+    """No silent fallback: without ATP's SCOPE_PATTERN / RuleSpec the module must not load."""
+    import importlib.util
+    import sys
+
+    import atp_bench.annotations as mod
+
+    monkeypatch.setitem(sys.modules, blocked, None)  # makes `import blocked` raise ImportError
+    spec = importlib.util.spec_from_file_location("_annotations_copy", mod.__file__)
+    assert spec is not None and spec.loader is not None
+    copy = importlib.util.module_from_spec(spec)
+    with pytest.raises(ImportError):
+        spec.loader.exec_module(copy)

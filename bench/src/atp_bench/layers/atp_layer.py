@@ -29,9 +29,16 @@ _DENIAL_NAMES = frozenset(
         "ACTION_DENIED_BY_POLICY",
         "APPROVAL_REQUIRED_BY_POLICY",
         "APPROVAL_REQUIRED_AMOUNT_THRESHOLD",
+        # Delegation: only expiry, revocation and capability / scope escalation are decisions
+        # about the call. The other DELEGATION_* codes (NOT_FOUND, *_MISMATCH, CHAIN_*, ...)
+        # mean the harness built a broken chain, so they are INCONCLUSIVE.
+        "DELEGATION_EXCEEDS_PARENT_CAPABILITIES",
+        "DELEGATION_EXCEEDS_PARENT_RESOURCE_SCOPE",
+        "DELEGATION_EXPIRED",
+        "DELEGATION_REVOKED",
     }
 )
-_DENIAL_PREFIXES = ("ARGUMENT_", "PAYMENT_", "DELEGATION_")
+_DENIAL_PREFIXES = ("ARGUMENT_", "PAYMENT_")
 # Denials the proxy itself issues before consulting the gateway.
 _PROXY_DENIALS = frozenset({"TOOL_UNKNOWN", "TOOL_ARGUMENTS_TOO_LARGE", "TOOL_ARGUMENTS_INVALID"})
 
@@ -41,11 +48,37 @@ def _denial_codes() -> frozenset[str]:
 
     values = {r.value for r in ReasonCode}
     missing = _DENIAL_NAMES - values
-    assert not missing, f"ReasonCode lost {missing}"
-    return frozenset(
-        {v for v in values if v in _DENIAL_NAMES or v.startswith(_DENIAL_PREFIXES)}
-        | _PROXY_DENIALS
-    )
+    if missing:  # an explicit raise, so the guard survives ``python -O``
+        raise RuntimeError(f"ReasonCode lost {sorted(missing)}")
+    denials = {v for v in values if v in _DENIAL_NAMES or v.startswith(_DENIAL_PREFIXES)}
+    return frozenset(denials | _PROXY_DENIALS)
+
+
+def _check_annotation(suite: DojoSuite, annotation: Annotation) -> None:
+    """Render-time checks against the real suite: a mistake raises instead of rendering a
+    config that silently never matches (the run then reports the item INCONCLUSIVE)."""
+    tools = set(suite.tool_names)
+    props = {name: set(schema.get("properties", {})) for name, _, schema in suite.tool_specs()}
+    where = f"{suite.name}/{annotation.user_task}"
+    for tool, arg in annotation.resource_args.items():
+        if arg not in props.get(tool, set()):
+            raise ValueError(
+                f"{where}: resource_args {arg!r} is not a parameter of {tool!r}; "
+                f"parameters: {sorted(props.get(tool, set()))}"
+            )
+    for rule in annotation.rules:
+        applies = rule.get("applies_to") or {}
+        rule_tool, action = applies.get("tool"), applies.get("action", "*")
+        if rule_tool != f"dojo.{suite.name}":
+            raise ValueError(
+                f"{where}: rule {rule.get('id')!r} applies_to.tool {rule_tool!r} is unknown; "
+                f"expected 'dojo.{suite.name}'"
+            )
+        if action not in tools:
+            raise ValueError(
+                f"{where}: rule {rule.get('id')!r} applies_to.action {action!r} is not a "
+                f"{suite.name} tool"
+            )
 
 
 def render_atp_config(
@@ -60,6 +93,7 @@ def render_atp_config(
         raise ValueError(f"home must be absolute: {home}")
     if not Path(server_argv[0]).is_absolute():
         raise ValueError(f"server_argv[0] must be an absolute executable path: {server_argv[0]}")
+    _check_annotation(suite, annotation)
     tools: list[dict[str, Any]] = []
     for name in suite.tool_names:
         arg = annotation.resource_args.get(name)
@@ -90,10 +124,8 @@ def render_atp_config(
         rule = dict(raw)
         # The proxy stamps every envelope with tool "mcp.<server_name>" and ignores the mapping's
         # `tool`, so a rule written against the logical tool "dojo.<suite>" is retargeted to it.
-        applies = dict(rule.get("applies_to") or {})
-        if applies.get("tool") == f"dojo.{suite.name}":
-            applies["tool"] = f"mcp.{config['server_name']}"
-            rule["applies_to"] = applies
+        # _check_annotation has already ensured every rule names that logical tool.
+        rule["applies_to"] = {**rule["applies_to"], "tool": f"mcp.{config['server_name']}"}
         rules.append(rule)
     policies = {
         "version": 1,
@@ -155,15 +187,16 @@ class AtpLayer:
         _write_yaml(config_path, config)
         _write_yaml(workdir / "policies.yaml", policies)
         _write_yaml(home / "policies.yaml", policies)  # where ATP loads declared sets from
+        wrap_args = [
+            "-m", "atp_cli.main", "mcp", "wrap",
+            "--config", str(config_path),
+            "--home", str(home),
+            "--mode", "enforce",
+            "--log-level", "warning",
+        ]  # fmt: skip
         params = StdioServerParameters(
             command=sys.executable,
-            args=[
-                "-m", "atp_cli.main", "mcp", "wrap",
-                "--config", str(config_path),
-                "--home", str(home),
-                "--mode", "enforce",
-                "--log-level", "warning",
-            ],  # fmt: skip
+            args=wrap_args,
             env={**get_default_environment(), "ATP_HOME": str(home)},
         )
         with StdioMcpSession(params, classify, call_timeout_s=self.timeout_s + 5) as session:

@@ -16,19 +16,11 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from atp_bench.dojo import load_suite
+from atp_core import SCOPE_PATTERN
+from atp_policy.declarative import RuleSpec
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "annotations"
 DEFAULT_TAG = "bench-annotations-v1"
-
-try:  # authoritative patterns/shapes live in ATP; fall back only if not importable
-    from atp_core import SCOPE_PATTERN
-except ImportError:  # pragma: no cover
-    SCOPE_PATTERN = r"^(\*|[A-Za-z0-9._-]{1,64}:(\*|[^*\x00-\x1f\x7f]{1,254}\*?))$"
-
-try:
-    from atp_policy.declarative import RuleSpec
-except ImportError:  # pragma: no cover
-    RuleSpec = None  # type: ignore[assignment,misc]
 
 _FORBIDDEN = re.compile(r"injection[_ ]?task", re.IGNORECASE)
 
@@ -36,8 +28,6 @@ _FORBIDDEN = re.compile(r"injection[_ ]?task", re.IGNORECASE)
 def _check_rule(rule: dict[str, Any]) -> None:
     if not isinstance(rule, dict):
         raise ValueError("rule must be a mapping")
-    if RuleSpec is None:  # pragma: no cover
-        return
     try:
         RuleSpec.model_validate(rule)
     except ValidationError as exc:
@@ -114,7 +104,7 @@ def ok_annotations(suites: list[str], root: Path = DEFAULT_ROOT) -> list[tuple[s
     ]
 
 
-class NotPreregistered(Exception):
+class NotPreregistered(Exception):  # noqa: N818 - public name, kept
     """Annotations differ from the pre-registration tag, or the tag is missing."""
 
 

@@ -6,7 +6,6 @@ must be justified from the prompt or a named environment record and listed in
 """
 
 import pytest
-
 from atp_bench.annotations import ok_annotations
 from atp_bench.layers.atp_layer import AtpLayer
 from atp_bench.run import run_benchmark

@@ -1,4 +1,7 @@
-"""CLI: python -m atp_bench run --layer atp --layer open --suite banking --out results/ [--slice N]"""
+"""CLI.
+
+python -m atp_bench run --layer atp --layer open --suite banking --out results/ [--slice N]
+"""
 
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--slice", type=int, default=None, dest="slice_n",
                      help="first N user tasks per suite, in numeric order")  # fmt: skip
     run.add_argument("--injections-per-task", type=int, default=None,
-                     help="first K injection tasks, in numeric order; 0 = utility only")  # fmt: skip
+                     help="first K injection tasks (numeric order); 0 = utility only")  # fmt: skip
     run.add_argument("--annotations", type=Path, default=DEFAULT_ROOT)
     run.add_argument("--no-require-preregistration", action="store_true",
                      help="skip the pre-registration check (development runs only)")  # fmt: skip

@@ -1,4 +1,7 @@
-"""Runner and scoring. Fake layers write the journal themselves; one test runs the real OpenLayer."""
+"""Runner and scoring.
+
+Fake layers write the journal themselves; one test runs the real OpenLayer.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +12,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from atp_bench import run as run_mod
 from atp_bench.annotations import NotPreregistered
 from atp_bench.dojo import Call, load_suite
@@ -198,7 +200,8 @@ class RaisingLayer(FakeLayer):
 
                 @contextmanager
                 def cm():
-                    with inner as session:
+                    with inner:
+
                         class Boom:
                             def call(self, call):
                                 raise OSError("pipe broke mid-replay")
@@ -241,8 +244,8 @@ def test_atp_config_render_failure_is_inconclusive(tmp_path, monkeypatch):
 def test_not_applicable_excluded_for_all_layers(tmp_path):
     root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"], na=["user_task_1"])
     layers = [FakeLayer("a"), FakeLayer("b")]
-    summary = run(layers, tmp_path, root,
-                  user_tasks=["user_task_0", "user_task_1", "user_task_2"], injections_per_task=1)  # fmt: skip
+    tasks = ["user_task_0", "user_task_1", "user_task_2"]
+    summary = run(layers, tmp_path, root, user_tasks=tasks, injections_per_task=1)
     for layer in layers:
         assert {t for t, _ in layer.opened} == {"user_task_0"}  # N/A and un-annotated never run
         for task in ("user_task_1", "user_task_2"):  # absent from the file == N/A
@@ -361,3 +364,68 @@ def test_utility_under_attack_none_when_inconclusive(tmp_path):
     summary = run([FakeLayer(fail_open=True)], tmp_path, root, slice_n=1, injections_per_task=1)
     assert summary.rates("fake")["utility_under_attack_rate"] is None
     assert all(r.utility_under_attack is None for r in summary.results)
+
+
+class LosesJournal(FakeLayer):
+    """Says ALLOWED for ``lost`` but leaves no journal line: a partial journal."""
+
+    def __init__(self, lost):
+        super().__init__("lossy")
+        self.lost = lost  # predicate on Call
+
+    @contextmanager
+    def open(self, suite, annotation, injection_task, journal, workdir):
+        layer = self
+
+        class Session:
+            def call(self, call: Call) -> CallOutcome:
+                if not layer.lost(call):
+                    _journal_append(journal, call)
+                return CallOutcome("ALLOWED", "ok")
+
+        yield Session()
+
+
+def test_partial_journal_is_inconclusive(tmp_path):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    suite = load_suite("banking")
+    user_fns = {c.function for c in suite.user_ground_truth("user_task_0", suite.default_env())}
+    lossy = LosesJournal(lambda c: c.function in user_fns)
+    summary = run([lossy], tmp_path, root, slice_n=1, injections_per_task=1)
+    assert summary.utility_status("banking", "user_task_0", "lossy") == "INCONCLUSIVE"
+    rates = summary.rates("lossy")
+    assert rates["inconclusive"] == 2 and rates["n_pairs"] == 0 and rates["n_tasks"] == 0
+    assert all("journal" in r.detail for r in summary.results), summary.results
+
+
+def test_partial_journal_in_injection_phase_is_inconclusive(tmp_path):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    suite = load_suite("banking")
+    env = suite.env_with_injection("injection_task_0")
+    inj = suite.injection_ground_truth("injection_task_0", env)
+    user = suite.user_ground_truth("user_task_0", env)
+    lost = [c for c in inj if c not in user]  # lose only the injection phase's lines
+    assert lost
+    summary = run([LosesJournal(lambda c: c in lost)], tmp_path, root, slice_n=1,
+                  injections_per_task=1)  # fmt: skip
+    # Not SAFE: a lost line must never be read as "did not reach upstream".
+    assert summary.utility_status("banking", "user_task_0", "lossy") == "PASS"
+    (pair,) = [r for r in summary.results if r.injection_task]
+    assert pair.status == "INCONCLUSIVE" and pair.harmful is None
+
+
+def test_unreadable_journal_is_inconclusive(tmp_path, monkeypatch):
+    root = write_annotations(tmp_path / "ann", "banking", ["user_task_0"])
+    calls = {"n": 0}
+    real = run_mod.read_journal
+
+    def flaky(path):
+        calls["n"] += 1
+        if calls["n"] > 1:  # the phase-boundary read works; the final read fails
+            raise ValueError("corrupt journal line")
+        return real(path)
+
+    monkeypatch.setattr(run_mod, "read_journal", flaky)
+    summary = run([FakeLayer()], tmp_path, root, slice_n=1, injections_per_task=0)
+    assert summary.utility_status("banking", "user_task_0", "fake") == "INCONCLUSIVE"
+    assert "corrupt journal line" in summary.results[0].detail
