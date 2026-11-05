@@ -55,6 +55,24 @@ anti-goal. Ruling: *agentgateway policies read arguments via
 `mcpAuthorization` CEL, which was verified on the binary. Cost if wrong: none for fairness,
 since this direction only makes the competitor stronger.*
 
+**Where this is documented, and the risk it carries.** Body access inside `mcpAuthorization`
+is shown by the v1.6.0 *source*, `crates/agentgateway/src/mcp/streamablehttp.rs` lines
+155–158, with the comment quoted above. The MCP authorization docs (`schema/cel.md`, the
+`mcp-authorization` example) do not say that `request.body` is available there; they document
+only `mcp.tool.*`. So this is source-level behaviour of v1.6.0 and may change in a later
+release. The bench pins v1.6.0, and the binary tests below fail loudly if it stops holding.
+
+**Parser agreement, checked on the binary.**
+
+- *Duplicate keys.* For `"amount":50,"amount":500` the CEL `json()` sees 500 and denies; for
+  `"amount":500,"amount":50` it sees 50 and allows, and the upstream also executed 50 (the
+  journal holds `amount: 50`). Both parsers keep the last key, so a duplicate cannot show CEL
+  one value and the tool another. A duplicate `arguments` key under `params` is rejected by
+  the gateway (`-32603 invalid params for method: tools/call`) and never reaches the upstream.
+- *JSON-RPC batches.* A batch (`[{...},{...}]`) is rejected before authorization with HTTP 400
+  `mcp: fail to deserialize request body`; nothing reaches the upstream. So a batch cannot
+  smuggle a second call past a per-call rule.
+
 Limit: this works on HTTP transports, where a body exists. The bench always runs
 agentgateway in front of the HTTP suite server.
 
@@ -97,20 +115,23 @@ Every element is rendered against the semantics of `atp_policy.declarative.Decla
 | Annotation element | agentgateway CEL |
 |---|---|
 | `capabilities` (tool names) | One rule per tool: `mcp.tool.name == "<tool>"`. Tools not listed get no rule, so they are denied. |
-| `resource_scope` + `resource_args` (resource `dojo.<suite>:{arg}`) | `has(a.<arg>) && a.<arg> != null && (string or int) && !string(a.<arg>).contains("*") && (string(a.<arg>) in [exact ids] \|\| string(a.<arg>).startsWith(<prefix>) ...)`. `*` or `dojo.<suite>:*` only needs the argument present. If no pattern can match, the tool gets no rule. |
+| `resource_scope` + `resource_args` (resource `dojo.<suite>:{arg}`) | Every branch starts with the id guard `has(a.<arg>) && a.<arg> != null && (type string \|\| int \|\| uint) && string(a.<arg>).matches("\\A[^*\\x00-\\x1f\\x7f]{1,255}\\z")`, ATP's `RESOURCE_PATTERN` id part (1–255 code points, no `*`, no control characters; ATP rejects such a resource before any matching). `*` and `dojo.<suite>:*` are the guard alone. Exact and prefix patterns add `&& (string(a.<arg>) in [exact ids] \|\| string(a.<arg>).startsWith("<prefix>") ...)`. Patterns of another type are skipped. If no pattern can match, the tool gets no rule. |
 | `resource_scope` for a tool without a resource argument (`tool:<name>`) | Checked at render time with ATP's own `scope_matches`. If it is out of scope, the tool gets no rule, because ATP's kernel would deny every call to it. |
-| `argument_max` / `argument_min` | `double(a.x) <= M` / `>= M`. Like ATP, numeric strings are accepted, while booleans and non-numbers fail. |
-| `argument_allowed_values` | Typed membership: `type(a.x) == string && a.x in [...]`, the same for `bool`, and `(int\|uint) && int(a.x) in [...]` for integers. As in ATP, `true` never matches `1` and `"5"` never matches `5`. agentgateway's `json()` yields `uint` for non-negative integers, so both are accepted. |
+| `argument_max` / `argument_min` | `N.with(n, n - n == 0.0 && n <= M)` (`>= M` for min), where `N` is `double(a.x)` for a JSON number and, for a string, `double(a.x.trim().replace("_", ""))` after checking every `_` sits between two digits (else a deliberate parse error). `n - n == 0.0` is false for ±infinity and NaN, which ATP's `_to_decimal` rejects. Booleans and non-numbers are a CEL error, so the rule is false: deny, as in ATP. |
+| `argument_allowed_values` | Typed membership (literals are written with `json.dumps(..., ensure_ascii=False)`, so non-BMP characters are literal, not surrogate escapes): `type(a.x) == string && a.x in [...]`, the same for `bool`, and `(int\|uint) && int(a.x) in [...]` for integers. As in ATP, `true` never matches `1` and `"5"` never matches `5`. agentgateway's `json()` yields `uint` for non-negative integers, so both are accepted. |
 | `argument_subset_of` | `(type(a.x) == list ? a.x : [a.x]).all(i, <typed membership of i>)` |
 | `argument_required` | `has(a.x) && a.x != null` for each argument |
 | `argument_forbidden` | `!has(a.x)` for each argument. As in ATP, an explicit `null` counts as present. |
 | `optional: true` | `!(present) \|\| <check>` |
-| `argument_max_length` | `size(a.x) <= N` for strings, lists and objects. Partly dropped; see below. |
+| `argument_max_length` | String: `size(a.x) <= N \|\| a.x.matches("\\A(?s:.){0,N}\\z")`. CEL `size()` counts UTF-8 bytes while ATP counts code points; bytes ≤ N implies code points ≤ N, and agentgateway's regex (Rust `regex`) is Unicode-aware, so the regex counts code points exactly. For N > 10000 the regex does not compile in v1.6.0 (100000 fails on the binary), so only `size()` is used and strings are enforced on UTF-8 bytes (stricter for non-ASCII), recorded as a `DroppedConstraint`. List or object: `size(a.x) <= N`. Number or boolean: passes (dropped; see below). |
 | `deny`, `require_approval` | The tool gets no rule. agentgateway has no approval flow, and ATP's REQUIRE_APPROVAL never lets the call reach the upstream either, so a denial is the faithful rendering. |
 
-The bench test `test_rendered_rules_match_atp_semantics_on_binary` drives 23 calls, covering
-each rule kind, through the real binary. It checks every decision, and the journal, against
-ATP's semantics.
+The bench tests `test_rendered_rules_match_atp_semantics_on_binary` (38 calls) and
+`test_resource_ids_and_unicode_match_atp_on_binary` (12 calls) drive every rule kind through
+the pinned binary when executed, including infinities, NaN, padded and underscored numeric strings, invalid
+and 255/256-code-point resource ids under a prefix scope and under `dojo.banking:*`, code-point
+string lengths and a non-BMP allowed value. They check every decision, and the journal,
+against ATP's semantics. The new edge-case coverage requires a fresh pinned-binary run before D2 can be marked complete.
 
 ## What is dropped and why
 
@@ -122,6 +143,8 @@ count for each layer in `summary.md`.
   canonical JSON text. agentgateway's CEL functions
   (https://github.com/agentgateway/agentgateway/blob/v1.6.0/schema/cel-functions.md) cannot
   produce that text, so such values pass. Strings, lists and objects are enforced.
+- **`argument_max_length` above 10000 on strings** is enforced on UTF-8 bytes (stricter for
+  non-ASCII), as explained in the mapping table.
 - **Nothing else.** None of the 1.0 annotations (banking, slack, travel, workspace) uses
   `argument_max_length`. Their rendered policies therefore drop **zero** constraints, which
   `test_argument_rules_listed_as_dropped` pins.
@@ -130,7 +153,17 @@ These are approximations rather than drops, and they are recorded here so that n
 them as weakening:
 
 - **Decimal limits.** Limits compare as IEEE doubles, while ATP compares them as Decimals.
-  This can only matter at the 1e-15 relative scale.
+  This can only matter at the 1e-15 relative scale, which includes integers above 2^53
+  (9007199254740993 becomes 9007199254740992.0, so a value one above a limit that large
+  could pass).
+- **Numeric strings CEL reads differently from `Decimal`.** Matched: surrounding whitespace
+  (`" 50 "`), digit-separating underscores (`"1_000"`; `"1__0"` and `"_1"` are rejected by
+  both), signs, `".5"`, exponents, and `inf`/`Infinity`/`NaN` in any case (rejected by both).
+  Not matched: a string whose `Decimal` value is finite but overflows a double (`"1e400"`
+  becomes infinity and is denied; ATP allows it under an `argument_min`, denies it under an
+  `argument_max`), and non-ASCII digits such as fullwidth `"５０"` (ATP's `Decimal` reads 50;
+  CEL fails to parse and denies). Both differences are stricter than ATP, and no AgentDojo
+  argument takes such values.
 - **Delegation chain.** ATP's kernel delegation checks (signature, expiry, revocation) have
   no counterpart here. They are not part of the per-task annotation, and agentgateway
   authenticates callers by JWT instead.
