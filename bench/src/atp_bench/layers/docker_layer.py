@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from pathlib import Path

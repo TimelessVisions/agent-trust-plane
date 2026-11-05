@@ -116,6 +116,45 @@ jobs:
             ${{ runner.temp }}/docker-info.txt
           if-no-files-found: warn
 
+
+  d4-reference:
+    name: D4 name-only and Docker-runtime negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark dependencies
+        working-directory: bench
+        run: uv sync --frozen
+      - name: D4 negative control and name-only upstream tests
+        working-directory: bench
+        run: |
+          uv run --no-sync pytest -q -p no:cacheprovider \
+            --junitxml="${{ runner.temp }}/d4.xml" tests/test_d4_layers.py
+      - name: Require measured D4 reference tests
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/d4.xml" \
+            --label "D4 name-only reference and Docker absent" --min-tests 3 --max-skips 0 \
+            --require-case test_name_only_allows_granted_tool_with_any_args \
+            --require-case test_name_only_denies_ungranted_tool \
+            --require-case test_docker_absent_is_env_blocked
+      - name: Preserve D4 JUnit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-d4-junit
+          path: ${{ runner.temp }}/d4.xml
+          if-no-files-found: warn
+
   root-verify:
     name: Root full suite, type checks and demos
     runs-on: ubuntu-latest
