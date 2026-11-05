@@ -21,7 +21,8 @@ from policy_fixtures import (
     payment_envelope,
 )
 
-@pytest.mark.parametrize("tool", ["mcp.payments", "mcp.vendor_processor", "mcp.another-server"])
+
+@pytest.mark.parametrize("tool", ["mcp.payments", "mcp.vendor_processor", "mcp.another_server"])
 def test_payment_capability_requires_approved_destination_for_any_mcp_tool(
     tool: str,
 ) -> None:
