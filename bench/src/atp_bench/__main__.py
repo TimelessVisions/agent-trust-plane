@@ -13,6 +13,8 @@ from atp_bench.annotations import DEFAULT_ROOT
 from atp_bench.dojo import SUITES
 from atp_bench.layers.agentgateway_layer import AgentgatewayLayer
 from atp_bench.layers.atp_layer import AtpLayer
+from atp_bench.layers.docker_layer import DockerMcpLayer
+from atp_bench.layers.name_only_layer import NameOnlyLayer
 from atp_bench.layers.open_layer import OpenLayer
 from atp_bench.layers.toolhive_layer import ToolhiveLayer
 from atp_bench.run import run_benchmark
@@ -20,6 +22,8 @@ from atp_bench.run import run_benchmark
 LAYERS = {
     "agentgateway": AgentgatewayLayer,
     "atp": AtpLayer,
+    "docker-mcp-gateway": DockerMcpLayer,
+    "name-only": NameOnlyLayer,
     "open": OpenLayer,
     "toolhive": ToolhiveLayer,
 }

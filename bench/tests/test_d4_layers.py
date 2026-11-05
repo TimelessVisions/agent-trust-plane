@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 
 import pytest
-
 from atp_bench.annotations import DEFAULT_ROOT, load_annotations
 from atp_bench.dojo import Call, load_suite
 from atp_bench.layers.base import EnvBlocked
@@ -26,11 +25,13 @@ def test_docker_absent_is_env_blocked(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(command, 1, "", "Cannot connect to Docker daemon")
 
     monkeypatch.setattr("atp_bench.layers.docker_layer.subprocess.run", no_daemon)
-    with pytest.raises(EnvBlocked, match=r"Docker engine unavailable:.*Cannot connect"):
-        with DockerMcpLayer().open(
+    with (
+        pytest.raises(EnvBlocked, match=r"Docker engine unavailable:.*Cannot connect"),
+        DockerMcpLayer().open(
             suite, ann, None, tmp_path / "journal.jsonl", tmp_path / "docker-work"
-        ):
-            pytest.fail("a missing Docker daemon must never authorize or deny a call")
+        ),
+    ):
+        pytest.fail("a missing Docker daemon must never authorize or deny a call")
 
 
 def test_name_only_allows_granted_tool_with_any_args(tmp_path):
