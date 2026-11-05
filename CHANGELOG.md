@@ -53,8 +53,11 @@ changes may land in minor versions and are called out).
   puts on the session agent's grant. `authorize` reserves the amount
   atomically when it mints a grant (SQLite `BEGIN IMMEDIATE` plus a sum
   check), execution settles it, a failed outcome releases it, and a
-  reservation whose grant expires unexecuted or unreported is released
-  lazily (next reservation, `atp trace list`). Every budget on a chain
+  reservation whose grant expires unused is released lazily (next
+  reservation, `atp trace list`); once consumed (e.g. released to an
+  external executor) it is held until an outcome is reported. Only an
+  argument named `amount` is budgeted. Replay of a budget denial reports
+  `budget_reevaluated: false` and no outcome change. Every budget on a chain
   applies; the tightest binds. Over budget is DENY with the new reason code
   `PAYMENT_EXCEEDS_BUDGET`, and `atp policy explain` shows `limit`,
   `spent`, `reserved` and `requested`. Breaking: `EffectiveAuthority` (in

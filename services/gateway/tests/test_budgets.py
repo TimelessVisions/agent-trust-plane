@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from atp_core import ActionEnvelope, Budget, Money
 from atp_gateway import GatewaySettings, Runtime, build_runtime, create_app
-from atp_identity import BudgetLine, SqliteReservationStore
+from atp_identity import BudgetLine, InMemoryReservationStore, SqliteReservationStore
 from atp_policy.explain import explain, format_explanation
 
 from gateway_fixtures import (
@@ -446,3 +446,192 @@ def test_explain_names_budget_source(client: TestClient) -> None:
     assert "PAYMENT_EXCEEDS_BUDGET" in text
     assert "raise the budget on the grant that sets it" in text
     assert chain["ap"] in text.split("what would need to change:")[1]
+
+
+# ------------------------------------------------------ fix round 1 (C4)
+def _external_runtime(tmp_path: Path) -> tuple[GatewaySettings, Runtime, Clock]:
+    settings = GatewaySettings(
+        database_path=str(tmp_path / "atp.db"),
+        **GRANT_KEY_SETTINGS,
+        operator_key=OPERATOR_KEY,
+        external_tool_prefixes="ext.",
+    )
+    rt = build_runtime(settings)
+    clk = Clock()
+    rt.trust_plane.clock = clk
+    return settings, rt, clk
+
+
+def _release_external(client: TestClient, chain: dict[str, Any], amount: str) -> str:
+    out = pay(client, chain, amount, tool="ext.pay")
+    assert out["decision"]["outcome"] == "ALLOW", out["decision"]
+    grant = out["execution_grant"]
+    done = execute(client, out["envelope"], grant["token"], chain["token"])
+    assert done["status"] == "released"
+    grant_id: str = grant["grant_id"]
+    return grant_id
+
+
+def _report(client: TestClient, chain: dict[str, Any], grant_id: str, succeeded: bool) -> None:
+    r = client.post(
+        f"/executions/{grant_id}/outcome",
+        json={"succeeded": succeeded, "summary": {}},
+        headers=bearer(chain["token"]),
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_unreported_external_payment_cannot_exceed_budget(tmp_path: Path) -> None:
+    """A payment released to an external executor stays reserved until its
+    outcome is reported, however long that takes: grant expiry does not free it."""
+    settings, rt, clk = _external_runtime(tmp_path)
+    try:
+        with TestClient(create_app(settings, runtime=rt)) as client:
+            chain = budget_chain(client, ap_budget=_budget("500"))
+            first = _release_external(client, chain, "400.00")
+            clk.advance(seconds=121)  # the grant has expired; the money may still move
+            assert client.get("/traces", headers=op()).status_code == 200
+            for _ in range(2):
+                again = pay(client, chain, "400.00", tool="ext.pay")
+                assert again["decision"]["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
+            assert "reserved=400.00" in _explained(client, again["envelope"]["trace_id"])
+            # A late success report settles it: spent, never above the limit.
+            _report(client, chain, first, succeeded=True)
+            usage = rt.trust_plane.reservations.usage([_line(chain, "500")], _usd("0"), clk())
+            assert (usage.usages[0].spent, usage.usages[0].reserved) == (
+                Decimal("400.00"),
+                Decimal("0.00"),
+            )
+            assert pay(client, chain, "100.01")["decision"]["reason_code"] == (
+                "PAYMENT_EXCEEDS_BUDGET"
+            )
+    finally:
+        rt.close()
+
+
+def test_late_external_failure_releases_held_reservation(tmp_path: Path) -> None:
+    settings, rt, clk = _external_runtime(tmp_path)
+    try:
+        with TestClient(create_app(settings, runtime=rt)) as client:
+            chain = budget_chain(client, ap_budget=_budget("500"))
+            held = _release_external(client, chain, "400.00")
+            clk.advance(seconds=121)
+            assert pay(client, chain, "200.00")["decision"]["reason_code"] == (
+                "PAYMENT_EXCEEDS_BUDGET"
+            )
+            _report(client, chain, held, succeeded=False)
+            assert pay(client, chain, "500.00")["decision"]["outcome"] == "ALLOW"
+    finally:
+        rt.close()
+
+
+def test_store_held_reservation_survives_expiry_and_settle_on_released_counts(
+    tmp_path: Path,
+) -> None:
+    """Store contract. ``hold`` exempts a reservation from lazy expiry.
+    Ruling: ``settle`` on a RELEASED reservation records it as spent (the
+    money moved), even past the limit; a RELEASED row can only come from a
+    never-used grant or an explicit failure, so this is a reconciliation path."""
+    conn = sqlite3.connect(tmp_path / "b.db", check_same_thread=False)
+    try:
+        for store in (SqliteReservationStore(conn), InMemoryReservationStore()):
+            line = _line({"ap": "grt_x"}, "500.00")
+            exp = NOW + timedelta(minutes=2)
+            later = NOW + timedelta(hours=1)
+            assert store.reserve("h", [line], _usd("400"), expires_at=exp, now=NOW).ok
+            store.hold("h")
+            assert store.release_expired(later) == 0
+            assert not store.reserve("x", [line], _usd("200"), expires_at=later, now=later).ok
+            store.release("h")
+            assert store.reserve(
+                "y", [line], _usd("500"), expires_at=exp + timedelta(hours=2), now=later
+            ).ok
+            store.settle("h")  # released, then reported as having happened after all
+            u = store.usage([line], _usd("0"), later).usages[0]
+            assert (u.spent, u.reserved) == (Decimal("400.00"), Decimal("500.00"))
+            conn.execute("DELETE FROM budget_reservations")
+    finally:
+        conn.close()
+
+
+class _FailingTool:
+    name = "payments"
+
+    def execute(self, envelope: ActionEnvelope) -> dict[str, Any]:
+        from atp_core import ReasonCode
+        from atp_gateway.tools import ToolError
+
+        raise ToolError(ReasonCode.EXECUTION_FAILED, "rail down")
+
+
+def test_tool_failure_releases_reservation(runtime: Runtime, client: TestClient) -> None:
+    chain = budget_chain(client, ap_budget=_budget("500"))
+    runtime.trust_plane.tools.register(_FailingTool())
+    out = pay(client, chain, "400.00")
+    done = execute(client, out["envelope"], out["execution_grant"]["token"], chain["token"])
+    assert done["status"] == "failed"
+    usage = runtime.trust_plane.reservations.usage(
+        [_line(chain, "500")], _usd("0"), runtime.trust_plane.clock()
+    )
+    assert (usage.usages[0].spent, usage.usages[0].reserved) == (Decimal("0.00"), Decimal("0.00"))
+
+
+def test_budget_lines_keeps_tightest_of_two_budgets_on_one_key() -> None:
+    from atp_core import ChainBudget
+    from atp_identity import budget_lines
+
+    budgets = [
+        ChainBudget(grant_id=g, grantee=AP_AGENT, budget=Budget(amount=_usd(a), period="day"))
+        for g, a in (("grt_loose", "900"), ("grt_tight", "300"), ("grt_mid", "500"))
+    ]
+    lines = budget_lines(budgets, HUMAN, NOW)
+    assert [(ln.grant_id, ln.limit.amount) for ln in lines] == [("grt_tight", Decimal("300.00"))]
+
+
+def test_store_reserve_refusal_honoured_after_precheck_passes(
+    runtime: Runtime, client: TestClient
+) -> None:
+    """The peek passes, then another process takes the room before our
+    reserve: the reserve's refusal decides."""
+    from atp_identity import InMemoryReservationStore as Base
+
+    class Racing(Base):
+        def reserve(self, reservation_id: str, lines: Any, amount: Money, **kw: Any) -> Any:
+            super().reserve("rival", lines, amount, **kw)
+            return super().reserve(reservation_id, lines, amount, **kw)
+
+    runtime.trust_plane.reservations = Racing()
+    chain = budget_chain(client, ap_budget=_budget("500"))
+    out = pay(client, chain, "300.00")
+    assert out["decision"]["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
+    assert out["execution_grant"] is None
+
+
+def test_replay_of_budget_denial_is_not_a_change(client: TestClient) -> None:
+    chain = budget_chain(client, ap_budget=_budget("300"))
+    over = pay(client, chain, "400.00")
+    assert over["decision"]["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
+    r = client.post(f"/replay/{over['envelope']['trace_id']}", json={}, headers=op())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["outcome_changed"] is False
+    assert body["budget_reevaluated"] is False
+    assert "budget not re-evaluated" in body["summary"]
+    # An ordinary replay still says nothing about budgets being skipped.
+    ok = pay(client, chain, "100.00")
+    plain = client.post(f"/replay/{ok['envelope']['trace_id']}", json={}, headers=op()).json()
+    assert "budget not re-evaluated" not in plain["summary"]
+
+
+@pytest.mark.parametrize("amount", ["1e30", " 10.00", "10.00 ", "10.00\n"])
+def test_unusable_amount_denied_as_invalid(client: TestClient, amount: str) -> None:
+    chain = budget_chain(client, ap_budget=_budget("500"))
+    out = pay(client, chain, amount)
+    assert out["decision"]["outcome"] == "DENY"
+    assert out["decision"]["reason_code"] == "PAYMENT_ARGUMENTS_INVALID"
+
+
+@pytest.mark.parametrize("amount", ["1e30", " 1.00", "1.00 "])
+def test_money_rejects_huge_or_padded_amounts_as_value_error(amount: str) -> None:
+    with pytest.raises(ValueError):
+        Money.model_validate({"amount": amount, "currency": "USD"})

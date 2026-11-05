@@ -8,8 +8,20 @@ Lifecycle of a reservation (its id is the execution grant id):
 * ``settle`` on a successful outcome: the reservation becomes spend, counted
   at ``actual`` (default: the reserved amount).
 * ``release`` on a failed outcome: it stops counting.
-* Expiry: a reservation still unsettled when its grant expires is released
-  lazily, on the next ``reserve`` (and whenever the gateway lists traces).
+* ``hold`` once the grant is consumed (the gateway hands the action to a tool
+  or an external executor): the reservation is exempt from expiry and counts
+  until ``settle`` or ``release``. Money released to an external executor
+  can move after the grant expires, so only the outcome report ends it.
+* Expiry: a reservation whose grant was never consumed is released lazily
+  when the grant expires, on the next ``reserve`` (and whenever the gateway
+  lists traces).
+* ``settle`` also applies to a RELEASED reservation: the outcome is recorded
+  as spent, because the money really moved, even when that takes the period
+  past its limit. A RELEASED row can only come from a grant never used or an
+  explicit failure, so this is a reconciliation path, not a way round a limit.
+
+An operator reconciles a held reservation whose executor never reports by
+calling ``settle`` or ``release`` on the store with the grant id.
 
 Spend is bucketed by ``(budget key, period, period start, currency)``. The
 key is ``"<root principal>><grantee>"`` of the grant that declares the
@@ -34,6 +46,7 @@ from atp_core import BudgetPeriod, ChainBudget, Money, PrincipalRef
 RESERVED = "reserved"
 SETTLED = "settled"
 RELEASED = "released"
+HELD = "held"
 _ZERO = Decimal("0.00")
 
 
@@ -133,6 +146,10 @@ class ReservationStore(Protocol):
         against every line, or against none if any line would be exceeded."""
         ...
 
+    def hold(self, reservation_id: str) -> None:
+        """Exempt a (consumed) reservation from expiry until settled or released."""
+        ...
+
     def settle(self, reservation_id: str, actual: Money | None = None) -> None: ...
 
     def release(self, reservation_id: str) -> None: ...
@@ -178,7 +195,7 @@ class InMemoryReservationStore:
                 continue
             if row.status == SETTLED:
                 spent += row.actual if row.actual is not None else row.amount
-            elif row.status == RESERVED:
+            elif row.status in (RESERVED, HELD):
                 reserved += row.amount
         return spent, reserved
 
@@ -211,10 +228,20 @@ class InMemoryReservationStore:
                     self._rows.append(_Row(reservation_id, line.bucket, amount.amount, expires_at))
             return result
 
+    def hold(self, reservation_id: str) -> None:
+        with self._lock:
+            for row in self._rows:
+                if row.reservation_id == reservation_id and row.status == RESERVED:
+                    row.status = HELD
+
     def settle(self, reservation_id: str, actual: Money | None = None) -> None:
         with self._lock:
             for row in self._rows:
-                if row.reservation_id == reservation_id and row.status in (RESERVED, RELEASED):
+                if row.reservation_id == reservation_id and row.status in (
+                    RESERVED,
+                    HELD,
+                    RELEASED,
+                ):
                     if actual is not None and actual.currency != row.bucket[3]:
                         raise ValueError("settlement currency differs from the reservation")
                     row.status = SETTLED
@@ -223,7 +250,7 @@ class InMemoryReservationStore:
     def release(self, reservation_id: str) -> None:
         with self._lock:
             for row in self._rows:
-                if row.reservation_id == reservation_id and row.status == RESERVED:
+                if row.reservation_id == reservation_id and row.status in (RESERVED, HELD):
                     row.status = RELEASED
 
     def release_expired(self, now: datetime) -> int:
@@ -284,8 +311,8 @@ class SqliteReservationStore:
     def _sums(self, line: BudgetLine) -> tuple[Decimal, Decimal]:
         rows = self._conn.execute(
             "SELECT status, amount, actual FROM budget_reservations WHERE budget_key = ? "
-            "AND period = ? AND period_start = ? AND currency = ? AND status IN (?, ?)",
-            (*line.bucket, RESERVED, SETTLED),
+            "AND period = ? AND period_start = ? AND currency = ? AND status IN (?, ?, ?)",
+            (*line.bucket, RESERVED, HELD, SETTLED),
         ).fetchall()
         spent, reserved = _ZERO, _ZERO
         for status, amount, actual in rows:
@@ -349,21 +376,30 @@ class SqliteReservationStore:
                     raise ValueError("settlement currency differs from the reservation")
             self._conn.execute(
                 "UPDATE budget_reservations SET status = ?, actual = COALESCE(?, amount) "
-                "WHERE reservation_id = ? AND status IN (?, ?)",
+                "WHERE reservation_id = ? AND status IN (?, ?, ?)",
                 (
                     SETTLED,
                     str(actual.amount) if actual is not None else None,
                     reservation_id,
                     RESERVED,
+                    HELD,
                     RELEASED,
                 ),
+            )
+
+    def hold(self, reservation_id: str) -> None:
+        with self._immediate():
+            self._conn.execute(
+                "UPDATE budget_reservations SET status = ? WHERE reservation_id = ? AND status = ?",
+                (HELD, reservation_id, RESERVED),
             )
 
     def release(self, reservation_id: str) -> None:
         with self._immediate():
             self._conn.execute(
-                "UPDATE budget_reservations SET status = ? WHERE reservation_id = ? AND status = ?",
-                (RELEASED, reservation_id, RESERVED),
+                "UPDATE budget_reservations SET status = ? "
+                "WHERE reservation_id = ? AND status IN (?, ?)",
+                (RELEASED, reservation_id, RESERVED, HELD),
             )
 
     def release_expired(self, now: datetime) -> int:

@@ -131,6 +131,10 @@ class ReplayResult(BaseModel):
     original_policy_set_version: str
     replayed_policy_set_version: str
     outcome_changed: bool
+    budget_reevaluated: bool = Field(
+        default=False,
+        description="always false: replay re-runs policy only, never the spend budget",
+    )
     summary: str
 
 
@@ -748,6 +752,9 @@ class TrustPlane:
                 now=now,
             )
             self.grants.consume(claims.grant_id, now)
+            # Consumed: from here the action may happen, so its reservation
+            # no longer lapses with the grant; only an outcome ends it.
+            self.reservations.hold(claims.grant_id)
         except (GrantError, DelegationError) as exc:
             return self._blocked(envelope, exc.reason_code, exc.message)
 
@@ -936,14 +943,23 @@ class TrustPlane:
         replayed = self.engine.evaluate(policy_set, ctx).model_copy(
             update={"replay_of": original.decision_id}
         )
-        changed = replayed.outcome != original.outcome or (
-            replayed.reason_code != original.reason_code
-        )
+        # Replay re-runs policy only. Budgets depend on spend at the time, so a
+        # decision the budget check made is not re-evaluated, and the policy
+        # still letting the action reach that check is no change.
+        budget_decided = original.matched_policy == BUDGET_POLICY
+        if budget_decided and replayed.outcome is not DecisionOutcome.DENY:
+            changed = False
+        else:
+            changed = replayed.outcome != original.outcome or (
+                replayed.reason_code != original.reason_code
+            )
         summary = (
             f"{original.policy_set_version}: {original.outcome.value} "
             f"({original.reason_code.value}) -> {policy_set.version}: "
             f"{replayed.outcome.value} ({replayed.reason_code.value})"
         )
+        if budget_decided:
+            summary += "; budget not re-evaluated (replay re-runs policy only)"
         self.traces.append(
             trace_id,
             EventType.REPLAY_PERFORMED,
@@ -953,6 +969,7 @@ class TrustPlane:
                 "original_policy_set_version": original.policy_set_version,
                 "replayed_policy_set_version": policy_set.version,
                 "outcome_changed": changed,
+                "budget_reevaluated": False,
                 "summary": summary,
                 "replayed_decision": replayed.model_dump(mode="json"),
                 "execution": "not permitted on replay",
@@ -965,6 +982,7 @@ class TrustPlane:
             original_policy_set_version=original.policy_set_version,
             replayed_policy_set_version=policy_set.version,
             outcome_changed=changed,
+            budget_reevaluated=False,
             summary=summary,
         )
 
@@ -1008,8 +1026,8 @@ class TrustPlane:
         )
 
     def list_traces(self, limit: int = 50) -> list[TraceSummary]:
-        # Lazy housekeeping: reservations whose grant expired unexecuted or
-        # unreported stop counting against their budget.
+        # Lazy housekeeping: reservations whose grant expired unused stop
+        # counting against their budget (consumed ones are held until an outcome).
         with self._lock, self.transaction():
             self.reservations.release_expired(self.clock())
         return self.traces.list_traces(limit)

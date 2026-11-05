@@ -133,7 +133,12 @@ In serve mode, put it in `constraints` on any grant in a chain
 - **Which actions count:** any action whose `arguments` carry an `amount`
   (for the built-in payments tool, every payment). `currency` defaults to
   the budget's currency when the arguments have none. An action without an
-  `amount` argument is not budgeted.
+  argument named exactly `amount` is not budgeted: a wrapped MCP tool that
+  calls it `value`, `total` or `amount_cents` spends outside the budget, so
+  check the argument names of the tools behind `atp-mcp.yaml` before relying
+  on one. An `amount` that is not a plain decimal string or number (padded
+  with whitespace, more than 2 decimals, too large, negative) is DENY
+  `PAYMENT_ARGUMENTS_INVALID`.
 - **Currency:** a budget is in one currency. An action in another currency
   under a budgeted chain is denied with `PAYMENT_CURRENCY_NOT_PERMITTED`;
   there is no conversion.
@@ -147,11 +152,18 @@ In serve mode, put it in `constraints` on any grant in a chain
   execution grant, atomically (SQLite `BEGIN IMMEDIATE` plus a sum check;
   two concurrent authorizations, even from two gateways on one file,
   cannot together exceed the budget). A completed execution *settles* the
-  reservation into spend; a failed one *releases* it. A reservation whose
-  grant expires without an execution or an outcome report is released
+  reservation into spend; a failed one (tool error, or a failure report)
+  *releases* it. A reservation whose grant expires **unused** is released
   lazily, on the next reservation and whenever traces are listed
-  (`atp trace list`, `GET /traces`). An outcome reported after that still
-  settles: money that was spent counts.
+  (`atp trace list`, `GET /traces`). Once the grant is consumed the
+  reservation is *held*: an action released to an external executor keeps
+  counting, past the grant's expiry, until its outcome is reported (success
+  settles, failure releases). If an executor never reports, an operator
+  reconciles it on the store (`reservations.settle(grant_id)` or
+  `reservations.release(grant_id)`); there is no CLI for this yet. Settling a
+  reservation that was already released records it as spent, even past the
+  limit, because the money moved; a released reservation can only come from
+  an unused grant or an explicit failure, so this is reconciliation only.
 - **Over budget** is DENY `PAYMENT_EXCEEDS_BUDGET` from
   `gateway.budget.v1`. `atp policy explain` shows the binding budget's
   `limit`, `spent`, `reserved` and `requested`, and the grant that sets it.
@@ -159,7 +171,10 @@ In serve mode, put it in `constraints` on any grant in a chain
   it is put to an approver, and an approved retry that no longer fits (other
   spend landed meanwhile) is denied without using up the approval.
 - **Replay** re-evaluates policy only; it does not re-check budgets, which
-  depend on what else was spent at the time.
+  depend on what else was spent at the time. Replaying a decision the budget
+  check made says so (`budget_reevaluated: false`, "budget not re-evaluated"
+  in the summary) and is not counted as `outcome_changed` unless the
+  replayed policy itself now denies.
 
 ## Where sets come from at run time
 
