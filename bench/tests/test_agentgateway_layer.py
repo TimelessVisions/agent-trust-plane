@@ -270,9 +270,8 @@ def test_rendered_rules_match_atp_semantics_on_binary(tmp_path):
     try:
         cm = AgentgatewayLayer().open(suite, ann, None, journal, tmp_path / "work")
         session = cm.__enter__()
-    except EnvBlocked as exc:  # the binary cannot run here; nothing to compare against
-        assert exc.reason
-        return
+    except EnvBlocked as exc:  # binary comparison must never silently pass
+        raise AssertionError(f"ENV_BLOCKED: {exc.reason}") from exc
     try:
         got = [(c.function, c.args, session.call(c).status) for c, _ in cases]
     finally:
@@ -321,8 +320,7 @@ def test_resource_ids_and_unicode_match_atp_on_binary(tmp_path):
         cm = AgentgatewayLayer().open(suite, ann, None, journal, tmp_path / "work")
         session = cm.__enter__()
     except EnvBlocked as exc:
-        assert exc.reason
-        return
+        raise AssertionError(f"ENV_BLOCKED: {exc.reason}") from exc
     try:
         got = [(c.function, c.args, session.call(c).status) for c, _ in cases]
     finally:
