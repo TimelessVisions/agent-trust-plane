@@ -287,6 +287,21 @@ def test_migrate_json_keeps_json_numbers(tmp_path: Path) -> None:
     assert isinstance(migrated["cases"][0]["amount"], float)
 
 
+def test_migrate_json_escapes_characters_yaml_rejects(tmp_path: Path) -> None:
+    # atp loads JSON through YAML, which rejects raw U+0080 and folds raw U+0085.
+    path = tmp_path / "atp-mcp.json"
+    path.write_text(
+        '{"server_name": "n", "upstream": {"command": "x\\u0080y\\u2028z\\u0085w"}}',
+        encoding="utf-8",
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        before = load_config(path)
+    assert migrate_file(path).changed
+    assert path.read_text(encoding="utf-8").isascii()
+    assert load_config(path).upstream.command == before.upstream.command == "x\u0080y\u2028z\u0085w"
+
+
 def test_migrate_json_with_bom(tmp_path: Path) -> None:
     path = tmp_path / "suite.json"
     path.write_bytes((BOM + '{"delegations": [], "cases": []}').encode("utf-8"))

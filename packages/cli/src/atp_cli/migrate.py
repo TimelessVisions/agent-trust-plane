@@ -108,6 +108,13 @@ def _same(candidate: str, expected: dict[str, Any]) -> bool:
     return parsed == expected and list(parsed) == list(expected)
 
 
+def _loads_as_mapping(candidate: str) -> bool:
+    try:
+        return isinstance(yaml.safe_load(candidate), dict)
+    except yaml.YAMLError:
+        return False
+
+
 def _first_content_line(lines: list[str]) -> int | None:
     """Index of the first line that holds content: not blank, a comment, a
     directive, a ``---`` document-start marker (with an optional tag or
@@ -171,7 +178,15 @@ def _updated(path: Path, text: str, raw: dict[str, Any]) -> str:
                     data["version"] = FILE_FORMAT_VERSION  # keeps its position
                 else:
                     data = {"version": FILE_FORMAT_VERSION, **data}
-                return bom + json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+                # ASCII escapes: atp's loaders read JSON through YAML, which
+                # rejects or rewrites some raw characters (U+0080, U+0085).
+                out = json.dumps(data, indent=2, ensure_ascii=True) + "\n"
+                if json.loads(out) != data or not _loads_as_mapping(out):
+                    raise ValueError(
+                        f"{path}: rewriting this JSON file would change its data; "
+                        f"add `version: {FILE_FORMAT_VERSION}` by hand"
+                    )
+                return bom + out
     if "version" in raw:
         kept = _set_version_yaml(body, raw)
         expected = {**raw, "version": FILE_FORMAT_VERSION}
