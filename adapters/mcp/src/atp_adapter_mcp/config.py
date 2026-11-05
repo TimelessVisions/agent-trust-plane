@@ -303,6 +303,10 @@ def grant_key_material(value: str) -> str | None:
     for keys_dir in _grant_key_dirs():
         if path == keys_dir or path.is_relative_to(keys_dir):
             return "the grant key directory"
+        if keys_dir.is_relative_to(path):
+            # The ATP home itself, or any ancestor of the keys directory:
+            # access to it is access to the keys below it.
+            return "a directory containing the grant keys"
     return None
 
 

@@ -55,6 +55,22 @@ the old key signed is expired or verifiable until `retired[old] + ttl`: rotation
 never invalidates a live grant, and after one TTL the old key is inert. An
 `atp-grant/1` (HMAC) token has two segments and is `GRANT_MALFORMED`.
 
+Two operational notes on `Rotate`:
+
+- **The window follows the TTL in force at verification time.** `ttl` in
+  `Trusted` is the verifying process's `grant_ttl_seconds`, not the TTL the
+  old key minted under. Lowering the TTL across a rotation shortens the old
+  key's window and can cut off grants still inside their own expiry; raising
+  it lengthens the window. Keep the TTL unchanged across a rotation, or wait
+  one old TTL before lowering it.
+- **Restart promptly after rotating.** A running process keeps the signer it
+  loaded and keeps signing with the old key until it restarts; those grants
+  stop verifying at `retired[old] + ttl` (see the last section).
+- The `.retired` marker is written before `keys.env` switches, so a crash
+  mid-rotation leaves either the old key still active or the old key already
+  marked, never an unmarked (untrusted) old `.pub`. A `.retired` time more
+  than five minutes ahead of the verifier's clock is a configuration error.
+
 ```
 Rotate: retired := retired ∪ {active ↦ now}; active := fresh kid
 ```

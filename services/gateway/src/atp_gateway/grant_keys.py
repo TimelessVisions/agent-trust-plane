@@ -130,7 +130,17 @@ def load_public_key(keys_dir: Path, kid: str) -> Ed25519PublicKey:
     return key
 
 
-def retired_at(keys_dir: Path, kid: str) -> datetime | None:
+# A ``.retired`` time may be this far ahead of the verifier's clock (skew
+# between the host that rotated and the one verifying); more is a config error.
+RETIRED_CLOCK_SKEW = timedelta(minutes=5)
+
+
+def retired_at(keys_dir: Path, kid: str, *, now: datetime | None = None) -> datetime | None:
+    """When ``kid`` stopped signing, or None if it was never retired.
+
+    A time more than ``RETIRED_CLOCK_SKEW`` in the future is refused: it would
+    stretch the old key's verification window past one TTL.
+    """
     path = retired_marker_path(Path(keys_dir), kid)
     try:
         text = path.read_text(encoding="utf-8").strip()
@@ -139,6 +149,11 @@ def retired_at(keys_dir: Path, kid: str) -> datetime | None:
     when = datetime.fromisoformat(text)
     if when.tzinfo is None:
         raise ValueError(f"{path} must hold a timezone-aware ISO-8601 time")
+    if when > (now or utcnow()) + RETIRED_CLOCK_SKEW:
+        raise ValueError(
+            f"{path} holds a retirement time in the future ({when.isoformat()}); "
+            "fix the file or the clock"
+        )
     return when
 
 
@@ -171,7 +186,7 @@ def load_grant_keys(
         kid = pub.name[len("grant-") : -len(".pub")]
         if kid == active_kid or not _KID_RE.match(kid):
             continue
-        when = retired_at(keys_dir, kid)
+        when = retired_at(keys_dir, kid, now=now)
         if when is None:
             continue  # neither active nor retired: never trusted
         deadline = when + timedelta(seconds=grant_ttl_seconds)
@@ -245,8 +260,12 @@ def rotate_grant_key(
     """Make a new active grant key and retire the current one.
 
     Order matters for a crash at any step: the new key is written first, then
-    the env file is switched to it, then the old key is retired. Until the env
-    file changes, the old key is still active and complete.
+    the old key's ``.retired`` marker, then the env file is switched to the new
+    key, and only then is the old private key deleted. A crash before the
+    switch leaves the old key active and still able to sign (an active kid's
+    marker is ignored; a re-run rewrites it); a crash after it leaves the
+    old key already marked, so it keeps verifying for one TTL and is never
+    stranded as an untrusted, unmarked ``.pub``.
     Returns ``(old_kid, new_kid)``.
     """
     keys_dir = Path(keys_dir)
@@ -255,6 +274,12 @@ def rotate_grant_key(
         raise ValueError(f"{env_path} has no {KID_ENV}; nothing to rotate")
     _check_kid(old)
     new = generate_grant_key(keys_dir)
+    # ``old`` is still active, so any marker it has is left over from an
+    # interrupted rotation; this rotation's time replaces it.
+    when = (now or utcnow()).isoformat()
+    write_file_atomic(
+        retired_marker_path(keys_dir, old), f"{when}\n".encode("ascii"), private=False
+    )
     update_env_file(env_path, set_values={KID_ENV: new}, remove=frozenset({LEGACY_HMAC_ENV}))
     retire_grant_key(keys_dir, old, now=now)
     return old, new

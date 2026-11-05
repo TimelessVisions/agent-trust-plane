@@ -260,6 +260,49 @@ class TestKeyStorageAndRotation:
             later.verifier.verify(token, now=rotated_at + timedelta(seconds=120))
         assert exc.value.reason_code is ReasonCode.GRANT_SIGNATURE_INVALID
 
+    def test_rotation_crash_before_env_switch_strands_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The .retired marker is written before keys.env switches: a crash in
+        between leaves the old key active and usable, and a crash after the
+        switch can never leave the old .pub unmarked (untrusted)."""
+        import atp_gateway.grant_keys as gk
+
+        keys = tmp_path / "keys"
+        env = tmp_path / "keys.env"
+        old = generate_grant_key(keys)
+        env.write_text(f"ATP_GRANT_SIGNING_KID={old}\n", encoding="utf-8")
+        token = load_grant_keys(keys, old, grant_ttl_seconds=120, now=NOW).signer.mint(claims())
+
+        def crash(*_a: object, **_k: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(gk, "update_env_file", crash)
+        with pytest.raises(OSError):
+            rotate_grant_key(keys, env, now=NOW)
+        assert (keys / f"grant-{old}.retired").exists()  # marked before the switch
+        assert read_env_file(env)["ATP_GRANT_SIGNING_KID"] == old
+        ring = load_grant_keys(keys, old, grant_ttl_seconds=120, now=NOW)
+        assert ring.verifier.verify(ring.signer.mint(claims()), now=NOW).grant_id
+        monkeypatch.undo()
+
+        later = NOW + timedelta(seconds=60)
+        _, new = rotate_grant_key(keys, env, now=later)  # the re-run completes
+        after = load_grant_keys(keys, new, grant_ttl_seconds=120, now=later)
+        assert after.verifier.verify(token, now=later).grant_id
+        assert after.retired[old] == later + timedelta(seconds=120)  # re-run's time
+
+    def test_future_retired_time_is_a_config_error(self, tmp_path: Path) -> None:
+        keys = tmp_path / "keys"
+        active = generate_grant_key(keys)
+        old = generate_grant_key(keys)
+        marker = keys / f"grant-{old}.retired"
+        marker.write_text((NOW + timedelta(minutes=4)).isoformat(), encoding="ascii")
+        assert old in load_grant_keys(keys, active, grant_ttl_seconds=120, now=NOW).retired
+        marker.write_text((NOW + timedelta(hours=1)).isoformat(), encoding="ascii")
+        with pytest.raises(ValueError, match="future"):
+            load_grant_keys(keys, active, grant_ttl_seconds=120, now=NOW)
+
     def test_unretired_stray_public_key_is_not_trusted(self, tmp_path: Path) -> None:
         keys = tmp_path / "keys"
         active = generate_grant_key(keys)

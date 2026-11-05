@@ -203,6 +203,12 @@ class TestConfig:
         assert "env:KEYS (the grant key directory)" in refused(
             command="python", env={"KEYS": str(keys)}
         )
+        assert "env:HOME_DIR (a directory containing the grant keys)" in refused(
+            command="python", env={"HOME_DIR": str(keys.parent)}
+        )
+        assert "args[1] (a directory containing the grant keys)" in refused(
+            command="python", args=("--root", str(tmp_path))
+        )
         assert "env:KEYFILE (a grant key file)" in refused(
             command="python", env={"KEYFILE": f"/elsewhere/grant-{kid}.key"}
         )
