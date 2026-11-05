@@ -135,3 +135,18 @@ Ruling: preserve agentgateway v1.6.0's real argument-aware CEL enforcement, and 
 - **Required before D2 approval:** In a Linux environment with GitHub access, run the documented `bench/tests/test_agentgateway_layer.py` against pinned agentgateway v1.6.0, inspect JUnit counts, run both root and bench gates, obtain an independent code review, and fix any failures. Do not proceed to D3 on assumed success.
 
 Ruling: binary-semantic comparison tests now raise an explicit `ENV_BLOCKED` assertion when the pinned binary cannot execute instead of silently returning a passing pytest result — a missing measurement must never look like a PASS — cost if wrong: environments without the pinned binary will show a failing benchmark test until properly provisioned.
+
+### D2 verified candidate — GitHub Actions 41998777874 (2026-11-05)
+
+**Branch-only, pinned-runner evidence:** [workflow run](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/41998777874), commit `a4b3496a8f7a0b9e64fdaf837de9d04a65e733e0`.
+
+- **PASS** — D2 binary-backed JUnit: tests=9, failures=0, errors=0, skipped=0. The two mandatory binary semantic comparison cases executed. The pinned agentgateway v1.6.0 executable SHA-256 is `496ed27e6a96b55a9ad7cabe5c2be7172511f44a3cb113e533d22bf93a7f079d`, verified by the release-branch workflow.
+- **PASS** — root JUnit: tests=713, failures=0, errors=0, skipped=1; Ruff lint, Ruff format, mypy, and wrap/injection/regression/MCP demos succeeded.
+- **SKIP (explicit)** — `adapters/mcp/tests/test_proxy_third_party.py::test_reference_filesystem_server_behind_proxy`; JUnit reason: `set ATP_E2E_NPX=1 with npx on PATH to run the third-party server test`. It was not measured, not called PASS.
+- **PASS** — full bench JUnit: tests=204, failures=0, errors=0, skipped=0; includes 97 annotation-utility tests and all 9 D2 test cases.
+- Actual XML was inspected from `atp-v1-{root,bench,d2}-junit` workflow artifacts; counts above are not inferred from GitHub's green icon.
+- The D2 review's six identified issues were addressed with the optional patch, binary tests and competitor document: finite numbers/NaN; valid 1–255-character resource IDs across all scope shapes; Unicode code-point string length; numeric-string approximations; non-BMP CEL literals; raw-body CEL and parser limits. Documented residuals remain, especially IEEE-double precision and large/non-ASCII numeric strings.
+- **Review status:** the previous CHANGES_REQUIRED items have executable coverage and an internal cross-agent source review; this is not an external audit. No benchmark attack sweep was run and no benchmark success-rate numbers are claimed.
+- **Gate status:** D2 development verification PASS; release publication remains owner-gated. D3 may begin under the binding plan. The `bench-annotations-v1` tag and all owner gates remain untouched.
+
+Ruling: finish D2 review from the exact binary-backed CI result and preserve its documented CEL approximations — every required review issue has a tested or explicitly qualified outcome, without weakening competitor policy — cost if wrong: a policy transformation can diverge from ATP semantics outside the pinned test set; the published results must continue to disclose those limitations.
