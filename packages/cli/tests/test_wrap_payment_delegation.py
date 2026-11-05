@@ -46,7 +46,7 @@ def test_mcp_wrap_seeds_explicit_per_payment_limit_and_currencies() -> None:
     assert grant == "synthetic-grant-2"
     assert len(operator.grants) == 2
     for req in operator.grants:
-        assert req["constraints"]["max_amount"] == {"amount": "1000", "currency": "USD"}
+        assert req["constraints"]["max_amount"] == {"amount": "1000.00", "currency": "USD"}
         assert req["constraints"]["currencies"] == ["USD"]
 
 
