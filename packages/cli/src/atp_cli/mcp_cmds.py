@@ -226,6 +226,11 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
             "parent_grant_id": root,
             "capabilities": list(config.authority.capabilities),
             "resource_scope": list(config.authority.resource_scope),
+            **(
+                {"constraints": {"budget": config.authority.budget.model_dump(mode="json")}}
+                if config.authority.budget is not None
+                else {}
+            ),
             "expires_at": expires.isoformat(),
         }
     )["grant_id"]

@@ -16,6 +16,7 @@ import threading
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,12 +26,16 @@ from atp_core import (
     ActionEnvelope,
     ApprovalRequirement,
     ATPError,
+    ConstraintEvaluation,
     Decision,
     DecisionOutcome,
     DelegationError,
     EffectiveAuthority,
     EnforcementMode,
     GrantError,
+    Money,
+    PolicyEvaluation,
+    PolicyRef,
     PrincipalRef,
     ReasonCode,
     ToolError,
@@ -60,18 +65,26 @@ from atp_identity import (
     AuthenticatedAgent,
     AuthError,
     BearerCredentialProvider,
+    BudgetLine,
+    BudgetUsage,
     CredentialService,
     DelegationGrant,
     DelegationRequest,
     DelegationService,
     IdentityProvider,
+    InMemoryReservationStore,
+    ReservationResult,
+    ReservationStore,
     ResolvedChain,
+    budget_lines,
 )
 from atp_policy import PolicyContext, PolicyEngine, PolicySetRegistry, VendorDirectory
 
 log = logging.getLogger("atp.gateway")
 
 GATEWAY_ACTOR = "gateway"
+
+BUDGET_POLICY = PolicyRef(id="gateway.budget", version="v1")
 
 # Event types an agent may append itself (provenance about what it saw/did).
 AGENT_WRITABLE_EVENTS = frozenset({EventType.TASK_RECEIVED, EventType.EXTERNAL_CONTENT_INGESTED})
@@ -154,6 +167,7 @@ class TrustPlane:
         verifier: GrantVerifier | None = None,
         approvals: ApprovalStore | None = None,
         approver_roles: Mapping[str, frozenset[str]] | None = None,
+        reservations: ReservationStore | None = None,
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
@@ -175,6 +189,8 @@ class TrustPlane:
         self.transaction = transaction
         self.engine = PolicyEngine()
         self.approvals: ApprovalStore = approvals or InMemoryApprovalStore()
+        # Cumulative budgets: reserve at mint, settle on outcome, release on expiry.
+        self.reservations: ReservationStore = reservations or InMemoryReservationStore()
         # "kind:id" -> roles. Operator-configured (ATP_APPROVER_ROLES); the only
         # place a principal holds a role.
         self.approver_roles: dict[str, frozenset[str]] = dict(approver_roles or {})
@@ -332,12 +348,15 @@ class TrustPlane:
         decision = self.engine.evaluate(policy_set, ctx).model_copy(
             update={"enforcement": self.enforcement_mode}
         )
+        # Budgets are checked before an approval is used, so an over-budget
+        # retry neither spends the approval nor mints a grant, and an
+        # over-budget action is never put to an approver at all.
+        decision, lines, amount = self._check_budgets(envelope, authority, decision, now)
         used_approval: ApprovalRecord | None = None
         if decision.outcome is DecisionOutcome.REQUIRE_APPROVAL and decision.approval:
             decision, used_approval = self._apply_approval(envelope, decision, now)
-        self._record_decision(decision)
 
-        grant: IssuedGrant | None = None
+        claims: GrantClaims | None = None
         if decision.outcome is DecisionOutcome.ALLOW:
             claims = new_grant_claims(
                 trace_id=trace_id,
@@ -349,6 +368,20 @@ class TrustPlane:
                 ttl_seconds=self.grant_ttl_seconds,
                 now=now,
             )
+            if lines and amount is not None:
+                # Atomic sum check + insert. Under the gateway lock and inside
+                # the authorize transaction this agrees with the check above;
+                # it is the check that holds across processes.
+                reserved = self.reservations.reserve(
+                    claims.grant_id, lines, amount, expires_at=claims.expires_at, now=now
+                )
+                if not reserved.ok:
+                    decision = _budget_denial(decision, reserved)
+                    claims = None
+        self._record_decision(decision)
+
+        grant: IssuedGrant | None = None
+        if claims is not None:
             self.grants.issue(claims)
             token = self.signer.mint(claims)
             grant = IssuedGrant(token=token, grant_id=claims.grant_id, expires_at=claims.expires_at)
@@ -388,6 +421,79 @@ class TrustPlane:
             )
 
         return AuthorizationResult(decision=decision, execution_grant=grant)
+
+    # ---------------------------------------------------------------- budgets
+    def _check_budgets(
+        self,
+        envelope: ActionEnvelope,
+        authority: EffectiveAuthority | None,
+        decision: Decision,
+        now: datetime,
+    ) -> tuple[Decision, list[BudgetLine], Money | None]:
+        """Peek at every budget on the chain for an action that would otherwise
+        go ahead (ALLOW or REQUIRE_APPROVAL). An action is budgeted when its
+        arguments carry an ``amount``; ``currency`` defaults to the budget's."""
+        if (
+            authority is None
+            or not authority.budgets
+            or decision.outcome is DecisionOutcome.DENY
+            or "amount" not in envelope.arguments
+        ):
+            return decision, [], None
+        currencies = sorted({cb.budget.amount.currency for cb in authority.budgets})
+        raw_currency = envelope.arguments.get("currency")
+        currency = raw_currency if raw_currency is not None else currencies[0]
+        try:
+            raw = envelope.arguments["amount"]
+            if isinstance(raw, bool) or not isinstance(raw, (str, int, float, Decimal)):
+                raise ValueError(raw)
+            amount = Money.model_validate({"amount": raw, "currency": currency})
+        except (ValueError, InvalidOperation):
+            return (
+                _deny(
+                    decision,
+                    ReasonCode.PAYMENT_ARGUMENTS_INVALID,
+                    "a budget applies to this action, and its amount/currency is not a valid "
+                    "non-negative amount with at most 2 decimals",
+                ),
+                [],
+                None,
+            )
+        if currencies != [amount.currency]:
+            return (
+                _deny(
+                    decision,
+                    ReasonCode.PAYMENT_CURRENCY_NOT_PERMITTED,
+                    f"the delegation chain budgets spend in {', '.join(currencies)}; "
+                    f"this action is in {amount.currency}, which no budget can count",
+                    ConstraintEvaluation(
+                        name="budget.currency",
+                        requested=amount.currency,
+                        limit=currencies,
+                        satisfied=False,
+                    ),
+                ),
+                [],
+                None,
+            )
+        lines = budget_lines(authority.budgets, authority.root_principal, now)
+        result = self.reservations.usage(lines, amount, now)
+        if not result.ok:
+            return _budget_denial(decision, result), [], None
+        binding = result.binding
+        assert binding is not None
+        passed = PolicyEvaluation(
+            policy=BUDGET_POLICY,
+            outcome=DecisionOutcome.ALLOW,
+            reason_code=ReasonCode.ALLOWED,
+            message=f"{amount} fits every budget on the chain",
+            constraints=(_budget_constraint(binding, satisfied=True),),
+        )
+        return (
+            decision.model_copy(update={"evaluations": (*decision.evaluations, passed)}),
+            lines,
+            amount,
+        )
 
     # -------------------------------------------------------------- approvals
     def _apply_approval(
@@ -649,6 +755,7 @@ class TrustPlane:
             tool = self.tools.get(envelope.tool)
             result = tool.execute(envelope)
         except ToolError as exc:
+            self.reservations.release(claims.grant_id)
             self.traces.append(
                 trace_id,
                 EventType.EXECUTION_FAILED,
@@ -681,6 +788,7 @@ class TrustPlane:
                 result=result,
             )
 
+        self.reservations.settle(claims.grant_id)
         self.traces.append(
             trace_id,
             EventType.EXECUTION_COMPLETED,
@@ -740,6 +848,12 @@ class TrustPlane:
                     "an outcome was already reported for this grant",
                 )
             event_type = EventType.EXECUTION_COMPLETED if succeeded else EventType.EXECUTION_FAILED
+            # Settled at the reserved amount: the report comes from the agent's
+            # side, so a lower "actual" in it is not trusted to free budget.
+            if succeeded:
+                self.reservations.settle(grant_id)
+            else:
+                self.reservations.release(grant_id)
             return self.traces.append(
                 trace_id,
                 event_type,
@@ -894,6 +1008,10 @@ class TrustPlane:
         )
 
     def list_traces(self, limit: int = 50) -> list[TraceSummary]:
+        # Lazy housekeeping: reservations whose grant expired unexecuted or
+        # unreported stop counting against their budget.
+        with self._lock, self.transaction():
+            self.reservations.release_expired(self.clock())
         return self.traces.list_traces(limit)
 
     # ----------------------------------------------------------- delegations
@@ -915,6 +1033,61 @@ class TrustPlane:
 
     def resolve_delegation(self, grant_id: str) -> ResolvedChain:
         return self.delegations.resolve(grant_id, now=self.clock())
+
+
+def _deny(
+    decision: Decision,
+    code: ReasonCode,
+    message: str,
+    constraint: ConstraintEvaluation | None = None,
+) -> Decision:
+    evaluation = PolicyEvaluation(
+        policy=BUDGET_POLICY,
+        outcome=DecisionOutcome.DENY,
+        reason_code=code,
+        message=message,
+        constraints=(constraint,) if constraint else (),
+    )
+    return decision.model_copy(
+        update={
+            "outcome": DecisionOutcome.DENY,
+            "reason_code": code,
+            "explanation": message,
+            "matched_policy": BUDGET_POLICY,
+            "evaluations": (*decision.evaluations, evaluation),
+            "approval": None,
+        }
+    )
+
+
+def _budget_constraint(usage: BudgetUsage, *, satisfied: bool) -> ConstraintEvaluation:
+    line = usage.line
+    return ConstraintEvaluation(
+        name="budget",
+        requested=format(usage.requested.amount, "f"),
+        limit=format(line.limit.amount, "f"),
+        satisfied=satisfied,
+        detail=(
+            f"limit={line.limit.amount:f} spent={usage.spent:f} reserved={usage.reserved:f} "
+            f"requested={usage.requested.amount:f} {line.limit.currency} per {line.period} "
+            f"from {line.period_start.date().isoformat()} UTC, grant {line.grant_id}"
+        ),
+    )
+
+
+def _budget_denial(decision: Decision, result: ReservationResult) -> Decision:
+    usage = result.binding
+    assert usage is not None
+    line = usage.line
+    return _deny(
+        decision,
+        ReasonCode.PAYMENT_EXCEEDS_BUDGET,
+        f"requested {usage.requested} exceeds the {line.period} budget set on grant "
+        f"{line.grant_id}: limit {line.limit.amount:f}, spent {usage.spent:f}, reserved "
+        f"{usage.reserved:f}, {max(usage.remaining, Decimal('0')):f} {line.limit.currency} "
+        "left this period",
+        _budget_constraint(usage, satisfied=False),
+    )
 
 
 def _chain_summary(chain: ResolvedChain) -> list[dict[str, Any]]:

@@ -5,7 +5,13 @@ logic. Other packages import from here so that identity, policy, and audit do
 not depend on one another.
 """
 
-from atp_core.authority import AuthorityConstraints, EffectiveAuthority
+from atp_core.authority import (
+    AuthorityConstraints,
+    Budget,
+    BudgetPeriod,
+    ChainBudget,
+    EffectiveAuthority,
+)
 from atp_core.canonical import canonical_hash, canonical_json, sha256_hex
 from atp_core.decision import (
     ApprovalRequirement,
@@ -42,6 +48,9 @@ __all__ = [
     "ActionEnvelope",
     "ApprovalRequirement",
     "AuthorityConstraints",
+    "Budget",
+    "BudgetPeriod",
+    "ChainBudget",
     "ConstraintEvaluation",
     "ContentSource",
     "ContentTrust",

@@ -72,6 +72,16 @@ def _limit_source(chain: list[dict[str, Any]], limit: Any) -> str | None:
     return None
 
 
+def _budget_source(chain: list[dict[str, Any]], limit: Any) -> str | None:
+    """The tightest grant in the recorded chain whose budget equals ``limit``."""
+    for link in reversed(chain):
+        budget = (link.get("constraints") or {}).get("budget") or {}
+        amount = (budget.get("amount") or {}).get("amount")
+        if amount is not None and str(amount) == str(limit):
+            return f"{link.get('grant_id')} ({link.get('label', '')})"
+    return None
+
+
 def _changes(
     decision: Decision, envelope: ActionEnvelope, chain: list[dict[str, Any]]
 ) -> tuple[list[str], str | None]:
@@ -109,6 +119,19 @@ def _changes(
                 + (f" ({source})" if source else "")
                 + " and on every grant below it"
             )
+    elif rc is ReasonCode.PAYMENT_EXCEEDS_BUDGET:
+        source = _budget_source(chain, lim)
+        out.append(
+            f"reduce the amount so that spent + reserved + requested stays within the "
+            f"budget ({constraint.detail if constraint else _fmt(lim)})"
+        )
+        out.append(
+            "or wait for the next budget period (UTC calendar), or for unexecuted "
+            "reservations to be released when their grants expire"
+        )
+        out.append(
+            "or raise the budget on the grant that sets it" + (f" ({source})" if source else "")
+        )
     elif rc is ReasonCode.PAYMENT_CURRENCY_NOT_PERMITTED:
         out.append(f"use a permitted currency ({_fmt(lim)}) or extend the currency allowlist")
     elif rc is ReasonCode.PAYMENT_DESTINATION_NOT_APPROVED:

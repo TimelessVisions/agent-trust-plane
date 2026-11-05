@@ -98,6 +98,69 @@ else ALLOW. `atp policy explain` prints exactly those records.
   rule constrains and which are unguarded. No score.
 - `atp mutate TRACE` — perturb a recorded action and see what the set decides.
 
+## Budgets: cumulative spend per period
+
+Rules look at one action. A **budget** limits the total spent under a
+delegation over a calendar period. It is a constraint on a grant, not a
+rule in a policy set, so it applies under every policy set:
+
+```yaml
+# atp-mcp.yaml (local mode): delegated to the session agent
+version: 1
+server_name: bank
+upstream: {command: uv, args: [run, bank-mcp]}
+authority:
+  capabilities: [bank:send]
+  resource_scope: ["acct:*"]
+  budget:
+    amount: {amount: "500.00", currency: USD}
+    period: day                     # day | week | month
+```
+
+In serve mode, put it in `constraints` on any grant in a chain
+(`POST /delegations`):
+
+```json
+{"constraints": {"max_amount": {"amount": "1000", "currency": "USD"},
+                 "budget": {"amount": {"amount": "5000", "currency": "USD"},
+                            "period": "week"}}}
+```
+
+- **Periods** are UTC calendar periods: a `day` starts at 00:00 UTC, a
+  `week` at 00:00 UTC on **Monday** (ISO 8601), a `month` at 00:00 UTC on
+  the 1st. Spend counts in the period in which it was authorized. A new
+  period starts from zero; nothing carries over.
+- **Which actions count:** any action whose `arguments` carry an `amount`
+  (for the built-in payments tool, every payment). `currency` defaults to
+  the budget's currency when the arguments have none. An action without an
+  `amount` argument is not budgeted.
+- **Currency:** a budget is in one currency. An action in another currency
+  under a budgeted chain is denied with `PAYMENT_CURRENCY_NOT_PERMITTED`;
+  there is no conversion.
+- **Chains:** every budget on the chain applies, each on its own. The
+  tightest one binds, and budgets with different periods (a daily and a
+  monthly) are checked independently. Spend is counted per (root human,
+  grantee of the grant that sets the budget), so a budget on an
+  orchestrator's grant also counts its sub-agents' spend, and a budget in
+  `atp-mcp.yaml` keeps counting across `atp mcp wrap` sessions.
+- **Lifecycle:** `authorize` *reserves* the amount when it mints the
+  execution grant, atomically (SQLite `BEGIN IMMEDIATE` plus a sum check;
+  two concurrent authorizations, even from two gateways on one file,
+  cannot together exceed the budget). A completed execution *settles* the
+  reservation into spend; a failed one *releases* it. A reservation whose
+  grant expires without an execution or an outcome report is released
+  lazily, on the next reservation and whenever traces are listed
+  (`atp trace list`, `GET /traces`). An outcome reported after that still
+  settles: money that was spent counts.
+- **Over budget** is DENY `PAYMENT_EXCEEDS_BUDGET` from
+  `gateway.budget.v1`. `atp policy explain` shows the binding budget's
+  `limit`, `spent`, `reserved` and `requested`, and the grant that sets it.
+- **Approvals do not lift budgets.** An over-budget action is denied before
+  it is put to an approver, and an approved retry that no longer fits (other
+  spend landed meanwhile) is denied without using up the approval.
+- **Replay** re-evaluates policy only; it does not re-check budgets, which
+  depend on what else was spent at the time.
+
 ## Where sets come from at run time
 
 | Command | Sets available |
@@ -110,8 +173,7 @@ A declared version may not shadow a built-in name; loading fails loudly.
 
 ## Limitations
 
-- `require_approval` records the requirement; there is no approver
-  endpoint in this release (`../security/threat-model.md`, O7).
+- `require_approval` routes the action to a human; see `approvals.md`.
 - Rules see the envelope's `tool`/`action`/`arguments` only, not the
   upstream tool schema or result.
 - No rule can widen authority: a set with zero rules still enforces

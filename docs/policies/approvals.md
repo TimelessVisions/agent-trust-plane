@@ -100,7 +100,9 @@ same transaction that issues the grant, so two concurrent identical retries
 grant itself is still single-use and short-lived, so an approval authorizes
 at most one execution. Policy is re-evaluated on the retry: if the delegation
 was revoked, or the action is now denied outright, the approval does not
-help.
+help. Neither does an approval lift a budget: an approved retry that would
+exceed a budget on the chain is DENY `PAYMENT_EXCEEDS_BUDGET`, and the
+approval stays unused (`policies.md`, "Budgets").
 
 ## What the trace shows afterwards
 

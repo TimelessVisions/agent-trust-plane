@@ -33,8 +33,11 @@ from atp_identity import (
     DelegationStore,
     InMemoryCredentialStore,
     InMemoryDelegationStore,
+    InMemoryReservationStore,
+    ReservationStore,
     SqliteCredentialStore,
     SqliteDelegationStore,
+    SqliteReservationStore,
 )
 from atp_policy import InMemoryVendorDirectory, PolicySetRegistry, Vendor
 
@@ -87,6 +90,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
     ledger: PaymentLedger
     reports: EvalReportStore
     approvals: ApprovalStore
+    reservations: ReservationStore
     # Parsed before the database is touched: a bad role map refuses to start.
     approver_roles = parse_approver_roles(settings.approver_roles)
 
@@ -99,6 +103,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         ledger = InMemoryPaymentLedger()
         reports = InMemoryEvalReportStore()
         approvals = InMemoryApprovalStore()
+        reservations = InMemoryReservationStore()
     else:
         path = Path(settings.database_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,6 +118,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         ledger = SqlitePaymentLedger(conn)
         reports = SqliteEvalReportStore(conn)
         approvals = SqliteApprovalStore(conn)
+        reservations = SqliteReservationStore(conn)
 
     vendors = InMemoryVendorDirectory(DEMO_VENDORS)
     tools = ToolRegistry()
@@ -144,6 +150,7 @@ def build_runtime(settings: GatewaySettings | None = None) -> Runtime:
         transaction=transaction,
         approvals=approvals,
         approver_roles=approver_roles,
+        reservations=reservations,
     )
     return Runtime(
         trust_plane=trust_plane,

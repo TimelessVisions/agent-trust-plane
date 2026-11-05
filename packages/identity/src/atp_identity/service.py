@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 
 from atp_core import (
     AuthorityConstraints,
+    ChainBudget,
     DelegationError,
     EffectiveAuthority,
     PrincipalKind,
@@ -296,4 +297,12 @@ def _intersect(chain: tuple[DelegationGrant, ...]) -> EffectiveAuthority:
         resource_scope=effective_scope,
         constraints=AuthorityConstraints(max_amount=max_amount, currencies=currencies),
         expires_at=expires_at,
+        # Budgets are not intersected into one: each is counted against its own
+        # grant's (root, grantee) and checked on its own, so the tightest binds
+        # and budgets with different periods apply independently.
+        budgets=tuple(
+            ChainBudget(grant_id=g.grant_id, grantee=g.grantee, budget=g.constraints.budget)
+            for g in chain
+            if g.constraints.budget is not None
+        ),
     )

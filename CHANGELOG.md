@@ -46,6 +46,23 @@ changes may land in minor versions and are called out).
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Changed
+- **BREAKING:** cumulative spend budgets with reservation semantics. A
+  delegation grant's `constraints` take `budget: {amount: Money, period:
+  day|week|month}` (UTC calendar periods; a week starts on Monday), and
+  `atp-mcp.yaml` `authority` takes the same `budget`, which `atp mcp wrap`
+  puts on the session agent's grant. `authorize` reserves the amount
+  atomically when it mints a grant (SQLite `BEGIN IMMEDIATE` plus a sum
+  check), execution settles it, a failed outcome releases it, and a
+  reservation whose grant expires unexecuted or unreported is released
+  lazily (next reservation, `atp trace list`). Every budget on a chain
+  applies; the tightest binds. Over budget is DENY with the new reason code
+  `PAYMENT_EXCEEDS_BUDGET`, and `atp policy explain` shows `limit`,
+  `spent`, `reserved` and `requested`. Breaking: `EffectiveAuthority` (in
+  every recorded decision) gains `budgets`, `AuthorityConstraints` gains
+  `budget`, the database gains a `budget_reservations` table, and an action
+  with an `amount` under a budgeted chain in another currency, or with an
+  invalid amount, is now denied. An approval never lifts a budget. See
+  `docs/policies/policies.md`, "Budgets".
 - **BREAKING:** execution grants are Ed25519 with a key id. The token is
   `atp-grant/2`: `b64url(header).b64url(claims).b64url(sig)` with header
   `{"alg": "EdDSA", "kid": <kid>, "v": "atp-grant/2"}`, the signature over

@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from atp_adapter_mcp.mapping import ToolMapping
 from atp_core import (
     SCOPE_PATTERN,
+    Budget,
     PrincipalKind,
     PrincipalRef,
     check_file_version,
@@ -103,6 +104,11 @@ class AuthorityConfig(BaseModel):
     capabilities: tuple[str, ...] = Field(min_length=1)
     resource_scope: tuple[str, ...] = Field(min_length=1)
     expires_in: str = Field(default="12h", pattern=r"^\d+[smhd]$")
+    budget: Budget | None = Field(
+        default=None,
+        description="Cumulative spend per UTC day/week/month for actions whose arguments "
+        "carry an `amount`. Counted per principal and agent, so it binds across sessions.",
+    )
 
     @model_validator(mode="after")
     def _patterns(self) -> AuthorityConfig:

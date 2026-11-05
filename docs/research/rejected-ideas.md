@@ -17,6 +17,19 @@ bundles; Streamable HTTP *upstream*; property-based and exhaustive
 state-machine tests; `IdentityProvider` boundary; single distribution
 installable with `uvx`; docs IA; CI hardening.
 
+## Built since (1.0)
+
+- **Cumulative budgets with reservations** (was RESEARCH; security review
+  O8, the budget half). A `budget: {amount, period: day|week|month}`
+  constraint on a delegation grant, periods on UTC calendar boundaries.
+  `authorize` reserves (atomic: `BEGIN IMMEDIATE` plus a sum check in
+  SQLite, one lock in memory), execution settles, a failed outcome
+  releases, and a reservation whose grant expires unexecuted or unreported
+  is released lazily. Every budget on a chain applies; the tightest binds.
+  Over budget is DENY `PAYMENT_EXCEEDS_BUDGET`. Counting actions
+  (`max_actions`) and rate limiting are still not built. See
+  `../policies/policies.md`, "Budgets".
+
 ## P1 (next)
 
 | Idea | Why not now |
@@ -39,7 +52,6 @@ policy-impact view; `atp test --changed` (PR-diff selection of cases).
 
 | Idea | Note |
 |---|---|
-| Budgets and quotas over time | Correct atomic consumption across concurrent authorizations needs a reservation step (`authorize` reserves, `execute` commits, expiry releases) and a single writer. Doing it without the reservation would race; not shipped rather than shipped wrong. Design sketch: a `budget` constraint on a grant (`max_total_amount`, `max_actions`, `window`) with reservations stored beside grants. |
 | Human approval protocol | Design: `REQUIRE_APPROVAL` → approver (an authenticated principal with an `approve:` capability) signs `(action_hash, trace_id, expires)` → re-authorization presents the approval → grant. A changed action invalidates the approval by hash. Not built: needs approver identity, which needs per-human credentials (O11). |
 | A2A delegation | `research/agent-to-agent-future.md`. |
 | Policy mutation testing (mutating the policy, not the request) | Prior art exists (XACML); would need a policy AST; our declared format is small enough that request-side mutation covers the practical cases. |
