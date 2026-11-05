@@ -41,7 +41,7 @@ cases:
     principal: human
     delegation: leaf
     capability: pay:vendor
-    tool: payments
+    tool: mcp.payments
     action: send_payment
     resource: vendor:128
     arguments: {amount: "480", currency: USD, destination_account: acct-nw-4471}
@@ -51,7 +51,7 @@ cases:
     principal: human
     delegation: leaf
     capability: pay:vendor
-    tool: payments
+    tool: mcp.payments
     action: send_payment
     resource: vendor:128
     arguments: {amount: "640", currency: USD, destination_account: acct-offshore-9931}

@@ -16,6 +16,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import anyio
+import yaml
 from atp_bench.dojo import Call
 from atp_bench.layers.atp_layer import classify as atp_classify
 from atp_bench.layers.base import CallOutcome, Session, StdioMcpSession, result_text
@@ -95,9 +96,7 @@ def open_incident(layer, case) -> Iterator[_Session]:
             )
             with StdioMcpSession(params, _classify_open, call_timeout_s=45) as upstream:
                 yield _Session(
-                    _NameOnlySession(
-                        upstream, frozenset({"read_invoice", "send_payment"})
-                    )
+                    _NameOnlySession(upstream, frozenset({"read_invoice", "send_payment"}))
                 )
         elif layer.name == "atp":
             home = Path(secure).resolve() / "atp-home"
@@ -129,7 +128,7 @@ def open_incident(layer, case) -> Iterator[_Session]:
                     },
                     {
                         "mcp_tool": "send_payment",
-                        "tool": "payments",
+                        "tool": "mcp.payments",
                         "action": "send_payment",
                         "capability": "pay:vendor",
                         # A single approved vendor in this deterministic fixture.
@@ -140,8 +139,6 @@ def open_incident(layer, case) -> Iterator[_Session]:
                 ],
             }
             path = Path(secure).resolve() / "atp-mcp.yaml"
-            import yaml
-
             path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
             wrapped = StdioServerParameters(
                 command=sys.executable,
@@ -174,12 +171,17 @@ def open_incident(layer, case) -> Iterator[_Session]:
             "read_invoice INV-42",
             "send_payment 480.00 USD acct-nw-4471",
         ]
-        if layer.name == "name-only":
-            expected.append("send_payment 640.00 USD acct-offshore-9931")
-        if actual != expected:
+        diverted = "send_payment 640.00 USD acct-offshore-9931"
+        if layer.name == "name-only" and actual != [*expected, diverted]:
             raise AssertionError(
-                f"{layer.name} payment journal differs: actual={actual}, expected={expected}"
+                f"name-only payment journal differs: actual={actual}, expected={expected}"
             )
+        # For ATP, preserve either measured observation so the incident
+        # runner can report FAIL rather than hide a forwarded attack behind
+        # an exception. The case still expects DENIED and must never be
+        # reclassified as PASS when the diverted call actually executes.
+        if layer.name == "atp" and actual not in (expected, [*expected, diverted]):
+            raise AssertionError(f"unexpected ATP payment journal: {actual}")
 
 
 def change_definition(session: _Session, label: str) -> None:
