@@ -120,7 +120,7 @@ def _rule_condition(
     # Null and missing arguments do not create arg_<name> in ToolHive; optional
     # means absent is allowed, but explicit null fails ATP's optional _present.
     if rule.get("optional"):
-        check = f"(!(resource has arg_{arg} || resource has arg_{arg}_present) || {check})"
+        check = f"(!(resource has arg_{arg}) || {check})"
     else:
         check = f"(resource has arg_{arg} && {check})"
     return check, None, False
@@ -208,7 +208,9 @@ def render_toolhive_config(
         "type": "cedarv1",
         "cedar": {"policies": policies, "entities_json": "[]"},
     }
-    return RenderedPolicy(files={"cedar.json": json.dumps(config, indent=2) + "\n"}, dropped=dropped)
+    return RenderedPolicy(
+        files={"cedar.json": json.dumps(config, indent=2) + "\n"}, dropped=dropped
+    )
 
 
 def classify(result: types.CallToolResult) -> CallOutcome:
@@ -236,7 +238,7 @@ def classify_error(exc: BaseException, call: Call) -> CallOutcome:
     return CallOutcome("INCONCLUSIVE", f"{type(exc).__name__}: {exc}"[:300])
 
 
-def _can_run_remote(log_text: str) -> bool:
+def _runtime_unavailable(log_text: str) -> bool:
     """Runtime/environment failures, not Cedar compilation errors."""
     lower = log_text.lower()
     return any(
@@ -311,8 +313,10 @@ class ToolhiveLayer:
                 _wait_port(thv_port, toolhive, thv_log, "ToolHive", self.startup_timeout_s)
             except (TimeoutError, RuntimeError) as exc:
                 message = thv_log.read_text(encoding="utf-8", errors="replace")[-2000:]
-                if _can_run_remote(message):
-                    raise EnvBlocked(f"ToolHive {VERSION} remote runtime unavailable: {message}") from exc
+                if _runtime_unavailable(message):
+                    raise EnvBlocked(
+                        f"ToolHive {VERSION} remote runtime unavailable: {message}"
+                    ) from exc
                 raise
 
             session = HttpMcpSession(
