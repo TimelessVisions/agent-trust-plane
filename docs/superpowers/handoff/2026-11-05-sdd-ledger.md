@@ -150,3 +150,17 @@ Ruling: binary-semantic comparison tests now raise an explicit `ENV_BLOCKED` ass
 - **Gate status:** D2 development verification PASS; release publication remains owner-gated. D3 may begin under the binding plan. The `bench-annotations-v1` tag and all owner gates remain untouched.
 
 Ruling: finish D2 review from the exact binary-backed CI result and preserve its documented CEL approximations — every required review issue has a tested or explicitly qualified outcome, without weakening competitor policy — cost if wrong: a policy transformation can diverge from ATP semantics outside the pinned test set; the published results must continue to disclose those limitations.
+
+### D3 and D4 verified candidates — GitHub Actions 42010172197 (2026-11-05)
+
+**Source:** [all-five-jobs workflow run](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/42010172197), commit `1986e121e8be1dc2220944425de7eaf396bb8e2f`. Checks ran on `release/v1/B12-atp-1.0`, without a PR, merge, tag or publication.
+
+- **PASS** root JUnit: tests=713, failures=0, errors=0, skipped=1. The previously documented opt-in third-party filesystem test remains the one skip; lint, Ruff formatting, mypy and four demos succeeded.
+- **PASS** full AgentDojo benchmark JUnit: tests=215, failures=0, errors=0, skipped=0.
+- **PASS** D2 pinned agentgateway v1.6.0 JUnit: tests=9, failures=0, errors=0, skipped=0; verified binary SHA256 `496ed27e6a96b55a9ad7cabe5c2be7172511f44a3cb113e533d22bf93a7f079d`.
+- **PASS** D3 pinned ToolHive v0.55.2 JUnit: tests=8, failures=0, errors=0, skipped=0; verified binary SHA256 `894a8d563d95dd045919cd03da0375c59f104bd506d592760f01277399a04a0f`. Real Docker runner ran pinned `thv`, allowed a bill file read and in-scope payment at 98.70, denied an over-limit payment (99), a wrong-recipient payment and an ungranted `update_password`. Raw journal names: `["read_file","send_money"]` only. The D3 job required a nonempty successful E2E proof, so ENV_BLOCKED alone could not pass the gate.
+- **PASS** D4 JUnit: tests=3, failures=0, errors=0, skipped=0. Name-only reference forwards an annotated tool even when its arguments violate scope; an ungranted tool is blocked before the journal. Mocked missing Docker daemon produces **ENV_BLOCKED** carrying stderr. **NOT_MEASURED:** no actual Docker MCP Gateway product run, denial response or real plugin proof. Never ascribe the name-only result to Docker.
+- **Documented approximations:** ToolHive has scalar Cedar argument fields but no list-item inspection; 24 subset-of annotations across workspace/travel are dropped and individually recorded, with pinned source URLs. The ToolHive profile documents numeric-string/decimal and null/complex ambiguity; these are not equivalence claims.
+- **Gate status:** D3 and D4 implementation/targeted runtime checks complete. D5 competitive attack sweep remains blocked by the owner's A1 annotation review/tag. E1 may proceed in task order; all publication gates remain in force.
+
+Ruling: accept D3's measured ToolHive binary allow/deny behavior and D4's name-only negative-control evidence, while marking Docker MCP Gateway product behavior NOT_MEASURED — cost if wrong: reporting a synthetic baseline as a measured commercial product would invalidate the competitor comparison.
