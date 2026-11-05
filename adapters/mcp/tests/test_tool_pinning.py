@@ -139,3 +139,42 @@ def test_tool_schema_pin_canonical_three_field_payload() -> None:
         update={"input_schema": {"type": "object", "properties": {"id": {"type": "integer"}}}}
     )
     assert digest != tool_definition_sha256(changed_schema)
+
+
+def test_changed_tool_denied_even_without_list_changed_notification() -> None:
+    original = _tool()
+    proxy, session = _proxy(original, tool_definition_sha256(original))
+    session.tools = [_tool("Adversarial changed description")]
+    # No tools/list_changed notification was sent, so the cached discovery
+    # entry still looks safe; each pinned execution must re-list anyway.
+    assert proxy.upstream.tool_list_state == {"dirty": False}
+
+    async def call() -> types.CallToolResult:
+        return await proxy._call_tool(  # type: ignore[arg-type]
+            None, types.CallToolRequestParams(name="write_note", arguments={"id": "memo"})
+        )
+
+    denied = anyio.run(call)
+    assert denied.structured_content is not None
+    assert denied.structured_content["reason_code"] == "TOOL_DEFINITION_CHANGED"
+    assert session.calls == []
+
+
+def test_unverifiable_pinned_definition_cannot_execute() -> None:
+    original = _tool()
+    proxy, session = _proxy(original, tool_definition_sha256(original))
+
+    async def broken_list() -> types.ListToolsResult:
+        raise ConnectionError("upstream list failed")
+
+    session.list_tools = broken_list  # type: ignore[method-assign]
+
+    async def call() -> types.CallToolResult:
+        return await proxy._call_tool(  # type: ignore[arg-type]
+            None, types.CallToolRequestParams(name="write_note", arguments={"id": "memo"})
+        )
+
+    refused = anyio.run(call)
+    assert refused.structured_content is not None
+    assert refused.structured_content["reason_code"] == "UPSTREAM_ERROR"
+    assert session.calls == []

@@ -220,9 +220,8 @@ class TrustPlaneProxy:
         self, _ctx: ServerRequestContext[Any], _params: types.PaginatedRequestParams | None
     ) -> types.ListToolsResult:
         state = self.upstream.tool_list_state
-        if state is not None and state["dirty"]:
-            if not await self._refresh_upstream_tools():
-                return types.ListToolsResult(tools=[])
+        if state is not None and state["dirty"] and not await self._refresh_upstream_tools():
+            return types.ListToolsResult(tools=[])
         tools = [
             t
             for t in self.upstream.tools
