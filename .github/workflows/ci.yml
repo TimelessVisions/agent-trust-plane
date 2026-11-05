@@ -24,6 +24,8 @@ jobs:
         include:
           - os: windows-latest
             python: "3.13"
+          - os: macos-latest
+            python: "3.13"
     steps:
       # Third-party actions are pinned to commit SHAs (tag shown for humans).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
