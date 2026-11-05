@@ -41,8 +41,12 @@ _DENIAL_NAMES = frozenset(
 _DENIAL_PREFIXES = ("ARGUMENT_", "PAYMENT_")
 # Denials the proxy itself issues before consulting the gateway.
 _PROXY_DENIALS = frozenset(
-    {"TOOL_UNKNOWN", "TOOL_ARGUMENTS_TOO_LARGE", "TOOL_ARGUMENTS_INVALID",
-     "TOOL_DEFINITION_CHANGED"}
+    {
+        "TOOL_UNKNOWN",
+        "TOOL_ARGUMENTS_TOO_LARGE",
+        "TOOL_ARGUMENTS_INVALID",
+        "TOOL_DEFINITION_CHANGED",
+    }
 )
 
 
