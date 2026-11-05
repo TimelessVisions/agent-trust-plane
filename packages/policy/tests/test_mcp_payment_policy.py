@@ -12,6 +12,7 @@ import pytest
 
 from atp_core import DecisionOutcome, ReasonCode
 from atp_policy import PolicyEngine, payments_v2
+
 from policy_fixtures import (
     ATTACKER,
     build_chain,
@@ -21,11 +22,13 @@ from policy_fixtures import (
 )
 
 @pytest.mark.parametrize("tool", ["mcp.payments", "mcp.vendor_processor", "mcp.another-server"])
-def test_payment_capability_requires_approved_destination_for_any_mcp_tool(tool: str) -> None:
+def test_payment_capability_requires_approved_destination_for_any_mcp_tool(
+    tool: str,
+) -> None:
     service = fresh_service()
     grant = build_chain(service)["ap"]
     envelope = payment_envelope(
-        grant_id=grant, amount="640", destination=ATTACKER,
+        grant_id=grant, amount="640", destination=ATTACKER
     ).model_copy(update={"tool": tool})
     decision = PolicyEngine().evaluate(payments_v2(), context_for(envelope, service))
     assert decision.outcome is DecisionOutcome.DENY
@@ -37,7 +40,7 @@ def test_payment_capability_preserves_legitimate_payment(tool: str) -> None:
     service = fresh_service()
     grant = build_chain(service)["ap"]
     envelope = payment_envelope(
-        grant_id=grant, amount="480", destination="acct-nw-4471",
+        grant_id=grant, amount="480", destination="acct-nw-4471"
     ).model_copy(update={"tool": tool})
     decision = PolicyEngine().evaluate(payments_v2(), context_for(envelope, service))
     assert decision.outcome is DecisionOutcome.ALLOW
@@ -52,7 +55,7 @@ def test_payment_capability_preserves_legitimate_payment(tool: str) -> None:
     ],
 )
 def test_mcp_payment_capability_preserves_amount_and_approval(
-    amount: str, reason: ReasonCode,
+    amount: str, reason: ReasonCode
 ) -> None:
     service = fresh_service()
     grant = build_chain(service)["ap"]
