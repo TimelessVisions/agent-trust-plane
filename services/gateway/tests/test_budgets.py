@@ -744,3 +744,64 @@ def test_store_hold_reports_whether_reservation_is_held(tmp_path: Path) -> None:
             assert not store.hold("e")
     finally:
         conn.close()
+
+
+def test_failed_hold_releases_rest_of_reservation(tmp_path: Path) -> None:
+    """A reservation spans one row per budget line. When ``hold`` fails because
+    one row was already released (a peer expired it), the rows it did hold
+    must be released too, or they would count against the budget forever."""
+    from atp_identity.budgets import HELD, RELEASED, RESERVED
+
+    class PartlyExpired(InMemoryReservationStore):
+        def hold(self, reservation_id: str) -> bool:
+            with self._lock:
+                rows = [r for r in self._rows if r.reservation_id == reservation_id]
+                rows[0].status = RELEASED  # the peer expired one line only
+            return super().hold(reservation_id)
+
+    settings = GatewaySettings(
+        database_path=":memory:", **GRANT_KEY_SETTINGS, operator_key=OPERATOR_KEY
+    )
+    rt = build_runtime(settings)
+    store = PartlyExpired()
+    rt.trust_plane.reservations = store
+    rt.trust_plane.clock = Clock()
+    try:
+        with TestClient(create_app(settings, runtime=rt)) as client:
+            chain = budget_chain(client, orch_budget=_budget("900"), ap_budget=_budget("500"))
+            out = pay(client, chain, "400.00")
+            assert out["decision"]["outcome"] == "ALLOW"
+            grant_id = out["execution_grant"]["grant_id"]
+            assert len([r for r in store._rows if r.reservation_id == grant_id]) == 2
+            done = execute(client, out["envelope"], out["execution_grant"]["token"], chain["token"])
+            assert done["status"] == "blocked"
+            assert done["reason_code"] == "PAYMENT_EXCEEDS_BUDGET"
+            live = [
+                r
+                for r in store._rows
+                if r.reservation_id == grant_id and r.status in (RESERVED, HELD)
+            ]
+            assert live == []
+    finally:
+        rt.close()
+
+
+def test_operator_failure_refused_after_success_report(tmp_path: Path) -> None:
+    """Once the agent reported success, the payment settled; an operator
+    failure report must not record a contradictory outcome."""
+    settings, rt, _ = _external_runtime(tmp_path)
+    try:
+        with TestClient(create_app(settings, runtime=rt)) as client:
+            chain = budget_chain(client, ap_budget=_budget("500"))
+            grant_id = _release_external(client, chain, "400.00")
+            _report(client, chain, grant_id, True)
+            r = client.post(
+                f"/executions/{grant_id}/outcome",
+                json={"succeeded": False, "summary": {}},
+                headers=op(),
+            )
+            assert r.json()["reason_code"] == "EXECUTION_OUTCOME_ALREADY_REPORTED"
+            # Still settled: the next $400 does not fit the $500 budget.
+            assert pay(client, chain, "400.00")["decision"]["outcome"] == "DENY"
+    finally:
+        rt.close()

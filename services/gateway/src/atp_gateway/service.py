@@ -760,6 +760,9 @@ class TrustPlane:
         if not held:
             # The reservation was already released: expired by a peer gateway
             # whose clock runs ahead. Never run a budgeted action unbudgeted.
+            # hold() may have held this grant's other budget lines; free them,
+            # since the action will not run.
+            self.reservations.release(claims.grant_id)
             return self._blocked(
                 envelope,
                 ReasonCode.PAYMENT_EXCEEDS_BUDGET,
@@ -871,7 +874,13 @@ class TrustPlane:
             already = any(
                 e.event_type in (EventType.EXECUTION_COMPLETED, EventType.EXECUTION_FAILED)
                 and e.payload.get("grant_id") == grant_id
-                and (not operator or e.payload.get("reported_by") == "operator")
+                and (
+                    not operator
+                    or e.payload.get("reported_by") == "operator"
+                    # A reported success settled the budget; an operator
+                    # failure after it would contradict the ledger.
+                    or e.event_type is EventType.EXECUTION_COMPLETED
+                )
                 for e in events
             )
             if already:

@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from atp_core import PrincipalKind, PrincipalRef, new_id, new_trace_id
 from atp_gateway import GatewaySettings, Runtime, build_runtime, create_app
+from atp_identity import FilePrincipalKeys
 
 NOW = datetime(2026, 9, 16, 12, 0, 0, tzinfo=UTC)
 HUMAN = PrincipalRef(id="company-user-42", kind=PrincipalKind.HUMAN)
@@ -54,10 +55,11 @@ def _fixture_grant_key() -> tuple[dict[str, str], str]:
     principals = keys_dir / "principals"
     human_key = Ed25519PrivateKey.from_private_bytes(bytes(range(32, 64)))
     principals.mkdir()
-    (principals / f"{HUMAN.id}.key").write_bytes(
+    files = FilePrincipalKeys(principals)
+    files.private_path(HUMAN.id).write_bytes(
         human_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
     )
-    (principals / f"{HUMAN.id}.pub").write_bytes(
+    files.public_path(HUMAN.id).write_bytes(
         human_key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
     )
     return {

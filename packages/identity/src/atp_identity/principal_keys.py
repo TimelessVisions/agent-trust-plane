@@ -9,18 +9,26 @@ first 16 hex characters of SHA-256 over the raw public key, as for grant keys.
 
 Principal keys live in a directory, one pair per principal::
 
-    <principal id>.key   PKCS8 PEM private key, mode 0600 (only where the human signs)
-    <principal id>.pub   SubjectPublicKeyInfo PEM public key (what the gateway trusts)
+    <stem>.key   PKCS8 PEM private key, mode 0600 (only where the human signs)
+    <stem>.pub   SubjectPublicKeyInfo PEM public key (what the gateway trusts)
 
-A ``:`` in a principal id is written as ``%3A`` in the file name (Windows).
+``<stem>`` is ``<escaped id>-<sha256(id) hex, first 12>``: the id with ``:``
+written as ``%3A`` (Windows), plus a hash of the exact id, so ids that differ
+only in case never share a file on a case-insensitive filesystem. The hash is
+over the exact id, so a stem is never ambiguous; the readable prefix is only
+for people.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import os
+import tempfile
 from collections.abc import Mapping
 from datetime import datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -145,8 +153,11 @@ def _check_id(principal_id: str) -> str:
     return principal_id
 
 
-def _stem(principal_id: str) -> str:
-    return _check_id(principal_id).replace(":", "%3A")
+def principal_key_stem(principal_id: str) -> str:
+    """File name stem of a principal's key pair (see the module docstring)."""
+    exact = _check_id(principal_id)
+    digest = sha256(exact.encode("utf-8")).hexdigest()[:12]
+    return f"{exact.replace(':', '%3A')}-{digest}"
 
 
 class InMemoryPrincipalKeys:
@@ -195,10 +206,10 @@ class FilePrincipalKeys:
         self.directory = Path(directory)
 
     def private_path(self, principal_id: str) -> Path:
-        return self.directory / f"{_stem(principal_id)}.key"
+        return self.directory / f"{principal_key_stem(principal_id)}.key"
 
     def public_path(self, principal_id: str) -> Path:
-        return self.directory / f"{_stem(principal_id)}.pub"
+        return self.directory / f"{principal_key_stem(principal_id)}.pub"
 
     def public_key(self, principal_id: str) -> Ed25519PublicKey | None:
         try:
@@ -217,23 +228,59 @@ class FilePrincipalKeys:
         return key if isinstance(key, Ed25519PrivateKey) else None
 
     def generate(self, principal_id: str) -> str:
-        """Create ``<id>.key`` (0600) and ``<id>.pub``. Refuses to overwrite."""
+        """Create ``<stem>.key`` (0600) and ``<stem>.pub``. Refuses to overwrite:
+        the private key is linked into place only if no file has that name, so
+        concurrent generates never replace each other's key."""
         private_path = self.private_path(principal_id)
         if private_path.exists() or self.public_path(principal_id).exists():
             raise FileExistsError(f"a key for {principal_id} already exists in {self.directory}")
         ensure_private_dir(self.directory)
         key = Ed25519PrivateKey.generate()
         pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
-        pub = key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        _create_exclusive(private_path, pem)
         # Private key first: a crash between the two leaves no trusted .pub
-        # without its signing key.
-        write_file_atomic(private_path, pem, private=True)
-        write_file_atomic(self.public_path(principal_id), pub, private=False)
+        # without its signing key, and ensure() derives the .pub from the .key.
+        self._write_public(principal_id, key)
         return kid_for(key.public_key())
 
+    def _write_public(self, principal_id: str, key: Ed25519PrivateKey) -> None:
+        pub = key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+        write_file_atomic(self.public_path(principal_id), pub, private=False)
+
     def ensure(self, principal_id: str) -> str:
-        """The principal's kid, generating its key pair if it has none."""
+        """The principal's kid, generating its key pair if it has none. A
+        ``.key`` without its ``.pub`` (a crash between the two writes) gets
+        its ``.pub`` back from the private key."""
         public = self.public_key(principal_id)
         if public is not None:
             return kid_for(public)
-        return self.generate(principal_id)
+        private = self.private_key(principal_id)
+        if private is None and not self.private_path(principal_id).exists():
+            try:
+                return self.generate(principal_id)
+            except FileExistsError:
+                private = self.private_key(principal_id)  # a concurrent generate won
+        if private is None:
+            raise RuntimeError(
+                f"{self.private_path(principal_id)} exists but is not an Ed25519 private key"
+            )
+        self._write_public(principal_id, private)
+        return kid_for(private.public_key())
+
+
+def _create_exclusive(path: Path, data: bytes) -> None:
+    """Write ``data`` to a 0600 temp file, then hard-link it to ``path``; the
+    link fails with FileExistsError if ``path`` exists. Readers never see a
+    partial file, and an existing file is never replaced."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with contextlib.suppress(OSError):
+            os.chmod(tmp, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.link(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)

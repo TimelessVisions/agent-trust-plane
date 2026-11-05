@@ -163,7 +163,8 @@ In serve mode, put it in `constraints` on any grant in a chain
   a payment that really moved could otherwise free the budget and repeat.
   The reservation stays held until the operator confirms the failure with
   `POST /executions/{grant_id}/outcome` and `X-ATP-Operator-Key` (no agent
-  credential needed, accepted once, also after the agent's own report),
+  credential needed, accepted once, also after the agent's own failure
+  report, refused once a success was reported, since that settled it),
   which releases it. If an executor never reports, an operator reconciles it
   the same way, or on the store (`reservations.settle(grant_id)` or
   `reservations.release(grant_id)`); there is no CLI for this yet.

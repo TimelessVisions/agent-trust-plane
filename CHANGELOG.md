@@ -56,16 +56,22 @@ changes may land in minor versions and are called out).
   every chain resolution verify it; failures deny with the new reason codes
   `DELEGATION_ROOT_UNSIGNED` and `DELEGATION_ROOT_SIGNATURE_INVALID`. The
   operator key alone can no longer create a root grant for a human. Child
-  grants stay unsigned. Principal keys live at `<dir>/<id>.key` (mode 0600)
-  and `<dir>/<id>.pub`; `atp principal keygen HUMAN_ID [--home H | --dir D]`
+  grants stay unsigned. Principal keys live at `<dir>/<stem>.key` (mode 0600)
+  and `<dir>/<stem>.pub`, where `<stem>` is the id (`:` as `%3A`) plus `-`
+  and the first 12 hex characters of SHA-256 over the exact id, so ids that
+  differ only in case never share a file; `atp principal keygen HUMAN_ID [--home H | --dir D]`
   creates them, and a served gateway trusts the `.pub` files in the new
   `ATP_PRINCIPAL_KEYS_DIR` (which `atp keygen --write` now sets; unset on a
   persistent gateway, every root is denied). An ephemeral `:memory:`
   gateway generates per-process human keys. `AtpHome.ensure()` creates the
   local human's key in `.atp/principals/` (`local-user`, or the
-  `atp-mcp.yaml` `principal` under `atp mcp wrap`) and signs, in place, a
-  0.3.x home's unsigned roots whose grantor has a key there, so existing
-  chains and traces keep working. `TrustPlaneClient` takes `sign_root=`
+  `atp-mcp.yaml` `principal` under `atp mcp wrap`). Upgrading a 0.3.x
+  home, its first `ensure()` runs a one-shot migration that signs, in place,
+  the unsigned roots whose grantor has a key there (so existing chains and
+  traces keep working) and records itself in a new `atp_meta` table in
+  `atp.db`; a home created by 1.0 records it at creation. After that,
+  unsigned roots are never signed automatically: one written into `atp.db`
+  later stays unsigned and is denied. `TrustPlaneClient` takes `sign_root=`
   (`for_app` uses the in-process runtime's keys; `LocalGateway.operator_client()`
   signs too). `kid_for` and `write_file_atomic` moved to
   `atp_identity.keys` (re-exported by the gateway); `atp-identity` now
@@ -74,10 +80,12 @@ changes may land in minor versions and are called out).
   credential no longer releases a held budget reservation; it stays counted
   until the operator confirms the failure on
   `POST /executions/{grant_id}/outcome` with `X-ATP-Operator-Key`, which the
-  route now accepts. Failures the gateway observes itself (a tool error)
+  route now accepts (refused with `EXECUTION_OUTCOME_ALREADY_REPORTED` once a
+  success was reported for the grant). Failures the gateway observes itself (a tool error)
   still release. If a reservation was released before its grant is consumed
   (clock skew between gateways), execution is blocked with
-  `PAYMENT_EXCEEDS_BUDGET`. `ReservationStore.hold` returns whether the
+  `PAYMENT_EXCEEDS_BUDGET` and the grant's remaining reservation rows are
+  released. `ReservationStore.hold` returns whether the
   reservation is held.
 - **BREAKING:** cumulative spend budgets with reservation semantics. A
   delegation grant's `constraints` take `budget: {amount: Money, period:

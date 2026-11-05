@@ -51,7 +51,7 @@ class GatewaySettings(BaseSettings):
     )
     principal_keys_dir: str = Field(
         default="",
-        description="Directory of human principal public keys (<id>.pub) that root "
+        description="Directory of human principal public keys (<id>-<hash>.pub) that root "
         "delegations must be signed with. Unset: an ephemeral gateway generates per-process "
         "human keys; a persistent one trusts no human key, so every root grant is denied.",
     )

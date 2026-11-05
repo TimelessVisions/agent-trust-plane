@@ -158,10 +158,14 @@ def bench_engine(n: int) -> list[dict[str, Any]]:
 
     import sqlite3
 
-    from atp_audit import EventType, InMemoryTraceStore, SqliteTraceStore
-    from atp_gateway.grants import GrantSigner, new_grant_claims
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    signer = GrantSigner(b"benchmark-signing-key-at-least-32-bytes-long!!")
+    from atp_audit import EventType, InMemoryTraceStore, SqliteTraceStore
+    from atp_gateway.grants import GrantSigner, GrantVerifier, kid_for, new_grant_claims
+
+    grant_key = Ed25519PrivateKey.from_private_bytes(bytes(32))
+    signer = GrantSigner(grant_key, kid_for(grant_key.public_key()))
+    verifier = GrantVerifier({signer.kid: grant_key.public_key()})
     claims = new_grant_claims(
         trace_id=env.trace_id,
         decision_id="dec_bench",
@@ -173,9 +177,9 @@ def bench_engine(n: int) -> list[dict[str, Any]]:
         now=now,
     )
     s, c = timed(lambda _: signer.mint(claims), n)
-    rows.append(summarise("A3. grant mint (HMAC-SHA256)", s, c))
+    rows.append(summarise("A3. grant mint (Ed25519)", s, c))
     token = signer.mint(claims)
-    s, c = timed(lambda _: signer.verify(token), n)
+    s, c = timed(lambda _: verifier.verify(token), n)
     rows.append(summarise("A4. grant verify", s, c))
 
     payload = {"envelope": env.model_dump(mode="json"), "action_hash": env.action_hash}
@@ -218,12 +222,18 @@ def bench_gateway_sqlite(n: int) -> dict[str, Any]:
     from atp_gateway.grant_keys import generate_grant_key
 
     db = Path(tempfile.mkdtemp(prefix="atp-bench-gw-")) / "atp.db"
+    from atp_identity import FilePrincipalKeys
+    from finance_agent import HUMAN
+
     kid = generate_grant_key(db.parent / "keys")
+    # Root delegations are signed by the human's own key (C5).
+    FilePrincipalKeys(db.parent / "principals").generate(HUMAN.id)
     app = create_app(
         GatewaySettings(
             database_path=str(db),
             grant_keys_dir=str(db.parent / "keys"),
             grant_signing_kid=kid,
+            principal_keys_dir=str(db.parent / "principals"),
             operator_key="benchmark-operator-key-at-least-32-bytes-long!!",
         )
     )

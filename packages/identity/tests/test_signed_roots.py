@@ -11,6 +11,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -204,3 +205,55 @@ def test_signature_fields_only_on_roots() -> None:
             expires_at=NOW + timedelta(days=1),
             signature="AAAA",
         )
+
+
+def test_principal_ids_differing_in_case_get_distinct_files(tmp_path: Path) -> None:
+    """On a case-insensitive filesystem (macOS, Windows) ``Alice.key`` and
+    ``alice.key`` are one file: the stem must not collide when folded."""
+    from atp_identity import FilePrincipalKeys
+
+    keys = FilePrincipalKeys(tmp_path)
+    names = {keys.private_path(i).name.lower() for i in ("alice", "Alice", "ALICE")}
+    names |= {keys.public_path(i).name.lower() for i in ("alice", "Alice", "ALICE")}
+    assert len(names) == 6
+    assert keys.generate("alice") != keys.generate("Alice")
+
+
+def test_ensure_derives_missing_pub_from_key(tmp_path: Path) -> None:
+    """A crash between writing ``.key`` and ``.pub`` must not brick ensure()."""
+    from atp_identity import FilePrincipalKeys
+
+    keys = FilePrincipalKeys(tmp_path)
+    kid = keys.generate("alice")
+    keys.public_path("alice").unlink()
+    assert keys.ensure("alice") == kid
+    assert keys.public_key("alice") is not None
+
+
+def test_concurrent_ensure_never_clobbers_a_key(tmp_path: Path) -> None:
+    import threading
+
+    from atp_identity import FilePrincipalKeys
+    from atp_identity.keys import kid_for
+
+    keys = FilePrincipalKeys(tmp_path)
+    kids: list[str] = []
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(8)
+
+    def run() -> None:
+        try:
+            barrier.wait()
+            kids.append(keys.ensure("alice"))
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    private = keys.private_key("alice")
+    assert private is not None
+    assert set(kids) == {kid_for(private.public_key())}
