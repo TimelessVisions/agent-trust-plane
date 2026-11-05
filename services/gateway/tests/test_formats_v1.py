@@ -90,3 +90,28 @@ def test_422_does_not_echo_input(client: TestClient) -> None:
     )
     assert secret not in r.text
     json.loads(r.text)
+
+
+def test_bundle_without_redactions_rejected(client: TestClient) -> None:
+    # 0.3.x always wrote `redactions` (possibly empty); a bundle missing it
+    # was not written by any ATP release, in either version.
+    data = _bundle(client)
+    for version in (1, 2):
+        body = {k: v for k, v in data.items() if k not in {"bundle_hash", "redactions"}}
+        if version == 1:
+            body.pop("trace_format")
+        body["bundle_version"] = version
+        body["bundle_hash"] = canonical_hash(body)
+        ok, detail = verify_bundle(body)
+        assert not ok
+        assert "redactions" in detail
+
+
+def test_bundle_trace_format_is_a_literal(client: TestClient) -> None:
+    data = _bundle(client)
+    body = {k: v for k, v in data.items() if k != "bundle_hash"}
+    body["trace_format"] = "atp-trace/99"
+    body["bundle_hash"] = canonical_hash(body)
+    ok, detail = verify_bundle(body)
+    assert not ok
+    assert "trace_format" in detail

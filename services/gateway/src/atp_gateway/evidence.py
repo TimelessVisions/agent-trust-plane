@@ -21,7 +21,7 @@ Versions:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,8 +46,8 @@ class EvidenceBundle(BaseModel):
     replays: list[dict[str, Any]]
     events: list[dict[str, Any]]
     integrity: dict[str, Any]
-    redactions: list[str] = Field(default_factory=list)
-    trace_format: str | None = None  # v2+
+    redactions: list[str]  # always written, since 0.3.x
+    trace_format: Literal["atp-trace/1"] | None = None  # v2+
     bundle_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -113,6 +113,8 @@ def verify_bundle(data: dict[str, Any]) -> tuple[bool, str]:
     if type(version) is not int or version not in SUPPORTED_BUNDLE_VERSIONS:
         supported = ", ".join(str(v) for v in sorted(SUPPORTED_BUNDLE_VERSIONS))
         return False, f"unsupported bundle_version {version!r}; this build reads {supported}"
+    if "redactions" not in data:
+        return False, "malformed bundle: every bundle version carries redactions"
     if version == 1 and "trace_format" in data:
         return False, "malformed bundle: trace_format is not a version 1 field"
     if version >= 2 and data.get("trace_format") is None:
