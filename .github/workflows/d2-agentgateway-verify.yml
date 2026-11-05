@@ -1,21 +1,25 @@
-name: D2 agentgateway binary verification
+name: ATP v1 release-branch evidence
 
 on:
   push:
     branches:
       - release/v1/B12-atp-1.0
 
+# Isolated branch verification. No PR, tags, merge, deployment, or publication.
 permissions:
   contents: read
 
 concurrency:
-  group: d2-verify-${{ github.ref }}
+  group: atp-v1-evidence-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   d2-real-binary:
+    name: D2 pinned agentgateway v1.6.0
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      UV_PYTHON: "3.13"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -24,33 +28,105 @@ jobs:
         with:
           enable-cache: true
       - run: uv python install 3.13
-      - name: Install benchmark dependencies
+      - name: Sync locked benchmark environment
         working-directory: bench
-        run: uv sync --python 3.13
-      - name: Execute D2 against pinned agentgateway v1.6.0
+        run: uv sync --frozen
+      - name: Fetch and verify SHA256-pinned agentgateway binary
+        working-directory: bench
+        run: |
+          uv run --no-sync python -c "from atp_bench.tools import fetch_tool; import hashlib; p=fetch_tool('agentgateway'); print('Binary path:', p); print('Binary SHA256:', hashlib.sha256(p.read_bytes()).hexdigest())"
+      - name: Execute real binary-backed D2 tests
         working-directory: bench
         run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/d2.xml" tests/test_agentgateway_layer.py
-      - name: Report exact D2 results or environment blocker
+      - name: Verify JUnit measurements and required binary cases
         if: always()
-        shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from xml.etree import ElementTree
-          import os
-          p = Path(os.environ["RUNNER_TEMP"]) / "d2.xml"
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
-              if not p.exists():
-                  f.write("## D2: NOT_MEASURED\nNo JUnit file was created. Inspect the failed setup/test step; never infer PASS.\n")
-              else:
-                  root = ElementTree.parse(p).getroot()
-                  suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
-                  counts = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
-                  f.write(f"## D2 JUnit\n\n{counts}\n\n")
-                  if counts["tests"] == 0:
-                      f.write("NOT_MEASURED: no tests were executed.\n")
-                  elif counts["failures"] or counts["errors"]:
-                      f.write("FAIL: inspect the test logs and reproduce.\n")
-                  else:
-                      f.write("Candidate PASS: independent review and full gates are still required.\n")
-          PY
+          python3 scripts/report_junit.py "${{ runner.temp }}/d2.xml" \
+            --label "D2 pinned agentgateway v1.6.0" --min-tests 9 --max-skips 0 \
+            --require-case test_rendered_rules_match_atp_semantics_on_binary \
+            --require-case test_resource_ids_and_unicode_match_atp_on_binary
+      - name: Preserve D2 JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-d2-junit
+          path: ${{ runner.temp }}/d2.xml
+          if-no-files-found: warn
+
+  root-verify:
+    name: Root full suite, type checks and demos
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked root workspace
+        run: uv sync --frozen --all-packages
+      - name: Ruff lint
+        run: uv run --no-sync ruff check .
+      - name: Ruff format
+        run: uv run --no-sync ruff format --check .
+      - name: Mypy
+        run: uv run --no-sync mypy
+      - name: Root pytest
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/root.xml"
+      - name: Report exact root JUnit counts and all skips
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/root.xml" \
+            --label "Root Python suite" --min-tests 713 --max-skips 1
+      - name: Demo wrap
+        run: uv run --no-sync atp demo wrap --out "${{ runner.temp }}/wrap"
+      - name: Demo injection
+        run: uv run --no-sync atp demo injection
+      - name: Demo regression
+        run: uv run --no-sync atp demo regression --out "${{ runner.temp }}/regression.yaml"
+      - name: Demo MCP
+        run: uv run --no-sync atp demo mcp
+      - name: Preserve root JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-root-junit
+          path: ${{ runner.temp }}/root.xml
+          if-no-files-found: warn
+
+  full-benchmark:
+    name: Full AgentDojo benchmark tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark environment
+        working-directory: bench
+        run: uv sync --frozen
+      - name: Full AgentDojo benchmark pytest
+        working-directory: bench
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/bench.xml"
+      - name: Report exact full benchmark JUnit counts
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/bench.xml" \
+            --label "Full AgentDojo benchmark suite" --min-tests 201 --max-skips 0
+      - name: Preserve benchmark JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-bench-junit
+          path: ${{ runner.temp }}/bench.xml
+          if-no-files-found: warn
