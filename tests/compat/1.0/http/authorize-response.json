@@ -1,0 +1,129 @@
+{
+  "decision": {
+    "action_hash": "95e7a0d2cdce2aca514077854243a8ef76a584dd0d4932f112450e1e1aed7691",
+    "approval": null,
+    "decided_at": "2026-11-01T12:00:00.010000Z",
+    "decision_id": "dec_e6026f9d2d1a44aa8b65edcafbabae12",
+    "effective_authority": {
+      "budgets": [],
+      "capabilities": [
+        "notes:read",
+        "notes:write"
+      ],
+      "constraints": {
+        "budget": null,
+        "currencies": null,
+        "max_amount": null
+      },
+      "expires_at": "2026-11-02T00:00:00.002000Z",
+      "grant_chain": [
+        "grt_33756584e3544be7b10827306a6d28ec",
+        "grt_892a486ad5604aa583d6543d05f68f2f"
+      ],
+      "holder": {
+        "id": "notes-agent",
+        "kind": "agent"
+      },
+      "resource_scope": [
+        "*"
+      ],
+      "root_principal": {
+        "id": "local-user",
+        "kind": "human"
+      }
+    },
+    "enforcement": "enforce",
+    "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+    "evaluations": [
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": "2026-11-02T00:00:00.002000+00:00",
+            "name": "chain_expires_at",
+            "requested": "2026-11-01T12:00:00.010000+00:00",
+            "satisfied": true
+          }
+        ],
+        "message": "delegation chain of 2 grant(s) rooted at human:local-user is valid",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "delegation.valid",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      },
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": [
+              "notes:read",
+              "notes:write"
+            ],
+            "name": "capability",
+            "requested": "notes:write",
+            "satisfied": true
+          }
+        ],
+        "message": "capability 'notes:write' is held",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "capability.required",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      },
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": [
+              "*"
+            ],
+            "name": "resource_scope",
+            "requested": "id:todo",
+            "satisfied": true
+          }
+        ],
+        "message": "resource 'id:todo' is within scope",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "resource.scope",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      },
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": 2000,
+            "name": "text.length",
+            "requested": 8,
+            "satisfied": true
+          }
+        ],
+        "message": "text length 8 within 2000",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "rule.short-notes",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      }
+    ],
+    "explanation": "all 4 applicable policies passed",
+    "matched_policy": null,
+    "outcome": "ALLOW",
+    "policy_set_version": "notes-v1",
+    "reason_code": "ALLOWED",
+    "replay_of": null,
+    "trace_id": "6c45ef7775b7"
+  },
+  "execution_grant": {
+    "expires_at": "2026-11-01T12:02:00.010000Z",
+    "grant_id": "xg_408e57181bdd47cbb45697ceb2db1a99",
+    "token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRlMmEzMTllMzk1ZTIxMjAiLCJ2IjoiYXRwLWdyYW50LzIifQ.eyJhY3Rpb25faGFzaCI6Ijk1ZTdhMGQyY2RjZTJhY2E1MTQwNzc4NTQyNDNhOGVmNzZhNTg0ZGQwZDQ5MzJmMTEyNDUwZTFlMWFlZDc2OTEiLCJhZ2VudF9pZCI6Im5vdGVzLWFnZW50IiwiZGVjaXNpb25faWQiOiJkZWNfZTYwMjZmOWQyZDFhNDRhYThiNjVlZGNhZmJhYmFlMTIiLCJlbnZlbG9wZV9pZCI6ImVudl8zN2Q5NTk5YWYyMTI0OGIzODU1ZjAwOWZjZmJkMjQwOSIsImV4cGlyZXNfYXQiOiIyMDI2LTExLTAxVDEyOjAyOjAwLjAxMDAwMFoiLCJncmFudF9pZCI6InhnXzQwOGU1NzE4MWJkZDQ3Y2JiNDU2OTdjZWIyZGIxYTk5IiwiaXNzdWVkX2F0IjoiMjAyNi0xMS0wMVQxMjowMDowMC4wMTAwMDBaIiwicG9saWN5X3NldF92ZXJzaW9uIjoibm90ZXMtdjEiLCJ0cmFjZV9pZCI6IjZjNDVlZjc3NzViNyJ9.OwJRtsaOD2vpkc99t8koJjnqNhtwY0KCo6nSnN9TaOUTpopklLFe2fkVDRqIZt7X25jEQamOvkBbxHdlvaFgBg"
+  }
+}

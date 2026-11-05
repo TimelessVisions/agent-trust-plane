@@ -1,0 +1,650 @@
+{
+  "bundle_hash": "509d1e987afa539b13caf6df8cabae71f07f13459a2d7598b4c63e76cae407b2",
+  "bundle_version": 2,
+  "decision": {
+    "action_hash": "95e7a0d2cdce2aca514077854243a8ef76a584dd0d4932f112450e1e1aed7691",
+    "approval": null,
+    "decided_at": "2026-11-01T12:00:00.010000Z",
+    "decision_id": "dec_e6026f9d2d1a44aa8b65edcafbabae12",
+    "effective_authority": {
+      "budgets": [],
+      "capabilities": [
+        "notes:read",
+        "notes:write"
+      ],
+      "constraints": {
+        "budget": null,
+        "currencies": null,
+        "max_amount": null
+      },
+      "expires_at": "2026-11-02T00:00:00.002000Z",
+      "grant_chain": [
+        "grt_33756584e3544be7b10827306a6d28ec",
+        "grt_892a486ad5604aa583d6543d05f68f2f"
+      ],
+      "holder": {
+        "id": "notes-agent",
+        "kind": "agent"
+      },
+      "resource_scope": [
+        "*"
+      ],
+      "root_principal": {
+        "id": "local-user",
+        "kind": "human"
+      }
+    },
+    "enforcement": "enforce",
+    "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+    "evaluations": [
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": "2026-11-02T00:00:00.002000+00:00",
+            "name": "chain_expires_at",
+            "requested": "2026-11-01T12:00:00.010000+00:00",
+            "satisfied": true
+          }
+        ],
+        "message": "delegation chain of 2 grant(s) rooted at human:local-user is valid",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "delegation.valid",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      },
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": [
+              "notes:read",
+              "notes:write"
+            ],
+            "name": "capability",
+            "requested": "notes:write",
+            "satisfied": true
+          }
+        ],
+        "message": "capability 'notes:write' is held",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "capability.required",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      },
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": [
+              "*"
+            ],
+            "name": "resource_scope",
+            "requested": "id:todo",
+            "satisfied": true
+          }
+        ],
+        "message": "resource 'id:todo' is within scope",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "resource.scope",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      },
+      {
+        "constraints": [
+          {
+            "detail": null,
+            "limit": 2000,
+            "name": "text.length",
+            "requested": 8,
+            "satisfied": true
+          }
+        ],
+        "message": "text length 8 within 2000",
+        "outcome": "ALLOW",
+        "policy": {
+          "id": "rule.short-notes",
+          "version": "v1"
+        },
+        "reason_code": "ALLOWED"
+      }
+    ],
+    "explanation": "all 4 applicable policies passed",
+    "matched_policy": null,
+    "outcome": "ALLOW",
+    "policy_set_version": "notes-v1",
+    "reason_code": "ALLOWED",
+    "replay_of": null,
+    "trace_id": "6c45ef7775b7"
+  },
+  "delegation_chain": [
+    {
+      "capabilities": [
+        "notes:read",
+        "notes:write"
+      ],
+      "constraints": {
+        "budget": null,
+        "currencies": null,
+        "max_amount": null
+      },
+      "expires_at": "2026-11-02T00:01:00.002000+00:00",
+      "grant_id": "grt_33756584e3544be7b10827306a6d28ec",
+      "grantee": {
+        "id": "local-user",
+        "kind": "human"
+      },
+      "grantor": {
+        "id": "local-user",
+        "kind": "human"
+      },
+      "label": "local-user: local authority for notes",
+      "resource_scope": [
+        "*"
+      ]
+    },
+    {
+      "capabilities": [
+        "notes:read",
+        "notes:write"
+      ],
+      "constraints": {
+        "budget": null,
+        "currencies": null,
+        "max_amount": null
+      },
+      "expires_at": "2026-11-02T00:00:00.002000+00:00",
+      "grant_id": "grt_892a486ad5604aa583d6543d05f68f2f",
+      "grantee": {
+        "id": "notes-agent",
+        "kind": "agent"
+      },
+      "grantor": {
+        "id": "local-user",
+        "kind": "human"
+      },
+      "label": "notes-agent: notes session",
+      "resource_scope": [
+        "*"
+      ]
+    }
+  ],
+  "envelope": {
+    "action": "write_note",
+    "agent": {
+      "id": "notes-agent",
+      "kind": "agent"
+    },
+    "arguments": {
+      "id": "todo",
+      "text": "buy milk"
+    },
+    "capability": "notes:write",
+    "delegation_grant_id": "grt_892a486ad5604aa583d6543d05f68f2f",
+    "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+    "issued_at": "2026-11-01T12:00:00.007000Z",
+    "principal": {
+      "id": "local-user",
+      "kind": "human"
+    },
+    "provenance": {
+      "agent_rationale": null,
+      "content_sources": [],
+      "model": null,
+      "task_description": "mcp tools/call via atp-proxy",
+      "task_id": null
+    },
+    "resource": "id:todo",
+    "tool": "mcp.notes",
+    "trace_id": "6c45ef7775b7"
+  },
+  "events": [
+    {
+      "actor": "notes-agent",
+      "event_type": "action_proposed",
+      "hash": "95e47d660da700af7c2d02b9da073118e57a70979cb318fd8f4dcb77c813821a",
+      "payload": {
+        "action_hash": "95e7a0d2cdce2aca514077854243a8ef76a584dd0d4932f112450e1e1aed7691",
+        "credential_id": "cred_adb4bded0a6c4878aedc6fd57543afab",
+        "envelope": {
+          "action": "write_note",
+          "agent": {
+            "id": "notes-agent",
+            "kind": "agent"
+          },
+          "arguments": {
+            "id": "todo",
+            "text": "buy milk"
+          },
+          "capability": "notes:write",
+          "delegation_grant_id": "grt_892a486ad5604aa583d6543d05f68f2f",
+          "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+          "issued_at": "2026-11-01T12:00:00.007000Z",
+          "principal": {
+            "id": "local-user",
+            "kind": "human"
+          },
+          "provenance": {
+            "agent_rationale": null,
+            "content_sources": [],
+            "model": null,
+            "task_description": "mcp tools/call via atp-proxy",
+            "task_id": null
+          },
+          "resource": "id:todo",
+          "tool": "mcp.notes",
+          "trace_id": "6c45ef7775b7"
+        }
+      },
+      "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "seq": 1,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.011000Z"
+    },
+    {
+      "actor": "gateway",
+      "event_type": "delegation_resolved",
+      "hash": "5637823db8c8b9ac617bf15284d66d58f7bfad883b710c8656df339ebf866b99",
+      "payload": {
+        "authority": {
+          "budgets": [],
+          "capabilities": [
+            "notes:read",
+            "notes:write"
+          ],
+          "constraints": {
+            "budget": null,
+            "currencies": null,
+            "max_amount": null
+          },
+          "expires_at": "2026-11-02T00:00:00.002000Z",
+          "grant_chain": [
+            "grt_33756584e3544be7b10827306a6d28ec",
+            "grt_892a486ad5604aa583d6543d05f68f2f"
+          ],
+          "holder": {
+            "id": "notes-agent",
+            "kind": "agent"
+          },
+          "resource_scope": [
+            "*"
+          ],
+          "root_principal": {
+            "id": "local-user",
+            "kind": "human"
+          }
+        },
+        "chain": [
+          {
+            "capabilities": [
+              "notes:read",
+              "notes:write"
+            ],
+            "constraints": {
+              "budget": null,
+              "currencies": null,
+              "max_amount": null
+            },
+            "expires_at": "2026-11-02T00:01:00.002000+00:00",
+            "grant_id": "grt_33756584e3544be7b10827306a6d28ec",
+            "grantee": {
+              "id": "local-user",
+              "kind": "human"
+            },
+            "grantor": {
+              "id": "local-user",
+              "kind": "human"
+            },
+            "label": "local-user: local authority for notes",
+            "resource_scope": [
+              "*"
+            ]
+          },
+          {
+            "capabilities": [
+              "notes:read",
+              "notes:write"
+            ],
+            "constraints": {
+              "budget": null,
+              "currencies": null,
+              "max_amount": null
+            },
+            "expires_at": "2026-11-02T00:00:00.002000+00:00",
+            "grant_id": "grt_892a486ad5604aa583d6543d05f68f2f",
+            "grantee": {
+              "id": "notes-agent",
+              "kind": "agent"
+            },
+            "grantor": {
+              "id": "local-user",
+              "kind": "human"
+            },
+            "label": "notes-agent: notes session",
+            "resource_scope": [
+              "*"
+            ]
+          }
+        ]
+      },
+      "prev_hash": "95e47d660da700af7c2d02b9da073118e57a70979cb318fd8f4dcb77c813821a",
+      "seq": 2,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.012000Z"
+    },
+    {
+      "actor": "gateway",
+      "event_type": "policy_evaluated",
+      "hash": "db5c3796d76206f0a6ebba9d785a003adb68241ed0ae9eeead761bfe59a2ef75",
+      "payload": {
+        "evaluations": [
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": "2026-11-02T00:00:00.002000+00:00",
+                "name": "chain_expires_at",
+                "requested": "2026-11-01T12:00:00.010000+00:00",
+                "satisfied": true
+              }
+            ],
+            "message": "delegation chain of 2 grant(s) rooted at human:local-user is valid",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "delegation.valid",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": [
+                  "notes:read",
+                  "notes:write"
+                ],
+                "name": "capability",
+                "requested": "notes:write",
+                "satisfied": true
+              }
+            ],
+            "message": "capability 'notes:write' is held",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "capability.required",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": [
+                  "*"
+                ],
+                "name": "resource_scope",
+                "requested": "id:todo",
+                "satisfied": true
+              }
+            ],
+            "message": "resource 'id:todo' is within scope",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "resource.scope",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": 2000,
+                "name": "text.length",
+                "requested": 8,
+                "satisfied": true
+              }
+            ],
+            "message": "text length 8 within 2000",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "rule.short-notes",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          }
+        ],
+        "policy_set_version": "notes-v1"
+      },
+      "prev_hash": "5637823db8c8b9ac617bf15284d66d58f7bfad883b710c8656df339ebf866b99",
+      "seq": 3,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.013000Z"
+    },
+    {
+      "actor": "gateway",
+      "event_type": "decision_made",
+      "hash": "7a6f8d55a935c222602b0aaa66e72cc3b214874b0da5e54f14260a169807dabc",
+      "payload": {
+        "decision": {
+          "action_hash": "95e7a0d2cdce2aca514077854243a8ef76a584dd0d4932f112450e1e1aed7691",
+          "approval": null,
+          "decided_at": "2026-11-01T12:00:00.010000Z",
+          "decision_id": "dec_e6026f9d2d1a44aa8b65edcafbabae12",
+          "effective_authority": {
+            "budgets": [],
+            "capabilities": [
+              "notes:read",
+              "notes:write"
+            ],
+            "constraints": {
+              "budget": null,
+              "currencies": null,
+              "max_amount": null
+            },
+            "expires_at": "2026-11-02T00:00:00.002000Z",
+            "grant_chain": [
+              "grt_33756584e3544be7b10827306a6d28ec",
+              "grt_892a486ad5604aa583d6543d05f68f2f"
+            ],
+            "holder": {
+              "id": "notes-agent",
+              "kind": "agent"
+            },
+            "resource_scope": [
+              "*"
+            ],
+            "root_principal": {
+              "id": "local-user",
+              "kind": "human"
+            }
+          },
+          "enforcement": "enforce",
+          "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+          "evaluations": [
+            {
+              "constraints": [
+                {
+                  "detail": null,
+                  "limit": "2026-11-02T00:00:00.002000+00:00",
+                  "name": "chain_expires_at",
+                  "requested": "2026-11-01T12:00:00.010000+00:00",
+                  "satisfied": true
+                }
+              ],
+              "message": "delegation chain of 2 grant(s) rooted at human:local-user is valid",
+              "outcome": "ALLOW",
+              "policy": {
+                "id": "delegation.valid",
+                "version": "v1"
+              },
+              "reason_code": "ALLOWED"
+            },
+            {
+              "constraints": [
+                {
+                  "detail": null,
+                  "limit": [
+                    "notes:read",
+                    "notes:write"
+                  ],
+                  "name": "capability",
+                  "requested": "notes:write",
+                  "satisfied": true
+                }
+              ],
+              "message": "capability 'notes:write' is held",
+              "outcome": "ALLOW",
+              "policy": {
+                "id": "capability.required",
+                "version": "v1"
+              },
+              "reason_code": "ALLOWED"
+            },
+            {
+              "constraints": [
+                {
+                  "detail": null,
+                  "limit": [
+                    "*"
+                  ],
+                  "name": "resource_scope",
+                  "requested": "id:todo",
+                  "satisfied": true
+                }
+              ],
+              "message": "resource 'id:todo' is within scope",
+              "outcome": "ALLOW",
+              "policy": {
+                "id": "resource.scope",
+                "version": "v1"
+              },
+              "reason_code": "ALLOWED"
+            },
+            {
+              "constraints": [
+                {
+                  "detail": null,
+                  "limit": 2000,
+                  "name": "text.length",
+                  "requested": 8,
+                  "satisfied": true
+                }
+              ],
+              "message": "text length 8 within 2000",
+              "outcome": "ALLOW",
+              "policy": {
+                "id": "rule.short-notes",
+                "version": "v1"
+              },
+              "reason_code": "ALLOWED"
+            }
+          ],
+          "explanation": "all 4 applicable policies passed",
+          "matched_policy": null,
+          "outcome": "ALLOW",
+          "policy_set_version": "notes-v1",
+          "reason_code": "ALLOWED",
+          "replay_of": null,
+          "trace_id": "6c45ef7775b7"
+        }
+      },
+      "prev_hash": "db5c3796d76206f0a6ebba9d785a003adb68241ed0ae9eeead761bfe59a2ef75",
+      "seq": 4,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.014000Z"
+    },
+    {
+      "actor": "gateway",
+      "event_type": "grant_issued",
+      "hash": "06122af767dbca964d61a73d79404beb403ab33189d5ba7cade2b6ca75900151",
+      "payload": {
+        "action_hash": "95e7a0d2cdce2aca514077854243a8ef76a584dd0d4932f112450e1e1aed7691",
+        "expires_at": "2026-11-01T12:02:00.010000+00:00",
+        "grant_id": "xg_408e57181bdd47cbb45697ceb2db1a99",
+        "kid": "de2a319e395e2120",
+        "single_use": true
+      },
+      "prev_hash": "7a6f8d55a935c222602b0aaa66e72cc3b214874b0da5e54f14260a169807dabc",
+      "seq": 5,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.015000Z"
+    },
+    {
+      "actor": "notes-agent",
+      "event_type": "execution_attempted",
+      "hash": "e6d7f9d2dea89b9a1c99ec31bd582aedbffb713f28c31e35dae9a3c5f66bb5b4",
+      "payload": {
+        "action_hash": "95e7a0d2cdce2aca514077854243a8ef76a584dd0d4932f112450e1e1aed7691",
+        "credential_id": "cred_adb4bded0a6c4878aedc6fd57543afab",
+        "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+        "grant_presented": true
+      },
+      "prev_hash": "06122af767dbca964d61a73d79404beb403ab33189d5ba7cade2b6ca75900151",
+      "seq": 6,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.019000Z"
+    },
+    {
+      "actor": "gateway",
+      "event_type": "execution_released",
+      "hash": "dc2666bb3ec0811efca23e60a42c1a0174e0079292b02879fff2eb7f863238f1",
+      "payload": {
+        "executor": "external",
+        "grant_id": "xg_408e57181bdd47cbb45697ceb2db1a99",
+        "tool": "mcp.notes"
+      },
+      "prev_hash": "e6d7f9d2dea89b9a1c99ec31bd582aedbffb713f28c31e35dae9a3c5f66bb5b4",
+      "seq": 7,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.020000Z"
+    },
+    {
+      "actor": "notes-agent",
+      "event_type": "execution_completed",
+      "hash": "b019928c5e649d2061a90f6e4bb941f37869c6d682bbc020bb10e44e6ed56d68",
+      "payload": {
+        "credential_id": "cred_adb4bded0a6c4878aedc6fd57543afab",
+        "grant_id": "xg_408e57181bdd47cbb45697ceb2db1a99",
+        "reported_by": "external_executor",
+        "summary": {
+          "is_error": false
+        }
+      },
+      "prev_hash": "dc2666bb3ec0811efca23e60a42c1a0174e0079292b02879fff2eb7f863238f1",
+      "seq": 8,
+      "trace_id": "6c45ef7775b7",
+      "ts": "2026-11-01T12:00:00.023000Z"
+    }
+  ],
+  "execution": {
+    "credential_id": "cred_adb4bded0a6c4878aedc6fd57543afab",
+    "event_type": "execution_completed",
+    "grant_id": "xg_408e57181bdd47cbb45697ceb2db1a99",
+    "reported_by": "external_executor",
+    "summary": {
+      "is_error": false
+    }
+  },
+  "exported_at": "2026-11-01T12:00:00.032000+00:00",
+  "integrity": {
+    "detail": null,
+    "event_count": 8,
+    "first_bad_seq": null,
+    "head_hash": "b019928c5e649d2061a90f6e4bb941f37869c6d682bbc020bb10e44e6ed56d68",
+    "trace_id": "6c45ef7775b7",
+    "valid": true
+  },
+  "redactions": [],
+  "replays": [],
+  "trace_format": "atp-trace/1",
+  "trace_id": "6c45ef7775b7"
+}

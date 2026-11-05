@@ -1,0 +1,60 @@
+{
+  "authority_source": null,
+  "capability": "notes:destroy",
+  "constraints": [
+    {
+      "detail": null,
+      "limit": "2026-11-02T00:00:00.002000+00:00",
+      "name": "chain_expires_at",
+      "policy": "delegation.valid.v1",
+      "requested": "2026-11-01T12:00:00.027000+00:00",
+      "satisfied": true
+    },
+    {
+      "detail": null,
+      "limit": [
+        "notes:read",
+        "notes:write"
+      ],
+      "name": "capability",
+      "policy": "capability.required.v1",
+      "requested": "notes:destroy",
+      "satisfied": false
+    },
+    {
+      "detail": null,
+      "limit": [
+        "*"
+      ],
+      "name": "resource_scope",
+      "policy": "resource.scope.v1",
+      "requested": "id:todo",
+      "satisfied": true
+    }
+  ],
+  "delegation_path": [
+    "local-user -> local-user [grt_33756584e3544be7b10827306a6d28ec]",
+    "local-user -> notes-agent [grt_892a486ad5604aa583d6543d05f68f2f]"
+  ],
+  "enforcement": "enforce",
+  "failed": [
+    "capability.required.v1"
+  ],
+  "matched_policy": "capability.required.v1",
+  "message": "capability 'notes:destroy' is not held by agent:notes-agent; held: ['notes:read', 'notes:write']",
+  "on_whose_authority": "local-user (human)",
+  "outcome": "DENY",
+  "passed": [
+    "delegation.valid.v1",
+    "resource.scope.v1"
+  ],
+  "policy_set": "notes-v1",
+  "reason_code": "CAPABILITY_NOT_GRANTED",
+  "resource": "id:todo",
+  "tool_action": "mcp.notes.delete_note",
+  "trace_id": "450b07293449",
+  "who": "notes-agent (agent)",
+  "would_need_to_change": [
+    "delegate capability 'notes:destroy' to notes-agent on grant grt_892a486ad5604aa583d6543d05f68f2f (currently held: [notes:read, notes:write]), or have the agent request a held capability"
+  ]
+}

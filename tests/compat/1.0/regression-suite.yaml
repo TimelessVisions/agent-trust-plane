@@ -1,0 +1,74 @@
+version: 1
+name: recorded regression cases
+description: ''
+policy_set: notes-v1
+policies: policies.yaml
+delegations:
+  principals:
+    local-user:
+      id: local-user
+      kind: human
+    notes-agent:
+      id: notes-agent
+      kind: agent
+  grants:
+  - id: g-33756584e3544be7b10827306a6d28ec
+    label: 'local-user: local authority for notes'
+    grantor: local-user
+    grantee: local-user
+    capabilities:
+    - notes:read
+    - notes:write
+    resource_scope:
+    - '*'
+    expires_in: 1d
+  - id: g-892a486ad5604aa583d6543d05f68f2f
+    label: 'notes-agent: notes session'
+    grantor: local-user
+    grantee: notes-agent
+    parent: g-33756584e3544be7b10827306a6d28ec
+    capabilities:
+    - notes:read
+    - notes:write
+    resource_scope:
+    - '*'
+    expires_in: 1d
+cases:
+- name: write allowed
+  description: Recorded ALLOW (ALLOWED) under notes-v1
+  agent: notes-agent
+  principal: local-user
+  delegation: g-892a486ad5604aa583d6543d05f68f2f
+  capability: notes:write
+  tool: mcp.notes
+  action: write_note
+  resource: id:todo
+  arguments:
+    id: todo
+    text: buy milk
+  expect:
+    outcome: ALLOW
+    reason_code: ALLOWED
+  source:
+    trace_id: 6c45ef7775b7
+    recorded_at: '2026-11-01T12:00:00.010000+00:00'
+    policy_set: notes-v1
+- name: delete denied
+  description: Recorded DENY (CAPABILITY_NOT_GRANTED) under notes-v1
+  agent: notes-agent
+  principal: local-user
+  delegation: g-892a486ad5604aa583d6543d05f68f2f
+  capability: notes:destroy
+  tool: mcp.notes
+  action: delete_note
+  resource: id:todo
+  arguments:
+    id: todo
+  expect:
+    outcome: DENY
+    reason_code: CAPABILITY_NOT_GRANTED
+    matched_policy: capability.required.v1
+  source:
+    trace_id: 450b07293449
+    recorded_at: '2026-11-01T12:00:00.027000+00:00'
+    policy_set: notes-v1

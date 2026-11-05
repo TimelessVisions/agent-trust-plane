@@ -153,6 +153,7 @@ testpaths = [
   "examples/finance-agent/tests",
   "examples/notes-mcp-server/tests",
   "packages/cli/tests",
+  "tests/compat",
 ]
 addopts = "-q --strict-markers --import-mode=importlib --basetemp=.pytest-tmp"
 pythonpath = [
