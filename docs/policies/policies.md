@@ -45,8 +45,8 @@ policy_sets:
 | `argument_allowed_values` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | value is one of the values, same type (`1` ≠ `true` ≠ `"1"`) |
 | `argument_subset_of` | `argument`, `values` (≤ 500 scalars), `optional` | `ARGUMENT_NOT_ALLOWED` | every item of a list argument is one of the values, same exact-type comparison as `argument_allowed_values` (`1` ≠ `true` ≠ `"1"`); a scalar counts as a one-item list; an empty list passes; a dict, `null`, float or nested list (as the argument or an item) denies with `ARGUMENT_INVALID` |
 | `argument_max_length` | `argument`, `max_length`, `optional` | `ARGUMENT_TOO_LONG` | string/list/dict length ≤ max |
-| `argument_required` | `arguments` | `ARGUMENT_MISSING` | every listed argument present |
-| `argument_forbidden` | `arguments` | `ARGUMENT_FORBIDDEN` | none of the listed arguments present |
+| `argument_required` | `arguments` | `ARGUMENT_MISSING` | every listed argument present and not `null` (an explicit `null` counts as missing) |
+| `argument_forbidden` | `arguments` | `ARGUMENT_FORBIDDEN` | none of the listed arguments present (an explicit `null` counts as present, so it denies) |
 | `deny` | — | `ACTION_DENIED_BY_POLICY` | never |
 | `require_approval` | `approver_role` | `APPROVAL_REQUIRED_BY_POLICY` (REQUIRE_APPROVAL) | never; see limitations |
 
@@ -66,7 +66,11 @@ booleans, NaN, infinity and non-numbers fail closed with
 `ARGUMENT_INVALID`. An `argument_*` rule whose argument is absent denies
 with `ARGUMENT_MISSING` unless `optional: true`. With `optional: true`, an
 argument sent as an explicit `null` counts as absent and passes; without it,
-`null` is still checked (and denied) like any other value.
+`null` is still checked (and denied) like any other value. `optional` never
+loosens a present value: an out-of-bounds value denies either way.
+`argument_required` treats an explicit `null` as missing (denies with
+`ARGUMENT_MISSING`); `argument_forbidden` treats it as present (denies with
+`ARGUMENT_FORBIDDEN`).
 
 ### What the format deliberately does not have
 

@@ -255,7 +255,8 @@ class DeclaredRule(Policy):
                 ),
             )
         if k == "argument_required":
-            missing = [a for a in (spec.arguments or ()) if a not in args]
+            # An explicit null counts as missing, as for optional rules (R15).
+            missing = [a for a in (spec.arguments or ()) if args.get(a) is None]
             c = ConstraintEvaluation(
                 name="required_arguments",
                 requested=sorted(args),
@@ -268,6 +269,7 @@ class DeclaredRule(Policy):
                 )
             return self.allow("required arguments present", (c,))
         if k == "argument_forbidden":
+            # An explicit null is present: the caller sent the key, so it is denied.
             present = [a for a in (spec.arguments or ()) if a in args]
             c = ConstraintEvaluation(
                 name="forbidden_arguments",

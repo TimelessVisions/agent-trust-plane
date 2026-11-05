@@ -537,3 +537,58 @@ def test_subset_deny_message_is_bounded() -> None:
     d = _subset_decide(values, ["evil@y"])
     ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
     assert "evil@y" in ev.message and len(ev.message) < 300
+
+
+def _one_rule_decide(rule: dict[str, Any], arguments: dict[str, Any]) -> Any:
+    ps = build_policy_set(
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+        ).policy_sets[0]
+    )
+    return PolicyEngine().evaluate(ps, ctx(arguments=arguments))
+
+
+def test_required_denies_explicit_null() -> None:
+    rule = {"id": "r", "applies_to": {"tool": "*"}, "kind": "argument_required", "arguments": ["x"]}
+    d = _one_rule_decide(rule, {"x": None})
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_MISSING
+    assert _one_rule_decide(rule, {"x": "v"}).outcome is DecisionOutcome.ALLOW
+
+
+def test_forbidden_denies_explicit_null() -> None:
+    rule = {
+        "id": "r",
+        "applies_to": {"tool": "*"},
+        "kind": "argument_forbidden",
+        "arguments": ["x"],
+    }
+    d = _one_rule_decide(rule, {"x": None})
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_FORBIDDEN
+    assert _one_rule_decide(rule, {}).outcome is DecisionOutcome.ALLOW
+
+
+_OUT_OF_BOUNDS: dict[str, tuple[dict[str, Any], Any, ReasonCode]] = {
+    "argument_subset_of": ({"values": ["a"]}, ["a", "b"], ReasonCode.ARGUMENT_NOT_ALLOWED),
+    "argument_allowed_values": ({"values": ["a"]}, "b", ReasonCode.ARGUMENT_NOT_ALLOWED),
+    "argument_max": ({"max": 10}, 11, ReasonCode.ARGUMENT_EXCEEDS_LIMIT),
+    "argument_min": ({"min": 1}, 0, ReasonCode.ARGUMENT_BELOW_MINIMUM),
+    "argument_max_length": ({"max_length": 2}, "abc", ReasonCode.ARGUMENT_TOO_LONG),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_OUT_OF_BOUNDS))
+def test_optional_with_out_of_bounds_value_still_denies(kind: str) -> None:
+    extra, value, code = _OUT_OF_BOUNDS[kind]
+    rule = {
+        "id": "r",
+        "applies_to": {"tool": "*"},
+        "kind": kind,
+        "argument": "x",
+        "optional": True,
+        **extra,
+    }
+    d = _one_rule_decide(rule, {"x": value})
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is code

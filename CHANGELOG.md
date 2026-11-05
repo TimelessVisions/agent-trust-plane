@@ -14,6 +14,12 @@ changes may land in minor versions and are called out).
   `ARGUMENT_NOT_ALLOWED`, reporting the allowed values and the offending
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
+### Changed
+- `argument_required` treats an argument sent as an explicit `null` as
+  missing and denies with `ARGUMENT_MISSING`; it used to pass. This matches
+  optional `argument_*` rules, where `null` counts as absent.
+  `argument_forbidden` still treats `null` as present and denies.
+
 ### Security
 - Lockfile pins the lowest releases that clear PYSEC-2026-4320
   (`certifi==2026.10.19`), CVE-2026-114603 (`opentelemetry-api==1.45.1`),
@@ -36,8 +42,8 @@ changes may land in minor versions and are called out).
   when the config loads, in `atp mcp wrap` and `atp mcp proxy` alike.
   `atp mcp wrap` releases every mapping `tool` to the proxy by adding it to
   `ATP_EXTERNAL_TOOL_PREFIXES` (default `mcp.`). A remote gateway needs any
-  mapping `tool` outside `mcp.` in its own `ATP_EXTERNAL_TOOL_PREFIXES`. The benchmark no longer retargets rules to
-  `mcp.<server_name>`.
+  mapping `tool` outside `mcp.` in its own `ATP_EXTERNAL_TOOL_PREFIXES`.
+  The benchmark no longer retargets rules to `mcp.<server_name>`.
 - `argument_max_length` denies a non-optional explicit `null` argument with
   `ARGUMENT_INVALID`; it was measured as the 4-character string `"null"` and
   passed under any limit of 4 or more.
