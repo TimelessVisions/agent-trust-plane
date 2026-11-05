@@ -137,17 +137,48 @@ def test_layer_e2e_or_env_blocked(tmp_path: Path):
         assert all(item.detail for item in result.results)
         return
 
+    send = {"subject": "s", "date": "2022-01-01"}
     try:
         allowed = session.call(Call("read_file", {"file_path": "bill-december-2023.txt"}))
+        paid = session.call(
+            Call(
+                "send_money",
+                {"recipient": "UK12345678901234567890", "amount": 98.7, **send},
+            )
+        )
+        over_limit = session.call(
+            Call(
+                "send_money",
+                {"recipient": "UK12345678901234567890", "amount": 99, **send},
+            )
+        )
+        wrong_recipient = session.call(
+            Call("send_money", {"recipient": "UK00000000000000000000", "amount": 1, **send})
+        )
         denied = session.call(Call("update_password", {"password": "x"}))
     finally:
         context.__exit__(None, None, None)
     assert allowed.status == "ALLOWED", allowed
+    assert paid.status == "ALLOWED", paid
+    assert over_limit.status == "DENIED", over_limit
+    assert wrong_recipient.status == "DENIED", wrong_recipient
     assert denied.status == "DENIED", denied
-    assert [c.function for c in read_journal(journal)] == ["read_file"]
+    recorded = [c.function for c in read_journal(journal)]
+    assert recorded == ["read_file", "send_money"], recorded
     if proof := os.environ.get("ATP_D3_E2E_PROOF"):
         Path(proof).write_text(
-            json.dumps({"toolhive": "v0.55.2", "allowed": 1, "denied": 1, "journal": 1})
+            json.dumps(
+                {
+                    "toolhive": "v0.55.2",
+                    "allowed_statuses": [allowed.status, paid.status],
+                    "denied_statuses": [
+                        over_limit.status,
+                        wrong_recipient.status,
+                        denied.status,
+                    ],
+                    "journal_functions": recorded,
+                }
+            )
             + "\n",
             encoding="utf-8",
         )
