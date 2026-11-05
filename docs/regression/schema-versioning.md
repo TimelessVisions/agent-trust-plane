@@ -23,8 +23,12 @@
    `atp regression migrate`) detects the kind of each file from its content
    (atp-mcp.yaml, policies.yaml or regression suite) and rewrites it to the
    current version in place. Today that adds `version: 1` above the first
-   key, keeping comments; it is idempotent and exits 2 on a file it does not
-   recognise. A future version 2 will be written by the same command, and
+   key (after any `---` line), keeping comments and a UTF-8 BOM, and turns
+   `version: "1"` or `1.0` into `1`. A file whose comments could not be kept
+   (a flow mapping with comments) is refused with exit 2 and left as it is:
+   add `version: 1` by hand. Through a symlink it updates the target and
+   keeps the link. It is idempotent and exits 2 on a file it does not
+   recognise or a version it does not support. A future version 2 will be written by the same command, and
    loading a file of a version this atp does not know is an error that
    names the supported version.
 4. **Stored SQLite schema.** Tables are created with `CREATE TABLE IF NOT

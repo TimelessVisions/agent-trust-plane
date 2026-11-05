@@ -10,9 +10,13 @@ changes may land in minor versions and are called out).
 - `atp migrate PATH...` brings `atp-mcp.yaml`, `policies.yaml` and
   regression suites to the current file format version in place. The kind
   of each file is detected from its content, not its name. It adds
-  `version: 1` above the first key and keeps comments; a JSON suite stays
-  JSON. It is idempotent, prints one line per file, and exits 2 on a file
-  it does not recognise or a version it does not support.
+  `version: 1` above the first key (after any `---` line) and keeps
+  comments, line endings and a UTF-8 BOM; it turns `version: "1"` or `1.0`
+  into `1`. A file whose comments it could not keep (a flow mapping with
+  comments) is refused with exit 2 and left unchanged. A JSON suite stays
+  JSON. Through a symlink it updates the file the link points at. It is
+  idempotent, prints one line per file, and exits 2 on a file it does not
+  recognise or a version it does not support.
   `atp regression migrate` is an alias.
 - Declarative policy rule kind `argument_subset_of`: passes when every item
   of a list argument is in `values`, using the same exact-type comparison as
@@ -31,8 +35,9 @@ changes may land in minor versions and are called out).
   unknown-key error.
 - **BREAKING (deprecation):** a file without `version:` still loads as
   version 1, but emits one `UnversionedFileWarning` (a `DeprecationWarning`
-  subclass, exported from `atp_core`) per file per process; `atp` prints it
-  as one `warning:` line on stderr. Run `atp migrate` to add the field.
+  subclass, exported from `atp_core`) per file per process; `atp`,
+  `atp-mcp-proxy` and `python -m atp_gateway` print it as one `warning:`
+  line on stderr. Run `atp migrate` to add the field.
   Code that turns `DeprecationWarning` into errors will fail on unversioned
   files. `policy_sets[].version` is unchanged: it is a set's name.
 - `atp mcp init` writes `version: 1` as the first key of `atp-mcp.yaml`, and

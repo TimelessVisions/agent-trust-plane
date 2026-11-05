@@ -398,7 +398,9 @@ def main(argv: list[str] | None = None) -> None:
     import argparse
 
     from atp_adapter_mcp.config import load_config
+    from atp_core import show_unversioned_file_warnings
 
+    show_unversioned_file_warnings()
     parser = argparse.ArgumentParser(prog="atp-mcp-proxy")
     parser.add_argument("--config", required=True, help="path to the proxy YAML config")
     parser.add_argument("--log-level", default="info")

@@ -23,6 +23,7 @@ from atp_core.fileversion import (
     FILE_FORMAT_VERSION,
     UnversionedFileWarning,
     check_file_version,
+    show_unversioned_file_warnings,
     warn_if_unversioned,
 )
 from atp_core.ids import new_id, new_secret_key, new_trace_id
@@ -70,6 +71,7 @@ __all__ = [
     "new_trace_id",
     "read_bounded_text",
     "sha256_hex",
+    "show_unversioned_file_warnings",
     "utcnow",
     "warn_if_unversioned",
 ]

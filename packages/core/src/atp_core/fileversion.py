@@ -14,10 +14,11 @@ and two different files each warn once.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 FILE_FORMAT_VERSION = 1
 
@@ -28,6 +29,13 @@ class UnversionedFileWarning(DeprecationWarning):
 
 _warned: set[tuple[str, str]] = set()
 _lock = threading.Lock()
+
+
+def _reset_warned() -> None:
+    """Forget which files have warned. For tests: in-process test runs would
+    otherwise depend on which test loaded a file first."""
+    with _lock:
+        _warned.clear()
 
 
 def check_file_version(value: Any, kind: str) -> int:
@@ -62,3 +70,33 @@ def warn_if_unversioned(raw: Any, path: str | Path, kind: str) -> None:
         UnversionedFileWarning,
         stacklevel=2,
     )
+
+
+def show_unversioned_file_warnings() -> None:
+    """Show :class:`UnversionedFileWarning` as one ``warning: ...`` line on stderr.
+
+    Python hides ``DeprecationWarning`` outside ``__main__``, but an
+    unversioned config file is something the person running ``atp``,
+    ``atp-mcp-proxy`` or the gateway should see. Entry points call this once;
+    calling it again is harmless. Other warnings go to the previous handler.
+    """
+    warnings.filterwarnings("always", category=UnversionedFileWarning)
+    current = warnings.showwarning
+    if getattr(current, "_atp_unversioned", False):
+        return
+
+    def show(
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: TextIO | None = None,
+        line: str | None = None,
+    ) -> None:
+        if issubclass(category, UnversionedFileWarning):
+            print(f"warning: {message}", file=sys.stderr, flush=True)
+            return
+        current(message, category, filename, lineno, file, line)
+
+    show._atp_unversioned = True  # type: ignore[attr-defined]
+    warnings.showwarning = show

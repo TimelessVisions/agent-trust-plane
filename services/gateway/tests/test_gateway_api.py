@@ -3,6 +3,9 @@ demo denial, trace inspection, and replay. Every agent call is authenticated."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from gateway_fixtures import (
@@ -300,3 +303,29 @@ class TestCredentialLifecycle:
 
     def test_evals_run_is_operator_only(self, client: TestClient) -> None:
         assert client.post("/evals/run").status_code == 403
+
+
+def test_gateway_main_prints_unversioned_policy_file_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`python -m atp_gateway` shows an unversioned policies.yaml as one
+    `warning:` line on stderr, like `atp`."""
+    import sys
+
+    import uvicorn
+
+    from atp_gateway import __main__ as gateway_main
+
+    policies = tmp_path / "policies.yaml"
+    policies.write_text("policy_sets:\n  - version: notes-v1\n    rules: []\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ATP_DATABASE_PATH", ":memory:")
+    monkeypatch.setenv("ATP_POLICY_FILE", str(policies))
+    monkeypatch.setattr(sys, "argv", ["atp-gateway"])
+    ran: list[object] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: ran.append(app))
+    gateway_main.main()
+    assert len(ran) == 1
+    lines = [line for line in capsys.readouterr().err.splitlines() if "version:" in line]
+    assert len(lines) == 1
+    assert lines[0].startswith(f"warning: {policies}: this policies.yaml file has no `version:`")

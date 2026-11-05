@@ -760,38 +760,10 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _show_unversioned_file_warnings() -> None:
-    """Python hides DeprecationWarning outside ``__main__``. An unversioned
-    config file is something the person running ``atp`` should see, once per
-    file (the loaders dedupe), as one plain line on stderr."""
-    import warnings
-
-    from atp_core import UnversionedFileWarning
-
-    warnings.filterwarnings("always", category=UnversionedFileWarning)
-    current = warnings.showwarning
-    if getattr(current, "_atp_unversioned", False):
-        return
-
-    def show(
-        message: Warning | str,
-        category: type[Warning],
-        filename: str,
-        lineno: int,
-        file: Any = None,
-        line: str | None = None,
-    ) -> None:
-        if issubclass(category, UnversionedFileWarning):
-            _err(f"warning: {message}")
-            return
-        current(message, category, filename, lineno, file, line)
-
-    show._atp_unversioned = True  # type: ignore[attr-defined]
-    warnings.showwarning = show
-
-
 def main(argv: list[str] | None = None) -> None:
-    _show_unversioned_file_warnings()
+    from atp_core import show_unversioned_file_warnings
+
+    show_unversioned_file_warnings()
     raw = list(sys.argv[1:] if argv is None else argv)
     head, command = _split_command(raw)
     args = build_parser().parse_args(head)

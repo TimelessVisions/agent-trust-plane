@@ -65,3 +65,19 @@ def test_dump_config_writes_version_first(tmp_path: Path) -> None:
     dump_config(cfg, tmp_path / "out.yaml", header="# header\n")
     text = (tmp_path / "out.yaml").read_text(encoding="utf-8")
     assert text.startswith("# header\nversion: 1\n")
+
+
+def test_proxy_main_prints_unversioned_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`atp-mcp-proxy` shows the warning as one `warning:` line, like `atp`."""
+    from atp_adapter_mcp import proxy
+
+    path = _write(tmp_path / "atp-mcp.yaml", BODY)
+    started: list[object] = []
+    monkeypatch.setattr(proxy.anyio, "run", lambda fn, config: started.append(config))
+    proxy.main(["--config", str(path)])
+    assert len(started) == 1
+    lines = [line for line in capsys.readouterr().err.splitlines() if "version" in line]
+    assert len(lines) == 1
+    assert lines[0].startswith(f"warning: {path}: this atp-mcp.yaml file has no `version:`")

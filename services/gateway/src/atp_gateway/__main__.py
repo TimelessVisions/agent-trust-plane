@@ -13,7 +13,7 @@ from pathlib import Path
 
 import uvicorn
 
-from atp_core import new_secret_key
+from atp_core import new_secret_key, show_unversioned_file_warnings
 from atp_gateway.app import create_app
 from atp_gateway.settings import GatewaySettings
 
@@ -51,6 +51,7 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "keygen":
         keygen(sys.argv[2:])
         return
+    show_unversioned_file_warnings()
     parser = argparse.ArgumentParser(prog="atp-gateway")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
