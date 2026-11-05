@@ -1,0 +1,40 @@
+server_name: notes
+upstream:
+  command: python3
+  args:
+  - -m
+  - notes_mcp_server
+  env:
+    NOTES_DIR: notes
+authority:
+  capabilities:
+  - notes:read
+  - notes:write
+  resource_scope:
+  - '*'
+policy_set: notes-v1
+tools:
+- mcp_tool: delete_note
+  tool: mcp.notes
+  action: delete_note
+  capability: notes:destroy
+  resource_template: id:{id}
+  description: Delete a note permanently.
+- mcp_tool: list_notes
+  tool: mcp.notes
+  action: list_notes
+  capability: notes:read
+  resource_template: tool:list_notes
+  description: List the ids of all notes.
+- mcp_tool: read_note
+  tool: mcp.notes
+  action: read_note
+  capability: notes:read
+  resource_template: id:{id}
+  description: Return the text of a note.
+- mcp_tool: write_note
+  tool: mcp.notes
+  action: write_note
+  capability: notes:write
+  resource_template: id:{id}
+  description: Create or overwrite a note.

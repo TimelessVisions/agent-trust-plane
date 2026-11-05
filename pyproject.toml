@@ -154,6 +154,7 @@ testpaths = [
   "examples/notes-mcp-server/tests",
   "packages/cli/tests",
   "tests/compat",
+  "tests/upgrade",
 ]
 addopts = "-q --strict-markers --import-mode=importlib --basetemp=.pytest-tmp"
 pythonpath = [

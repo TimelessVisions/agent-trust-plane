@@ -1,0 +1,17 @@
+# Declared policy sets for this project (loaded next to the built-in payments sets).
+# Every set always includes the kernel policies: delegation valid, capability held,
+# resource in scope. Rules add argument-level limits on top. See docs/policies.md.
+version: 1
+policy_sets:
+  - version: notes-v1
+    description: notes via atp mcp wrap
+    rules: []
+    # examples (uncomment and adapt):
+    #  - id: short-notes
+    #    applies_to: {tool: mcp.notes, action: write_note}
+    #    kind: argument_max_length
+    #    argument: text
+    #    max_length: 2000
+    #  - id: never-delete
+    #    applies_to: {tool: mcp.notes, action: delete_note}
+    #    kind: deny

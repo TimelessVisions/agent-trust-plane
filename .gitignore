@@ -40,3 +40,6 @@ Thumbs.db
 
 # local ATP home (keys + evidence store)
 .atp/
+
+# the 0.3.2 upgrade fixture is a real (throwaway demo) home and must be committed
+!tests/upgrade/fixtures/home-0.3.2/**

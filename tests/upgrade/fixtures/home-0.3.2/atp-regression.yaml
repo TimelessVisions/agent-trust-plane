@@ -1,0 +1,55 @@
+version: 1
+name: recorded regression cases
+description: ''
+policy_set: notes-v1
+policies: .atp/policies.yaml
+delegations:
+  principals:
+    local-user:
+      id: local-user
+      kind: human
+    notes-agent:
+      id: notes-agent
+      kind: agent
+  grants:
+  - id: g-9f614b0834d049ecaba101ae63ca8f1f
+    label: 'local-user: local authority for notes'
+    grantor: local-user
+    grantee: local-user
+    capabilities:
+    - notes:read
+    - notes:write
+    resource_scope:
+    - '*'
+    expires_in: 1d
+  - id: g-929f4e5f6d4c474086f6bf2f7ef13f39
+    label: 'notes-agent: notes session'
+    grantor: local-user
+    grantee: notes-agent
+    parent: g-9f614b0834d049ecaba101ae63ca8f1f
+    capabilities:
+    - notes:read
+    - notes:write
+    resource_scope:
+    - '*'
+    expires_in: 1d
+cases:
+- name: delete stays denied
+  description: Recorded DENY (CAPABILITY_NOT_GRANTED) under notes-v1
+  agent: notes-agent
+  principal: local-user
+  delegation: g-929f4e5f6d4c474086f6bf2f7ef13f39
+  capability: notes:destroy
+  tool: mcp.notes
+  action: delete_note
+  resource: id:todo
+  arguments:
+    id: todo
+  expect:
+    outcome: DENY
+    reason_code: CAPABILITY_NOT_GRANTED
+    matched_policy: capability.required.v1
+  source:
+    trace_id: 8e5031658d06
+    recorded_at: '2026-11-05T03:47:39.573216+00:00'
+    policy_set: notes-v1
