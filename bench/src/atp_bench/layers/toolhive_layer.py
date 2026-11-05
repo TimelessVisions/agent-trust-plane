@@ -82,10 +82,7 @@ def _rule_condition(
 
     if kind == "argument_required":
         args = tuple(rule["arguments"])
-        checks = [
-            f"(resource has arg_{arg} || resource has arg_{arg}_present)"
-            for arg in args
-        ]
+        checks = [f"(resource has arg_{arg} || resource has arg_{arg}_present)" for arg in args]
         return " && ".join(checks) if checks else "true", None, False
     if kind == "argument_forbidden":
         checks = [
@@ -126,9 +123,7 @@ def _rule_condition(
     return check, None, False
 
 
-def _scope_condition(
-    scope: tuple[str, ...], suite: str, arg: str
-) -> str | None:
+def _scope_condition(scope: tuple[str, ...], suite: str, arg: str) -> str | None:
     """Translate concrete, wildcard and prefix scopes to Cedar scalar expressions."""
     x = f"resource.arg_{arg}"
     cases: list[str] = []
@@ -190,8 +185,7 @@ def render_toolhive_config(
             continue
 
         head = (
-            "permit(principal, action == Action::\"call_tool\", "
-            f"resource == Tool::{_string(tool)})"
+            f'permit(principal, action == Action::"call_tool", resource == Tool::{_string(tool)})'
         )
         if conditions:
             policies.append(f"{head} when {{ {' && '.join(conditions)} }};")
@@ -244,9 +238,14 @@ def _runtime_unavailable(log_text: str) -> bool:
     return any(
         s in lower
         for s in (
-            "docker daemon", "cannot connect to docker", "docker is not running",
-            "container runtime", "podman socket", "unable to connect to the runtime",
-            "no container runtime", "permission denied while trying to connect to",
+            "docker daemon",
+            "cannot connect to docker",
+            "docker is not running",
+            "container runtime",
+            "podman socket",
+            "unable to connect to the runtime",
+            "no container runtime",
+            "permission denied while trying to connect to",
         )
     )
 
@@ -298,10 +297,15 @@ class ToolhiveLayer:
             thv_log = workdir / "toolhive.log"
             thv_fh = stack.enter_context(thv_log.open("wb"))
             cmd = [
-                str(exe), "run", f"http://127.0.0.1:{up_port}/mcp",
-                "--name", f"atp-bench-{thv_port}",
-                "--authz-config", str(cedar_path),
-                "--proxy-port", str(thv_port),
+                str(exe),
+                "run",
+                f"http://127.0.0.1:{up_port}/mcp",
+                "--name",
+                f"atp-bench-{thv_port}",
+                "--authz-config",
+                str(cedar_path),
+                "--proxy-port",
+                str(thv_port),
                 "--foreground",
             ]
             try:
