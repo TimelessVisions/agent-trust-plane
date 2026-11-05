@@ -202,9 +202,7 @@ def test_wrong_pin_denied_by_real_stdio_proxy(tmp_path) -> None:
 
         async def body(session: ClientSession):
             listed = await session.list_tools()
-            denied = await session.call_tool(
-                "write_note", {"id": "memo", "text": "never execute"}
-            )
+            denied = await session.call_tool("write_note", {"id": "memo", "text": "never execute"})
             return listed, denied
 
         listed, denied = anyio.run(_run, cfg, token, body)
