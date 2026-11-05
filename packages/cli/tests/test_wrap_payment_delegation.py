@@ -54,10 +54,7 @@ def test_mcp_wrap_without_limit_does_not_invent_payment_authority() -> None:
     cfg = _config({"capabilities": ["pay:vendor"], "resource_scope": ["vendor:128"]})
     operator = RecordingOperator()
     seed_session(operator, cfg)  # type: ignore[arg-type]
-    assert not any(
-        "max_amount" in req.get("constraints", {})
-        for req in operator.grants
-    )
+    assert not any("max_amount" in req.get("constraints", {}) for req in operator.grants)
 
 
 def test_mcp_wrap_rejects_inconsistent_currency_authority() -> None:

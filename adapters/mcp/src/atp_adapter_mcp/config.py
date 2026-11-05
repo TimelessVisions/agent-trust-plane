@@ -134,9 +134,7 @@ class AuthorityConfig(BaseModel):
                 if not re.fullmatch(r"[A-Z]{3}", currency):
                     raise ValueError(f"invalid delegated currency {currency!r}")
             if self.max_amount is not None and self.max_amount.currency not in self.currencies:
-                raise ValueError(
-                    "maximum payment currency must be present in delegated currencies"
-                )
+                raise ValueError("maximum payment currency must be present in delegated currencies")
         return self
 
 
