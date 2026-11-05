@@ -6,7 +6,6 @@ from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
-
 from atp_bench.incidents import IncidentCase, run_incident
 from atp_bench.layers.base import CallOutcome
 
