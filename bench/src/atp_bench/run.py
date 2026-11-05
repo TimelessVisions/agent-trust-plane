@@ -92,8 +92,12 @@ class Summary:
         meta: dict[str, dict[str, list[str]]],
         layers: Sequence[str],
         suites: Sequence[str],
+        dropped: dict[str, int] | None = None,
     ) -> None:
         self.results = results
+        # layer -> number of annotation elements its rendered policy could not express; a layer
+        # that renders no policy of its own (open, atp) is absent.
+        self.dropped = dict(dropped or {})
         self.meta = meta  # suite -> {"na_tasks": [...], "na_injections": [...]}
         self.layers = list(layers)
         self.suites = list(suites)
@@ -159,6 +163,12 @@ class Summary:
         ]
         for layer in self.layers:
             lines += [f"## Layer: {layer}", ""]
+            if layer in self.dropped:
+                lines += [
+                    f"dropped constraints: {self.dropped[layer]} "
+                    "(annotation elements this layer cannot express; see dropped.json)",
+                    "",
+                ]
             blocked = self.env_blocked_reason(layer)
             if blocked is not None:
                 lines += [f"ENV_BLOCKED: {blocked}", ""]
@@ -286,6 +296,9 @@ def run_benchmark(
     results: list[PairResult] = []
     meta: dict[str, dict[str, list[str]]] = {}
     blocked: dict[str, str] = {}  # layer name -> EnvBlocked reason
+    dropped: dict[str, list[dict[str, str]]] = {
+        lyr.name: [] for lyr in layers if hasattr(lyr, "dropped_constraints")
+    }
     for suite_name in suites:
         suite = load_suite(suite_name)
         annotations = load_annotations(annotations_root, suite_name)
@@ -319,6 +332,15 @@ def run_benchmark(
 
         for layer in layers:
             base = out / "work" / suite_name / layer.name
+            if layer.name in dropped:  # rendering is pure: counted even when ENV_BLOCKED
+                for t in applicable:
+                    try:
+                        items = layer.dropped_constraints(suite, annotations[t])  # type: ignore[attr-defined]
+                    except Exception:  # a render-time error: that item reports it INCONCLUSIVE
+                        continue
+                    dropped[layer.name] += [
+                        {"suite": suite_name, "user_task": t, **asdict(d)} for d in items
+                    ]
             for t in na_tasks:
                 results.append(PairResult(suite_name, t, None, layer.name, "NOT_APPLICABLE"))
             for t in applicable:
@@ -384,7 +406,15 @@ def run_benchmark(
                 r.suite, r.user_task, r.injection_task, r.layer, "ENV_BLOCKED",
                 detail=blocked[r.layer],
             )  # fmt: skip
-    summary = Summary(results, meta, [lyr.name for lyr in layers], suites)
+    summary = Summary(
+        results,
+        meta,
+        [lyr.name for lyr in layers],
+        suites,
+        dropped={name: len(items) for name, items in dropped.items()},
+    )
+    (out / "dropped.json").write_text(json.dumps(dropped, indent=2, sort_keys=True) + "\n",
+                                      encoding="utf-8")  # fmt: skip
     with (out / "raw.jsonl").open("w", encoding="utf-8") as fh:
         for r in results:
             fh.write(json.dumps(asdict(r), sort_keys=True) + "\n")

@@ -160,6 +160,10 @@ class AtpLayer:
     def __init__(self, timeout_s: float = 30.0) -> None:
         self.timeout_s = timeout_s
 
+    def dropped_constraints(self, suite: DojoSuite, annotation: Annotation) -> list:
+        """ATP renders the annotation unchanged: nothing is dropped."""
+        return []
+
     @contextmanager
     def open(
         self,
