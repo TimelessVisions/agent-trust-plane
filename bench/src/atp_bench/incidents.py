@@ -55,9 +55,7 @@ class IncidentCase(BaseModel):
     server: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,80}/server\.py$")
     calls: tuple[IncidentStep, ...] = Field(min_length=1)
     expect: dict[str, Expected]
-    atp_regression: str = Field(
-        pattern=r"^[a-z0-9][a-z0-9-]{0,80}/atp-regression\.yaml$"
-    )
+    atp_regression: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,80}/atp-regression\.yaml$")
 
     @model_validator(mode="after")
     def _contract(self) -> IncidentCase:
@@ -125,7 +123,11 @@ def run_incident(case: IncidentCase, layer: Layer) -> IncidentResult:
     expected = case.expect.get(layer.name)
     if expected is None:
         return IncidentResult(
-            case.id, layer.name, "", "INCONCLUSIVE", "INCONCLUSIVE",
+            case.id,
+            layer.name,
+            "",
+            "INCONCLUSIVE",
+            "INCONCLUSIVE",
             detail="no registered expectation for this layer",
         )
     calls: list[str] = []
@@ -143,13 +145,25 @@ def run_incident(case: IncidentCase, layer: Layer) -> IncidentResult:
                 statuses.append(outcome.status)
     except EnvBlocked as exc:
         return IncidentResult(
-            case.id, layer.name, expected, "INCONCLUSIVE", "ENV_BLOCKED",
-            tuple(calls), tuple(statuses), exc.reason,
+            case.id,
+            layer.name,
+            expected,
+            "INCONCLUSIVE",
+            "ENV_BLOCKED",
+            tuple(calls),
+            tuple(statuses),
+            exc.reason,
         )
     except Exception as exc:
         return IncidentResult(
-            case.id, layer.name, expected, "INCONCLUSIVE", "INCONCLUSIVE",
-            tuple(calls), tuple(statuses), f"{type(exc).__name__}: {exc}"[:500],
+            case.id,
+            layer.name,
+            expected,
+            "INCONCLUSIVE",
+            "INCONCLUSIVE",
+            tuple(calls),
+            tuple(statuses),
+            f"{type(exc).__name__}: {exc}"[:500],
         )
 
     observed = statuses[-1] if statuses else "INCONCLUSIVE"
@@ -160,6 +174,11 @@ def run_incident(case: IncidentCase, layer: Layer) -> IncidentResult:
     else:
         verdict = "FAIL"
     return IncidentResult(
-        case.id, layer.name, expected, observed, verdict,
-        tuple(calls), tuple(statuses),
+        case.id,
+        layer.name,
+        expected,
+        observed,
+        verdict,
+        tuple(calls),
+        tuple(statuses),
     )
