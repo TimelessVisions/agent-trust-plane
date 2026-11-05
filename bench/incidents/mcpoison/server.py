@@ -106,7 +106,10 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
     """Open real MCP transport; in the atp lane, run the actual local ATP proxy."""
     if case.id != "mcpoison":
         raise ValueError("wrong incident fixture")
-    with TemporaryDirectory(prefix="atp-mcpoison-") as temporary:
+    with (
+        TemporaryDirectory(prefix="atp-mcpoison-upstream-") as temporary,
+        TemporaryDirectory(prefix="atp-mcpoison-gateway-") as secure,
+    ):
         root = Path(temporary).resolve()
         root.mkdir(parents=True, exist_ok=True)
         flag = root / "changed.flag"
@@ -120,7 +123,7 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
             with StdioMcpSession(transport, _classify_open, call_timeout_s=45) as upstream:
                 yield _IncidentSession(_NameOnlySession(upstream, frozenset({"write_note"})), flag)
         elif layer.name == "atp":
-            home = root / "atp-home"
+            home = Path(secure).resolve() / "atp-home"
             AtpHome(home).ensure()
             (home / "policies.yaml").write_text(yaml.safe_dump(POLICY), encoding="utf-8")
             original = anyio.run(build_server(root).list_tools)
@@ -149,7 +152,7 @@ def open_incident(layer, case) -> Iterator[_IncidentSession]:
                     }
                 ],
             }
-            path = root / "atp-mcp.yaml"
+            path = Path(secure).resolve() / "atp-mcp.yaml"
             path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
             wrapped = StdioServerParameters(
                 command=sys.executable,
