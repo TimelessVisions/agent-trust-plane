@@ -37,11 +37,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from atp_core import ConstraintEvaluation, PolicyEvaluation, ReasonCode
 from atp_core.canonical import canonical_json
 from atp_core.files import read_bounded_text
+from atp_core.fileversion import FILE_FORMAT_VERSION, check_file_version, warn_if_unversioned
 from atp_policy.base import Policy, PolicyContext, PolicySet
 from atp_policy.policies import (
     CapabilityRequiredPolicy,
@@ -55,7 +56,8 @@ from atp_policy.policies import (
 )
 from atp_policy.registry import DEFAULT_APPROVAL_THRESHOLD
 
-POLICY_FILE_VERSION = 1
+POLICY_FILE_VERSION = FILE_FORMAT_VERSION
+POLICY_FILE_KIND = "policies.yaml"
 _IDENT = r"^[A-Za-z0-9._:-]+$"
 _RULE_ID = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 _ARG = r"^[A-Za-z_][A-Za-z0-9_]{0,63}$"
@@ -171,8 +173,17 @@ class PolicySetSpec(BaseModel):
 class PolicyFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: int = Field(default=POLICY_FILE_VERSION, ge=1, le=1)
+    version: Literal[1] = Field(
+        default=1,
+        description="File format version (not a policy set name). A file without it "
+        "loads as 1 with a DeprecationWarning; `atp migrate` adds it.",
+    )
     policy_sets: tuple[PolicySetSpec, ...] = Field(min_length=1)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _supported_version(cls, value: Any) -> int:
+        return check_file_version(value, POLICY_FILE_KIND)
 
     @model_validator(mode="after")
     def _unique(self) -> PolicyFile:
@@ -457,6 +468,7 @@ def load_policy_file(path: str | Path) -> PolicyFile:
     raw: Any = yaml.safe_load(read_bounded_text(p))
     if not isinstance(raw, dict):
         raise ValueError(f"{p}: expected a mapping at top level")
+    warn_if_unversioned(raw, p, POLICY_FILE_KIND)
     return PolicyFile.model_validate(raw)
 
 
@@ -465,8 +477,10 @@ def load_policy_sets(path: str | Path) -> list[PolicySet]:
 
 
 def dump_policy_file(policy_file: PolicyFile, path: str | Path) -> None:
-    data = policy_file.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
-    data["version"] = policy_file.version
+    data = {
+        "version": policy_file.version,
+        **policy_file.model_dump(mode="json", exclude_none=True, exclude_defaults=True),
+    }
     Path(path).write_text(
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )

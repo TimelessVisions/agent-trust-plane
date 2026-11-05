@@ -7,6 +7,13 @@ changes may land in minor versions and are called out).
 ## [Unreleased]
 
 ### Added
+- `atp migrate PATH...` brings `atp-mcp.yaml`, `policies.yaml` and
+  regression suites to the current file format version in place. The kind
+  of each file is detected from its content, not its name. It adds
+  `version: 1` above the first key and keeps comments; a JSON suite stays
+  JSON. It is idempotent, prints one line per file, and exits 2 on a file
+  it does not recognise or a version it does not support.
+  `atp regression migrate` is an alias.
 - Declarative policy rule kind `argument_subset_of`: passes when every item
   of a list argument is in `values`, using the same exact-type comparison as
   `argument_allowed_values` (`1`, `"1"` and `true` are distinct). A scalar
@@ -15,6 +22,21 @@ changes may land in minor versions and are called out).
   items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
 
 ### Changed
+- **BREAKING:** `atp-mcp.yaml` (`ProxyConfig`), `policies.yaml`
+  (`PolicyFile`) and regression suites (`Suite`) have a top-level
+  `version: 1` (`Literal[1]`). Any other value, including `2`, `"1"`,
+  `1.0` and `true`, is refused with "unsupported atp-mcp.yaml version 2;
+  this atp supports 1" (or `policies.yaml` / `regression suite`). The proxy
+  config had no `version` field before, so `version:` in it used to be an
+  unknown-key error.
+- **BREAKING (deprecation):** a file without `version:` still loads as
+  version 1, but emits one `UnversionedFileWarning` (a `DeprecationWarning`
+  subclass, exported from `atp_core`) per file per process; `atp` prints it
+  as one `warning:` line on stderr. Run `atp migrate` to add the field.
+  Code that turns `DeprecationWarning` into errors will fail on unversioned
+  files. `policy_sets[].version` is unchanged: it is a set's name.
+- `atp mcp init` writes `version: 1` as the first key of `atp-mcp.yaml`, and
+  `dump_policy_file` writes `version: 1` first.
 - `argument_required` treats an argument sent as an explicit `null` as
   missing and denies with `ARGUMENT_MISSING`; it used to pass. This matches
   optional `argument_*` rules, where `null` counts as absent.

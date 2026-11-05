@@ -20,13 +20,22 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from atp_adapter_mcp.mapping import ToolMapping
-from atp_core import SCOPE_PATTERN, PrincipalKind, PrincipalRef, read_bounded_text
+from atp_core import (
+    SCOPE_PATTERN,
+    PrincipalKind,
+    PrincipalRef,
+    check_file_version,
+    read_bounded_text,
+    warn_if_unversioned,
+)
+
+CONFIG_KIND = "atp-mcp.yaml"
 
 # Tools the gateway executes itself (its ToolRegistry's registered tools, as
 # opposed to the external prefixes it releases to a trusted executor). The
@@ -109,6 +118,11 @@ class AuthorityConfig(BaseModel):
 class ProxyConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    version: Literal[1] = Field(
+        default=1,
+        description="File format version. A file without it loads as 1 with a "
+        "DeprecationWarning; `atp migrate` adds it.",
+    )
     gateway: str = Field(default="http://127.0.0.1:8000")
     server_name: str = Field(
         pattern=r"^[A-Za-z0-9._-]+$",
@@ -151,6 +165,11 @@ class ProxyConfig(BaseModel):
         "recorded). Useful for evidence gathering; false hides them from the model.",
     )
     request_timeout_seconds: float = Field(default=30.0, ge=1, le=600)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _supported_version(cls, value: Any) -> int:
+        return check_file_version(value, CONFIG_KIND)
 
     @model_validator(mode="after")
     def _unique_tools(self) -> ProxyConfig:
@@ -267,11 +286,15 @@ def load_config(path: str | Path) -> ProxyConfig:
     raw: Any = yaml.safe_load(read_bounded_text(path))
     if not isinstance(raw, dict):
         raise ValueError(f"{path}: expected a mapping at top level")
+    warn_if_unversioned(raw, path, CONFIG_KIND)
     return ProxyConfig.model_validate(raw)
 
 
 def dump_config(config: ProxyConfig, path: str | Path, *, header: str = "") -> None:
-    data = config.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+    data = {
+        "version": config.version,
+        **config.model_dump(mode="json", exclude_none=True, exclude_defaults=True),
+    }
     data["server_name"] = config.server_name
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
     Path(path).write_text(header + text, encoding="utf-8")

@@ -94,6 +94,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path
     )
     # The generated config does not know the server's env; add it and tighten the scope.
     data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    assert data["version"] == 1  # `atp mcp init` writes the current file format version
     data["upstream"]["env"] = {"NOTES_DIR": str(notes)}
     data["authority"]["resource_scope"] = ["id:*", "tool:*"]
     config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")

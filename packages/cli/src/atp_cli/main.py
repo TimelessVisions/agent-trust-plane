@@ -10,6 +10,8 @@ The loop:
   atp policy impact --from A --to B         what a policy change does to recorded actions
   atp mutate TRACE                          probe the policy around a recorded action, offline
   atp evidence export TRACE                 portable, hash-checked bundle for review
+  atp migrate FILE...                       add `version: 1` to older atp-mcp.yaml,
+                                            policies.yaml and regression suites
 
 Exit codes: 0 ok · 1 a regression/impact check failed · 2 usage or input error.
 """
@@ -497,6 +499,19 @@ def _cmd_evidence_verify(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _cmd_migrate(args: argparse.Namespace) -> int:
+    from atp_cli.migrate import run_migrate
+
+    return run_migrate(args.paths)
+
+
+def _add_migrate_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "paths", nargs="+", metavar="PATH", help="atp-mcp.yaml, policies.yaml or suite file"
+    )
+    p.set_defaults(func=_cmd_migrate)
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     import logging
 
@@ -642,6 +657,11 @@ def build_parser() -> argparse.ArgumentParser:
     ra.add_argument("--name")
     _home_arg(ra)
     ra.set_defaults(func=_cmd_regression_add)
+    _add_migrate_args(
+        rsub.add_parser(
+            "migrate", help="alias of `atp migrate` (bring files to the current format)"
+        )
+    )
 
     t = sub.add_parser("test", help="run a security regression suite (exit 1 on any change)")
     t.add_argument("suite")
@@ -726,13 +746,52 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=8000)
     s.set_defaults(func=_cmd_serve)
 
+    _add_migrate_args(
+        sub.add_parser(
+            "migrate",
+            help="add `version:` to atp-mcp.yaml, policies.yaml and regression suites "
+            "(idempotent; kind detected from content)",
+        )
+    )
+
     k = sub.add_parser("keygen", help="generate gateway keys for `atp serve`")
     k.add_argument("--write", metavar="PATH")
     k.set_defaults(func=_cmd_keygen)
     return p
 
 
+def _show_unversioned_file_warnings() -> None:
+    """Python hides DeprecationWarning outside ``__main__``. An unversioned
+    config file is something the person running ``atp`` should see, once per
+    file (the loaders dedupe), as one plain line on stderr."""
+    import warnings
+
+    from atp_core import UnversionedFileWarning
+
+    warnings.filterwarnings("always", category=UnversionedFileWarning)
+    current = warnings.showwarning
+    if getattr(current, "_atp_unversioned", False):
+        return
+
+    def show(
+        message: Warning | str,
+        category: type[Warning],
+        filename: str,
+        lineno: int,
+        file: Any = None,
+        line: str | None = None,
+    ) -> None:
+        if issubclass(category, UnversionedFileWarning):
+            _err(f"warning: {message}")
+            return
+        current(message, category, filename, lineno, file, line)
+
+    show._atp_unversioned = True  # type: ignore[attr-defined]
+    warnings.showwarning = show
+
+
 def main(argv: list[str] | None = None) -> None:
+    _show_unversioned_file_warnings()
     raw = list(sys.argv[1:] if argv is None else argv)
     head, command = _split_command(raw)
     args = build_parser().parse_args(head)

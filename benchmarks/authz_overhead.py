@@ -303,6 +303,7 @@ def bench_mcp(n: int, gw: LocalGateway) -> tuple[dict[str, Any], dict[str, Any],
     cfg.write_text(
         yaml.safe_dump(
             {
+                "version": 1,
                 "gateway": gw.url,
                 "server_name": "notes",
                 "principal": human.model_dump(mode="json"),
@@ -340,6 +341,7 @@ def bench_mcp(n: int, gw: LocalGateway) -> tuple[dict[str, Any], dict[str, Any],
     wrap_cfg.write_text(
         yaml.safe_dump(
             {
+                "version": 1,
                 "server_name": "notes",
                 "upstream": {
                     "command": sys.executable,

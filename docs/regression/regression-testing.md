@@ -26,6 +26,7 @@ atp policy impact --from fs-v1 --to fs-v2 --suite suite.yaml          # which ca
 atp policy coverage --suite suite.yaml                                # which argument names are guarded
 atp mutate --suite suite.yaml --case "…"                              # perturb a case; authorize only
 atp record --trace <id> --gateway http://127.0.0.1:8000 --suite …    # same conversion, from a remote gateway
+atp migrate suite.yaml atp-mcp.yaml .atp/policies.yaml               # add `version: 1` to older files (alias: atp regression migrate)
 ```
 
 `record` needs `ATP_OPERATOR_KEY` (or `--operator-key`) because reading a

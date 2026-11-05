@@ -107,6 +107,7 @@ def render_atp_config(
             }
         )
     config: dict[str, Any] = {
+        "version": 1,
         "server_name": f"dojo-{suite.name}",
         "policy_set": POLICY_SET,
         "principal": {"id": "bench-user", "kind": "human"},

@@ -215,6 +215,7 @@ def demo_mcp(out_dir: Path | None = None) -> int:
             }
         )["grant_id"]
         config: dict[str, Any] = {
+            "version": 1,
             "gateway": gw.url,
             "server_name": "notes",
             "principal": human,

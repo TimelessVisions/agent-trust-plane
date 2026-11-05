@@ -69,6 +69,7 @@ def test_reference_filesystem_server_behind_proxy(gateway: LocalGateway, tmp_pat
     sandbox.mkdir()
     npx = "npx.cmd" if os.name == "nt" else "npx"
     cfg: dict[str, Any] = {
+        "version": 1,
         "gateway": gateway.url,
         "server_name": "filesystem",
         "principal": HUMAN,

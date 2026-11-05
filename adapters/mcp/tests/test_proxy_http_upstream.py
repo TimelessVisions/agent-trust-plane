@@ -121,6 +121,7 @@ def test_http_upstream_is_authorized_like_stdio(
         operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
         token, grant = _seed(operator)
         cfg = {
+            "version": 1,
             "gateway": gw.url,
             "server_name": "notes",
             "principal": {"id": "alice", "kind": "human"},

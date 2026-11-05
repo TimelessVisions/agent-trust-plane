@@ -118,6 +118,7 @@ def test_rule_on_mapping_tool_is_enforced(
     (home / "policies.yaml").write_text(yaml.safe_dump(policies, sort_keys=False), "utf-8")
     config = tmp_path / "atp-mcp.yaml"
     cfg = {
+        "version": 1,
         "server_name": "bank",
         "policy_set": "bank-v1",
         "principal": {"id": "local-user", "kind": "human"},
@@ -202,6 +203,7 @@ def test_wrap_refuses_mapping_onto_gateway_tool(
     AtpHome(home).ensure()
     config = tmp_path / "atp-mcp.yaml"
     cfg = {
+        "version": 1,
         "server_name": "bank",
         "authority": {"capabilities": ["payments:send"], "resource_scope": ["acct:*"]},
         "upstream": {"command": sys.executable, "args": ["-c", "pass"]},
@@ -223,6 +225,7 @@ def test_wrap_refuses_mapping_onto_gateway_tool(
 def _payments_mapping_config() -> dict[str, Any]:
     """A remote-gateway (`atp mcp proxy`) config mapping a call onto ``payments``."""
     return {
+        "version": 1,
         "server_name": "bank",
         "gateway": "https://gateway.example",
         "delegation_grant_id": "dg_1",

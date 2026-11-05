@@ -121,6 +121,7 @@ def test_render_config_uses_absolute_quoted_paths(tmp_path):
     assert cfg["authority"]["resource_scope"] == list(ann.resource_scope)
     assert cfg["expose_unmapped_tools"] is False
     assert cfg["policy_set"] == "bench"
+    assert cfg["version"] == 1 and pol["version"] == 1  # current file format, no warning
     assert pol["policy_sets"][0]["version"] == "bench"
     assert pol["policy_sets"][0]["rules"][0]["id"] == "cap"
     # Rules keep the logical tool: the mapping's `tool` is what the proxy stamps on envelopes.

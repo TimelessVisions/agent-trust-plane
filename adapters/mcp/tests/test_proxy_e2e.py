@@ -71,6 +71,7 @@ def _seed(operator: TrustPlaneClient, *, scope: list[str]) -> tuple[str, str]:
 
 def _write_config(path: Path, gateway_url: str, grant_id: str, notes_dir: Path) -> None:
     cfg: dict[str, Any] = {
+        "version": 1,
         "gateway": gateway_url,
         "server_name": "notes",
         "principal": HUMAN,

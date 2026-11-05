@@ -64,6 +64,7 @@ Full matrix incl. what was *not* verified: [compatibility.md](compatibility.md).
 ## Config reference (`atp-mcp.yaml`)
 
 ```yaml
+version: 1                          # file format version; `atp migrate` adds it to older files
 server_name: fs                     # unmapped calls use tool "mcp.fs"
 principal: {id: local-user, kind: human}     # default
 agent: {id: fs-agent, kind: agent}           # default "<server_name>-agent"

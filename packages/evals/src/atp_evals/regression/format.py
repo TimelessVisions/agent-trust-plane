@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -25,13 +25,16 @@ from atp_core import (
     DecisionOutcome,
     Money,
     PrincipalRef,
+    check_file_version,
     read_bounded_text,
+    warn_if_unversioned,
 )
 
 _ALIAS = r"^[A-Za-z0-9._-]{1,64}$"
 _IDENT = r"^[A-Za-z0-9._:-]+$"
 _DURATION = re.compile(r"^(\d+)([smhd])$")
 SUITE_VERSION = 1
+SUITE_KIND = "regression suite"
 
 
 def parse_duration(text: str) -> timedelta:
@@ -143,7 +146,11 @@ class CaseSpec(BaseModel):
 class Suite(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: int = Field(default=SUITE_VERSION, ge=1, le=1)
+    version: Literal[1] = Field(
+        default=1,
+        description="File format version. A file without it loads as 1 with a "
+        "DeprecationWarning; `atp migrate` adds it.",
+    )
     name: str = Field(max_length=200)
     description: str = Field(default="", max_length=2000)
     policy_set: str = Field(default="payments-v2", pattern=r"^[A-Za-z0-9._-]+$")
@@ -154,6 +161,11 @@ class Suite(BaseModel):
     )
     delegations: DelegationSpec
     cases: tuple[CaseSpec, ...] = Field(min_length=1)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _supported_version(cls, value: Any) -> int:
+        return check_file_version(value, SUITE_KIND)
 
     def validate_references(self) -> None:
         principals = set(self.delegations.principals)
@@ -181,6 +193,7 @@ def load_suite(path: str | Path) -> Suite:
     raw: Any = yaml.safe_load(read_bounded_text(p))
     if not isinstance(raw, dict):
         raise ValueError(f"{p}: expected a mapping at top level")
+    warn_if_unversioned(raw, p, SUITE_KIND)
     suite = Suite.model_validate(raw)
     suite.validate_references()
     if suite.policies is not None:
