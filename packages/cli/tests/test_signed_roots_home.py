@@ -199,3 +199,37 @@ def test_root_planted_in_fresh_home_stays_unsigned(tmp_path: Path) -> None:
     AtpHome(path).ensure()  # a 1.0 home: nothing to migrate
     planted = _plant_unsigned_root(path / "atp.db", LOCAL_HUMAN)
     _assert_stays_unsigned(path, planted)
+
+
+@pytest.mark.parametrize("wipe", ["DELETE FROM atp_meta", "DROP TABLE atp_meta", None])
+def test_db_writer_cannot_rearm_root_migration(tmp_path: Path, wipe: str | None) -> None:
+    """The migration marker lives in principals/, not atp.db: a DB writer who
+    deletes any database marker (or the meta table) and plants a root still
+    gets it denied, unsigned."""
+    from atp_cli.home import LOCAL_HUMAN, AtpHome
+
+    path = tmp_path / "h"
+    home = AtpHome(path).ensure()
+    assert home.roots_marker_path.exists() and _private(home.roots_marker_path)
+    conn = sqlite3.connect(path / "atp.db")
+    conn.execute("CREATE TABLE IF NOT EXISTS atp_meta (key TEXT PRIMARY KEY, value TEXT)")
+    if wipe:
+        conn.execute(wipe)
+    conn.commit()
+    conn.close()
+    planted = _plant_unsigned_root(path / "atp.db", LOCAL_HUMAN)
+    assert AtpHome(path).migrate_unsigned_roots() == []
+    _assert_stays_unsigned(path, planted)
+
+
+def test_root_issued_after_key_never_signed_even_without_marker(tmp_path: Path) -> None:
+    """Defense in depth: with the marker file gone too, a root issued after
+    the local human's key file was written is not signed."""
+    from atp_cli.home import LOCAL_HUMAN, AtpHome
+
+    path = tmp_path / "h"
+    home = AtpHome(path).ensure()
+    planted = _plant_unsigned_root(path / "atp.db", LOCAL_HUMAN)
+    home.roots_marker_path.unlink()
+    assert AtpHome(path).migrate_unsigned_roots() == []
+    _assert_stays_unsigned(path, planted)

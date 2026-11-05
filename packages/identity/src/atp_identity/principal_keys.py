@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import binascii
 import contextlib
+import errno
 import os
 import tempfile
 from collections.abc import Mapping
@@ -268,6 +269,9 @@ class FilePrincipalKeys:
         return kid_for(private.public_key())
 
 
+_NO_HARD_LINKS = frozenset({errno.EPERM, errno.ENOTSUP, errno.EXDEV, errno.EOPNOTSUPP})
+
+
 def _create_exclusive(path: Path, data: bytes) -> None:
     """Write ``data`` to a 0600 temp file, then hard-link it to ``path``; the
     link fails with FileExistsError if ``path`` exists. Readers never see a
@@ -280,7 +284,19 @@ def _create_exclusive(path: Path, data: bytes) -> None:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        os.link(tmp, path)
+        try:
+            os.link(tmp, path)
+        except FileExistsError:
+            raise
+        except OSError as exc:
+            if exc.errno not in _NO_HARD_LINKS:
+                raise
+            # No hard links on this filesystem: exclusive create, then write.
+            out = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(out, "wb") as fh:
+                fh.write(data)
+                fh.flush()
+                os.fsync(fh.fileno())
     finally:
         with contextlib.suppress(OSError):
             os.unlink(tmp)

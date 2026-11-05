@@ -6,7 +6,8 @@ needs so that nothing has to be copied, exported or typed.
       keys.env        ATP_OPERATOR_KEY and ATP_GRANT_SIGNING_KID, generated once, mode 600
       keys/           grant-<kid>.key (Ed25519, mode 600), grant-<kid>.pub, grant-<kid>.retired
       principals/     <human id>-<hash>.key (Ed25519, mode 600) and .pub: the local human's own key,
-                      which signs its root delegations
+                      which signs its root delegations; .roots-migrated (mode 600) marks
+                      the one-shot 0.3.x root re-sign as done
       policies.yaml   optional declared policy sets (see docs/policies.md)
 
 Location: ``$ATP_HOME`` if set, else ``./.atp``. Offline commands
@@ -20,11 +21,12 @@ Root delegations must be signed by the human's own key (C5). ``ensure()``
 creates the local human's key (``local-user``, or the ``principal`` of
 ``atp-mcp.yaml``). Upgrading a 0.3.x home, the first ``ensure()`` runs a
 one-shot migration: it signs, in place, every unsigned root grant in the
-database whose human grantor has a private key here (ids and content kept, so
-their chains resolve and old traces verify), then records the migration in
-the database's ``atp_meta`` table. A home created by 1.0 records it at
-creation. Once recorded, an unsigned root is never signed automatically: one
-written into ``atp.db`` later stays unsigned and is denied.
+database whose human grantor has a private key here and that was issued before
+that key file was written (ids and content kept, so their chains resolve and
+old traces verify), then writes ``principals/.roots-migrated`` (mode 0600). A
+home created by 1.0 writes that marker at creation. The marker is outside
+``atp.db``, so write access to the database alone cannot re-arm the migration;
+an unsigned root written into ``atp.db`` stays unsigned and is denied.
 
 A 0.3.x home kept an HMAC ``ATP_GRANT_SIGNING_KEY`` in ``keys.env``. ``ensure()``
 (and ``settings()``) migrate it once: a new Ed25519 key is generated, then the
@@ -34,9 +36,10 @@ nothing recorded before the migration needs the old key to verify.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from atp_core import new_secret_key
@@ -60,8 +63,16 @@ LOCAL_HUMAN = "local-user"
 _GITIGNORE_ENTRIES = ("keys.env", "keys/", "principals/", "atp.db", "atp.db-*")
 DB_FILE = "atp.db"
 POLICY_FILE = "policies.yaml"
-_ROOTS_MIGRATION = "roots_signed"
-_META_DDL = "CREATE TABLE IF NOT EXISTS atp_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+ROOTS_MARKER = ".roots-migrated"
+
+
+def _create_private(path: Path, data: bytes) -> None:
+    """Create ``path`` with mode 0600; FileExistsError if it exists."""
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 class AtpHome:
@@ -116,34 +127,47 @@ class AtpHome:
         self._ensure_gitignore()
         return self
 
+    @property
+    def roots_marker_path(self) -> Path:
+        return self.principals_dir / ROOTS_MARKER
+
     def migrate_unsigned_roots(self) -> list[str]:
-        """One-shot 0.3.x -> 1.0 migration: sign every unsigned root grant
+        """One-shot 0.3.x -> 1.0 migration: sign the unsigned root grants
         whose human grantor has a private key in this home (0.3.x stored roots
-        unsigned), then record ``roots_signed`` in ``atp_meta``. Runs only
-        while that row is absent; a database created here records it before
-        any grant exists, so a 1.0 home never runs it. The signature covers
-        the unchanged grant, so its id and content stay as they were. Roots of
+        unsigned), then write ``principals/.roots-migrated`` (mode 0600).
+
+        The marker lives in the principals/ trust boundary, not in atp.db, so
+        write access to the database alone can never re-arm the migration. A
+        home whose atp.db does not exist yet is fresh: the marker is written
+        before any grant exists. Defense in depth: even while the marker is
+        absent, only a root whose ``issued_at`` is earlier than the
+        modification time of its grantor's key file is signed; a root planted
+        after the key was created stays unsigned. The signature covers the
+        unchanged grant, so its id and content stay as they were. Roots of
         humans without a key here stay unsigned and are denied
         (DELEGATION_ROOT_UNSIGNED) until re-issued. Returns the signed ids."""
+        marker = self.roots_marker_path
+        if marker.exists():
+            return []
+        marker.parent.mkdir(parents=True, exist_ok=True)
         fresh = not self.db_path.exists()
         keys = self.principal_keys()
         conn = sqlite3.connect(str(self.db_path), isolation_level=None)
+        done: list[str] = []
         try:
-            conn.execute(_META_DDL)
-            # Before BEGIN: its DDL runs through executescript, which commits.
             store = SqliteDelegationStore(conn)
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                done: list[str] = []
-                row = conn.execute(
-                    "SELECT value FROM atp_meta WHERE key = ?", (_ROOTS_MIGRATION,)
-                ).fetchone()
-                if row is None and not fresh:
+            if not fresh:
+                conn.execute("BEGIN IMMEDIATE")
+                try:
                     for grant in store.all():
                         if not grant.is_root or grant.signature is not None:
                             continue
                         private = keys.private_key(grant.grantor.id)
                         if private is None:
+                            continue
+                        key_file = keys.private_path(grant.grantor.id)
+                        cutoff = datetime.fromtimestamp(key_file.stat().st_mtime, tz=UTC)
+                        if not grant.issued_at < cutoff:
                             continue
                         signed = sign_root(grant, private)
                         assert signed.signature is not None and signed.signer_kid is not None
@@ -151,18 +175,16 @@ class AtpHome:
                             grant.grant_id, signed.signature, signed.signer_kid
                         ):
                             done.append(grant.grant_id)
-                if row is None:
-                    conn.execute(
-                        "INSERT INTO atp_meta (key, value) VALUES (?, ?)",
-                        (_ROOTS_MIGRATION, "fresh" if fresh else f"signed {len(done)}"),
-                    )
-                conn.execute("COMMIT")
-            except BaseException:
-                conn.execute("ROLLBACK")
-                raise
-            return done
+                    conn.execute("COMMIT")
+                except BaseException:
+                    conn.execute("ROLLBACK")
+                    raise
         finally:
             conn.close()
+        record = "fresh\n" if fresh else f"signed {len(done)}\n"
+        with contextlib.suppress(FileExistsError):
+            _create_private(marker, record.encode("utf-8"))
+        return done
 
     def migrate_keys(self) -> bool:
         """Give ``keys.env`` an Ed25519 grant key if it has none, and drop the

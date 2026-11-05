@@ -67,11 +67,12 @@ changes may land in minor versions and are called out).
   local human's key in `.atp/principals/` (`local-user`, or the
   `atp-mcp.yaml` `principal` under `atp mcp wrap`). Upgrading a 0.3.x
   home, its first `ensure()` runs a one-shot migration that signs, in place,
-  the unsigned roots whose grantor has a key there (so existing chains and
-  traces keep working) and records itself in a new `atp_meta` table in
-  `atp.db`; a home created by 1.0 records it at creation. After that,
-  unsigned roots are never signed automatically: one written into `atp.db`
-  later stays unsigned and is denied. `TrustPlaneClient` takes `sign_root=`
+  the unsigned roots whose grantor has a key there and that were issued
+  before that key file was written (so existing chains and traces keep
+  working), then writes `.atp/principals/.roots-migrated` (mode 0600); a
+  home created by 1.0 writes it at creation. The marker is outside `atp.db`,
+  so write access to the database alone never yields a signed root: an
+  unsigned root written into `atp.db` stays unsigned and is denied. `TrustPlaneClient` takes `sign_root=`
   (`for_app` uses the in-process runtime's keys; `LocalGateway.operator_client()`
   signs too). `kid_for` and `write_file_atomic` moved to
   `atp_identity.keys` (re-exported by the gateway); `atp-identity` now

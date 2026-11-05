@@ -257,3 +257,35 @@ def test_concurrent_ensure_never_clobbers_a_key(tmp_path: Path) -> None:
     private = keys.private_key("alice")
     assert private is not None
     assert set(kids) == {kid_for(private.public_key())}
+
+
+@pytest.mark.parametrize("code", ["EPERM", "ENOTSUP", "EXDEV", "EOPNOTSUPP"])
+def test_key_written_without_hard_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """On a filesystem without hard links the key is created exclusively
+    (O_CREAT|O_EXCL, mode 0600) and written; no temp file is left behind."""
+    import errno
+    import os
+
+    from atp_identity import FilePrincipalKeys
+
+    def no_link(*_: object) -> None:
+        raise OSError(getattr(errno, code), "no hard links")
+
+    monkeypatch.setattr(os, "link", no_link)
+    keys = FilePrincipalKeys(tmp_path / "k")
+    kid = keys.ensure("local-user")
+    private = keys.private_key("local-user")
+    assert private is not None
+    assert keys.ensure("local-user") == kid
+    path = keys.private_path("local-user")
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o077 == 0
+    assert not [p for p in (tmp_path / "k").iterdir() if p.name.endswith(".tmp")]
+    from atp_identity.principal_keys import _create_exclusive
+
+    before = path.read_bytes()
+    with pytest.raises(FileExistsError):
+        _create_exclusive(path, b"clobber")
+    assert path.read_bytes() == before
