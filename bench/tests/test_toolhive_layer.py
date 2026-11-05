@@ -8,6 +8,7 @@ versioned source URL, never a silent omission.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from atp_bench.annotations import DEFAULT_ROOT, Annotation, load_annotations
@@ -37,12 +38,12 @@ def _policies(policy) -> list[str]:
 
 def test_cedar_permits_only_annotated_tools():
     suite = load_suite("banking")
-    ann = _ann(capabilities=["get_balance", "get_iban"], resource_scope=["tool:get_iban"])
+    ann = _ann(capabilities=["send_money", "read_file"], resource_scope=["tool:read_file"])
     policies = _policies(render_toolhive_config(suite, ann, "http://127.0.0.1:9000/mcp"))
     assert len(policies) == 1
-    assert 'resource == Tool::"get_iban"' in policies[0]
+    assert 'resource == Tool::"read_file"' in policies[0]
     assert 'action == Action::"call_tool"' in policies[0]
-    assert "get_balance" not in "\n".join(policies)
+    assert "send_money" not in "\n".join(policies)
 
 
 def test_scalar_limit_rendered():
@@ -123,6 +124,7 @@ def test_layer_e2e_or_env_blocked(tmp_path: Path):
         session = context.__enter__()
     except EnvBlocked as exc:
         assert exc.reason
+        print(f"ENV_BLOCKED: {exc.reason}")
         result = run_benchmark(
             [layer],
             ["banking"],
@@ -143,3 +145,54 @@ def test_layer_e2e_or_env_blocked(tmp_path: Path):
     assert allowed.status == "ALLOWED", allowed
     assert denied.status == "DENIED", denied
     assert [c.function for c in read_journal(journal)] == ["read_file"]
+    if proof := os.environ.get("ATP_D3_E2E_PROOF"):
+        Path(proof).write_text(
+            json.dumps({"toolhive": "v0.55.2", "allowed": 1, "denied": 1, "journal": 1})
+            + "\n",
+            encoding="utf-8",
+        )
+
+
+def test_cedar_numeric_resource_id_has_decimal_alternative():
+    suite = load_suite("banking")
+    ann = _ann(
+        capabilities=["update_scheduled_transaction"],
+        resource_scope=["dojo.banking:7"],
+        resource_args={"update_scheduled_transaction": "id"},
+    )
+    policies = _policies(render_toolhive_config(suite, ann, "http://127.0.0.1:9/mcp"))
+    assert len(policies) == 1
+    assert 'resource.arg_id == "7"' in policies[0]
+    assert 'resource.arg_id == decimal("7.0")' in policies[0]
+
+
+def test_explicit_deny_removes_permit():
+    suite = load_suite("banking")
+    ann = _ann(
+        capabilities=["send_money"],
+        resource_scope=["tool:send_money"],
+        rules=[
+            {
+                "id": "deny",
+                "kind": "deny",
+                "applies_to": {"tool": "dojo.banking", "action": "send_money"},
+            }
+        ],
+    )
+    policies = _policies(render_toolhive_config(suite, ann, "http://127.0.0.1:9/mcp"))
+    assert policies == ['forbid(principal, action == Action::"call_tool", resource);']
+
+
+def test_all_preinjection_annotations_render_with_versioned_drop_refs():
+    for name in ("workspace", "travel", "banking", "slack"):
+        suite = load_suite(name)
+        for ann in load_annotations(DEFAULT_ROOT, name).values():
+            if ann.status != "ok":
+                continue
+            policy = render_toolhive_config(suite, ann, "http://127.0.0.1:9/mcp")
+            assert _policies(policy), (name, ann.user_task)
+            for dropped in policy.dropped:
+                assert dropped.source and dropped.reason
+                assert dropped.doc_url.startswith(
+                    "https://github.com/stacklok/toolhive/blob/v0.55.2/"
+                )

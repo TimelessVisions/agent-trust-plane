@@ -14,9 +14,15 @@ from atp_bench.dojo import SUITES
 from atp_bench.layers.agentgateway_layer import AgentgatewayLayer
 from atp_bench.layers.atp_layer import AtpLayer
 from atp_bench.layers.open_layer import OpenLayer
+from atp_bench.layers.toolhive_layer import ToolhiveLayer
 from atp_bench.run import run_benchmark
 
-LAYERS = {"agentgateway": AgentgatewayLayer, "atp": AtpLayer, "open": OpenLayer}
+LAYERS = {
+    "agentgateway": AgentgatewayLayer,
+    "atp": AtpLayer,
+    "open": OpenLayer,
+    "toolhive": ToolhiveLayer,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
