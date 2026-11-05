@@ -131,9 +131,18 @@ def open_incident(layer, case) -> Iterator[_Session]:
             wrapped = StdioServerParameters(
                 command=sys.executable,
                 args=[
-                    "-m", "atp_cli.main", "mcp", "wrap",
-                    "--config", str(path), "--home", str(home),
-                    "--mode", "enforce", "--log-level", "warning",
+                    "-m",
+                    "atp_cli.main",
+                    "mcp",
+                    "wrap",
+                    "--config",
+                    str(path),
+                    "--home",
+                    str(home),
+                    "--mode",
+                    "enforce",
+                    "--log-level",
+                    "warning",
                 ],
                 env={**get_default_environment(), "ATP_HOME": str(home)},
             )

@@ -34,9 +34,7 @@ def test_mcpoison_companion_atp_regression_is_not_a_schema_pin() -> None:
 
 
 def test_tool_description_poisoning_scope_with_real_proxy() -> None:
-    case = load_incident_case(
-        CASE_ROOT.parent / "tool-description-poisoning" / "case.yaml"
-    )
+    case = load_incident_case(CASE_ROOT.parent / "tool-description-poisoning" / "case.yaml")
     reference = run_incident(case, NameOnlyLayer())
     assert reference.status == "PASS", reference
     assert reference.outcomes == ("ALLOWED", "ALLOWED"), reference
