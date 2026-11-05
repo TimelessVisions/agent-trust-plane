@@ -72,10 +72,10 @@ Frozen `--json` output shapes (golden files in `tests/compat/1.0/cli-json/`):
 | Code | Meaning |
 |---|---|
 | 0 | Pass: the command did what was asked and nothing it checks failed |
-| 1 | A decision changed or a test failed |
+| 1 | The command's own check failed, and only for the commands listed below (`atp test`: a case's decision changed; `atp policy impact --fail-on-widen`: a DENY-to-ALLOW widening; `atp mutate`: an unexpected decision; `atp evidence verify`: the bundle does not verify). Every other command, and `atp policy impact` without `--fail-on-widen`, never exits 1 |
 | 2 | Usage or configuration error: bad arguments, a missing or invalid file, an unknown policy set |
 
-Per command, as tested in `tests/compat/test_compat.py`:
+Per command, as tested in `tests/compat/test_compat.py` (this list governs):
 
 - `atp test`: 0 when every case matches; 1 when any case's decision changed;
   2 on a usage or config error.

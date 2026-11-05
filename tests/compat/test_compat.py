@@ -17,6 +17,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+import yaml
 
 from atp_cli.main import main
 
@@ -34,9 +35,11 @@ GOLDEN_FILES = (
     "http/authorize-request.json",
     "http/authorize-response.json",
 )
+# Surfaces 4 and 5: event types and payload keys are additive only, so new
+# keys may appear; every frozen key must stay, with the same JSON type.
+ADDITIVE = ("evidence-bundle.json", "trace-export.json")
 JSON_SHAPED = (
-    "evidence-bundle.json",
-    "trace-export.json",
+    *ADDITIVE,
     "http/authorize-request.json",
     "http/authorize-response.json",
     *(f"cli-json/{name}.json" for name in CLI_JSON),
@@ -77,21 +80,26 @@ def _kind(value: Any) -> str:
     return "object"
 
 
-def assert_same_shape(golden: Any, current: Any, path: str = "$") -> None:
+def assert_same_shape(
+    golden: Any, current: Any, path: str = "$", *, additive: bool = False
+) -> None:
     """Same keys and JSON types at every level; values may differ. Arrays are
-    compared element by element over their common length."""
+    compared element by element over their common length. With ``additive``,
+    new keys are allowed; frozen keys must still be present, same type."""
     assert _kind(golden) == _kind(current), (
         f"{path}: frozen type {_kind(golden)}, now {_kind(current)}"
     )
     if isinstance(golden, dict):
         missing = sorted(set(golden) - set(current))
         added = sorted(set(current) - set(golden))
+        if additive:
+            added = []
         assert not missing and not added, f"{path}: keys removed {missing}, keys added {added}"
         for key in golden:
-            assert_same_shape(golden[key], current[key], f"{path}.{key}")
+            assert_same_shape(golden[key], current[key], f"{path}.{key}", additive=additive)
     elif isinstance(golden, list):
         for i, (g, c) in enumerate(zip(golden, current, strict=False)):
-            assert_same_shape(g, c, f"{path}[{i}]")
+            assert_same_shape(g, c, f"{path}[{i}]", additive=additive)
 
 
 def _run(*argv: str) -> int:
@@ -114,6 +122,18 @@ def test_shape_check_catches_a_renamed_field() -> None:
         assert_same_shape(golden, renamed)
 
 
+def test_shape_check_additive_mode() -> None:
+    golden = {"a": 1, "nested": [{"b": "x"}]}
+    grown = {"a": 2, "new": True, "nested": [{"b": "y", "extra": 1}]}
+    with pytest.raises(AssertionError, match="keys added"):
+        assert_same_shape(golden, grown)
+    assert_same_shape(golden, grown, additive=True)
+    with pytest.raises(AssertionError, match="keys removed"):
+        assert_same_shape(golden, {"nested": [{"b": "y"}]}, additive=True)
+    with pytest.raises(AssertionError, match="frozen type number"):
+        assert_same_shape(golden, {"a": "1", "nested": []}, additive=True)
+
+
 # ------------------------------------------------------------- file formats
 def test_mcp_config_loads() -> None:
     from atp_adapter_mcp import load_config
@@ -131,8 +151,22 @@ def test_policy_file_loads() -> None:
     policy_file = load_policy_file(GOLDEN / "policies.yaml")
     assert policy_file.version == 1
     registry = PolicySetRegistry.with_file(str(GOLDEN / "policies.yaml"))
-    for version in ("notes-v1", "notes-v2"):
+    for version in ("notes-v1", "notes-v2", "all-kinds-v1"):
         registry.get(version)
+
+
+def test_policy_file_covers_every_rule_kind_and_field() -> None:
+    import typing
+
+    from atp_policy.declarative import PolicySetSpec, RuleKind, RuleSpec, load_policy_file
+
+    raw = yaml.safe_load((GOLDEN / "policies.yaml").read_text(encoding="utf-8"))
+    rules = [r for s in raw["policy_sets"] for r in s["rules"]]
+    assert {r["kind"] for r in rules} == set(typing.get_args(RuleKind))
+    assert set().union(*(r.keys() for r in rules)) == set(RuleSpec.model_fields)
+    set_keys = set().union(*(s.keys() for s in raw["policy_sets"]))
+    assert set_keys == set(PolicySetSpec.model_fields)
+    load_policy_file(GOLDEN / "policies.yaml")
 
 
 def test_regression_suite_loads_and_still_passes(tmp_path: Path) -> None:
@@ -183,7 +217,7 @@ def test_http_authorize_request_and_response_load() -> None:
 # ------------------------------------------------------------------- shapes
 @pytest.mark.parametrize("name", JSON_SHAPED)
 def test_json_shape_unchanged(name: str, current: Path) -> None:
-    assert_same_shape(_json(GOLDEN / name), _json(current / name))
+    assert_same_shape(_json(GOLDEN / name), _json(current / name), additive=name in ADDITIVE)
 
 
 def test_reason_codes_only_grow() -> None:
@@ -225,6 +259,27 @@ def test_exit_codes_atp_migrate(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert _run("migrate", str(tmp_path / "missing.yaml")) == 2
     (tmp_path / "unknown.yaml").write_text("hello: world\n", encoding="utf-8")
     assert _run("migrate", str(tmp_path / "unknown.yaml")) == 2
+
+
+def test_exit_codes_evidence_verify(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert _run("evidence", "verify", str(GOLDEN / "evidence-bundle.json")) == 0
+    data = _json(GOLDEN / "evidence-bundle.json")
+    data["bundle_hash"] = "0" * len(data["bundle_hash"])
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+    assert _run("evidence", "verify", str(tampered)) == 1
+    capsys.readouterr()
+
+
+def test_exit_codes_mutate(capsys: pytest.CaptureFixture[str]) -> None:
+    suite = str(GOLDEN / "regression-suite.yaml")
+    for case in ("write allowed", "delete denied"):
+        code = _run("mutate", "--suite", suite, "--case", case, "--json")
+        report = json.loads(capsys.readouterr().out)
+        unexpected = [r for r in report["rows"] if r["must_deny"] and r["outcome"] == "ALLOW"]
+        assert code == (1 if unexpected else 0)
+    assert _run("mutate", "--suite", suite) == 2
+    capsys.readouterr()
 
 
 def test_usage_errors_exit_2() -> None:

@@ -74,6 +74,54 @@ policy_sets:
         applies_to: {tool: mcp.notes, action: list_notes}
         kind: require_approval
         approver_role: approver
+  - version: all-kinds-v1
+    description: every rule kind and field, for the frozen file format
+    include: [payments]
+    approval_threshold: 250
+    rules:
+      - id: pay-max
+        description: no single payment over 1000
+        applies_to: {tool: payments, action: send}
+        kind: argument_max
+        argument: amount
+        max: 1000
+      - id: pay-min
+        applies_to: {tool: payments, action: send}
+        kind: argument_min
+        argument: amount
+        min: 1
+      - id: pay-currency
+        applies_to: {tool: payments, action: send}
+        kind: argument_allowed_values
+        argument: currency
+        values: [USD, EUR]
+      - id: note-tags
+        applies_to: {tool: mcp.notes, action: write_note}
+        kind: argument_subset_of
+        argument: tags
+        values: [work, home, 7, true]
+        optional: true
+      - id: memo-length
+        applies_to: {tool: payments, action: send}
+        kind: argument_max_length
+        argument: memo
+        max_length: 140
+        optional: true
+      - id: pay-required
+        applies_to: {tool: payments, action: send}
+        kind: argument_required
+        arguments: [amount, currency, destination]
+      - id: no-raw-sql
+        applies_to: {tool: '*'}
+        kind: argument_forbidden
+        arguments: [raw_sql]
+      - id: no-refunds
+        applies_to: {tool: payments, action: refund}
+        kind: deny
+      - id: review-payouts
+        applies_to: {tool: payments, action: payout}
+        kind: require_approval
+        approver_role: finance
 """
 
 
