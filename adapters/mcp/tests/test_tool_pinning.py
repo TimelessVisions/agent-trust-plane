@@ -178,3 +178,39 @@ def test_unverifiable_pinned_definition_cannot_execute() -> None:
     assert refused.structured_content is not None
     assert refused.structured_content["reason_code"] == "UPSTREAM_ERROR"
     assert session.calls == []
+
+
+def test_wrong_pin_denied_by_real_stdio_proxy(tmp_path) -> None:
+    """An actual proxy and upstream notes server must not execute a changed tool."""
+    import yaml
+    from mcp import ClientSession
+    from test_proxy_e2e import _run, _seed, _write_config
+
+    from atp_gateway.local import LocalGateway
+
+    with LocalGateway() as gateway:
+        operator = gateway.operator_client()
+        token, grant = _seed(operator, scope=["note:*"])
+        notes_dir = tmp_path / "notes"
+        cfg = tmp_path / "atp-mcp.yaml"
+        _write_config(cfg, gateway.url, grant, notes_dir)
+        config = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+        matches = [x for x in config["tools"] if x["mcp_tool"] == "write_note"]
+        assert len(matches) == 1
+        matches[0]["schema_sha256"] = "0" * 64  # deliberately wrong approved pin
+        cfg.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+        async def body(session: ClientSession):
+            listed = await session.list_tools()
+            denied = await session.call_tool(
+                "write_note", {"id": "memo", "text": "never execute"}
+            )
+            return listed, denied
+
+        listed, denied = anyio.run(_run, cfg, token, body)
+
+    assert "write_note" not in [tool.name for tool in listed.tools]
+    assert denied.is_error is True
+    assert denied.structured_content is not None
+    assert denied.structured_content["reason_code"] == "TOOL_DEFINITION_CHANGED"
+    assert not (notes_dir / "memo.txt").exists()
