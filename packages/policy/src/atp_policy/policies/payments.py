@@ -33,7 +33,19 @@ class PaymentArguments(BaseModel):
 
 
 def is_payment(ctx: PolicyContext) -> bool:
-    return ctx.envelope.tool == PAYMENT_TOOL and ctx.envelope.action == PAYMENT_ACTION
+    """Match native payments and explicitly delegated MCP payment capabilities.
+
+    A proxied MCP tool must never impersonate the gateway-executed `payments`
+    tool. The separate `mcp.*` namespace is allowed to *request* payment
+    authority only when its mapping explicitly declares `pay:vendor`.
+    Every such action, irrespective of its tool/action alias, receives the
+    same payment argument, budget, vendor and approval checks. Incomplete
+    argument shapes fail closed rather than bypassing payments-v2.
+    """
+    envelope = ctx.envelope
+    if envelope.tool == PAYMENT_TOOL and envelope.action == PAYMENT_ACTION:
+        return True
+    return envelope.tool.startswith("mcp.") and envelope.capability == "pay:vendor"
 
 
 def parse_payment(ctx: PolicyContext) -> PaymentArguments | None:
