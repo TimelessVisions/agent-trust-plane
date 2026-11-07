@@ -31,6 +31,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from hashlib import sha256
 from pathlib import Path
+from threading import RLock
 from typing import Any, Protocol
 
 from cryptography.exceptions import InvalidSignature
@@ -205,6 +206,11 @@ class FilePrincipalKeys:
 
     def __init__(self, directory: str | Path) -> None:
         self.directory = Path(directory)
+        # Concurrent ensure()/generate() calls in the same process must not
+        # race a Windows reader against os.replace() of the public key.
+        # This is per-instance synchronization; cross-process creation still
+        # relies on the existing exclusive private-key write.
+        self._lock = RLock()
 
     def private_path(self, principal_id: str) -> Path:
         return self.directory / f"{principal_key_stem(principal_id)}.key"
@@ -229,6 +235,11 @@ class FilePrincipalKeys:
         return key if isinstance(key, Ed25519PrivateKey) else None
 
     def generate(self, principal_id: str) -> str:
+        """Generate a persistent key pair once, safely against concurrent threads."""
+        with self._lock:
+            return self._generate_locked(principal_id)
+
+    def _generate_locked(self, principal_id: str) -> str:
         """Create ``<stem>.key`` (0600) and ``<stem>.pub``. Refuses to overwrite:
         the private key is linked into place only if no file has that name, so
         concurrent generates never replace each other's key."""
@@ -249,9 +260,12 @@ class FilePrincipalKeys:
         write_file_atomic(self.public_path(principal_id), pub, private=False)
 
     def ensure(self, principal_id: str) -> str:
-        """The principal's kid, generating its key pair if it has none. A
-        ``.key`` without its ``.pub`` (a crash between the two writes) gets
-        its ``.pub`` back from the private key."""
+        """Return a stable principal key id, serialized for threads on this instance."""
+        with self._lock:
+            return self._ensure_locked(principal_id)
+
+    def _ensure_locked(self, principal_id: str) -> str:
+        """Restore missing public keys from private keys, or safely generate once."""
         public = self.public_key(principal_id)
         if public is not None:
             return kid_for(public)

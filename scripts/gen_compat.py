@@ -247,7 +247,9 @@ def generate(out: Path) -> dict[str, Path]:
     _import_everything()
     tools = _discover_tools()  # a subprocess: outside the patched region
     out.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="atp-compat-"))
+    # Use the destination's filesystem: Windows cannot compute relative paths
+    # across different drives when regression-add records the suite path.
+    work = Path(tempfile.mkdtemp(prefix="atp-compat-", dir=out.parent))
     files: dict[str, Path] = {}
     try:
         with deterministic():
