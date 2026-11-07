@@ -10,7 +10,17 @@ uv run atp mcp init -- <your mcp server>    # then: atp mcp wrap   (Streamable H
 uv run atp regression add <trace> && uv run atp test atp-regression.yaml
 ```
 
-> **Status: experimental, v0.3.2, no users yet, not independently audited.** Every claim below is backed by a test in this repository or says otherwise. What it does *not* protect is in [docs/security/threat-model.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/threat-model.md).
+> **Latest development snapshot — unreleased v1 candidate, NOT v1.0.0.** You are viewing `release/v1/B12-atp-1.0`, which contains newer work than `main`. The published release and Python package metadata remain **v0.3.2** until the owner-gated release process is complete. Experimental; no users yet; not independently audited. **Not ready for production financial actions.** The current full release-branch CI is red because a synthetic payment incident correctly fails closed but also blocks an intended legitimate payment with no configured monetary maximum. See [development and release status](docs/status/v1-development.md) and [security boundaries](docs/security/threat-model.md).
+
+## Get the latest code (unreleased development branch)
+
+```bash
+git clone --branch release/v1/B12-atp-1.0 --single-branch https://github.com/TimelessVisions/agent-trust-plane.git
+cd agent-trust-plane
+uv run atp demo wrap
+```
+
+This is **source access for evaluation**, not an installable v1.0.0 release or an endorsement for production enforcement. The `main` branch and [GitHub Releases](https://github.com/TimelessVisions/agent-trust-plane/releases) remain at v0.3.2 until release-gate approval. [Review the latest feature and verification status](docs/status/v1-development.md) before trying it with your own MCP server.
 
 ## Why this exists
 
@@ -37,7 +47,7 @@ Then, offline: `atp trace list` · `atp policy explain TRACE` · `atp regression
 Prerequisites: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/). No API keys, no Docker, no database setup, no secrets to copy.
 
 ```bash
-git clone <this repository> && cd agent-trust-plane
+git clone --branch release/v1/B12-atp-1.0 --single-branch https://github.com/TimelessVisions/agent-trust-plane.git && cd agent-trust-plane
 uv run atp demo wrap          # syncs the workspace on first run; 37 s cold on the maintainer machine
 ```
 
