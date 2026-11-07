@@ -115,6 +115,12 @@ def open_incident(layer, case) -> Iterator[_Session]:
                 "authority": {
                     "capabilities": ["read:invoice", "pay:vendor"],
                     "resource_scope": ["invoice:INV-42", "vendor:128"],
+                    # Owner-approved synthetic fixture configuration correction:
+                    # legitimate $480 can execute; a $640 wrong-account payment
+                    # remains forbidden by the unchanged destination policy.
+                    # No real bank credentials or external funds are involved.
+                    "max_amount": {"amount": "1000.00", "currency": "USD"},
+                    "currencies": ["USD"],
                 },
                 "upstream": {"command": argv[0], "args": argv[1:]},
                 "tools": [
