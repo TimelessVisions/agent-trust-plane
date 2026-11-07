@@ -1,38 +1,41 @@
-# V1 development snapshot — not a release
+# V1 development snapshot — not a published release
 
-**Branch:** [`release/v1/B12-atp-1.0`](https://github.com/TimelessVisions/agent-trust-plane/tree/release/v1/B12-atp-1.0)  
-**Published release:** [`v0.3.2`](https://github.com/TimelessVisions/agent-trust-plane/releases/tag/v0.3.2)  
-**Python package version in the development branch:** `0.3.2` until the later, owner-gated version bump  
-**Review state:** Experimental; no users yet; no independent security audit; not ready for production payment actions.
+**Latest code:** [`release/v1/B12-atp-1.0`](https://github.com/TimelessVisions/agent-trust-plane/tree/release/v1/B12-atp-1.0)  
+**Latest PyPI/GitHub release:** [`v0.3.2`](https://github.com/TimelessVisions/agent-trust-plane/releases/tag/v0.3.2)  
+**Package version on this development branch:** `0.3.2` (the `1.0.0` bump is a later, gated step)  
+**Development status:** Experimental, no users yet, not independently audited, not production-certified.
 
-The product's working name is **ApexTrust Guard**. The source repository, Python distribution and `atp` command retain their existing names. This page is for source reviewers and potential *staging-only* design partners; it is **not** a GA announcement.
+The product's working name is **ApexTrust Guard**. The repository, Python distribution and `atp` CLI retain their existing names. This page describes a *source-development snapshot*, not a new release.
 
-## What is available on this branch
+## Reproducible security and test evidence
 
-- Policy-based delegated authorization: bounded agent capabilities, resources, and action arguments, with deny-before-upstream enforcement on the mediated path.
-- MCP wrapper and tool-definition pinning, including schema/description revalidation before pinned calls. [Design and limitations](../security/tool-pinning.md).
-- Deterministic model-free AgentDojo replays, competitor renderers (agentgateway and ToolHive tested against their pinned binaries), synthetic name-only reference and an unverified Docker MCP Gateway adapter.
-- Synthetic incident fixtures for a changed tool definition, tool-description poisoning, a PR-title redirection and an invoice payment redirection. These are **scripted calls**, not measurements of whether live AI models follow an injection.
-- Local security regression and evidence workflow. [Full E2 record](../superpowers/handoff/2026-11-05-sdd-ledger.md).
+At commit [`ceda53d0`](https://github.com/TimelessVisions/agent-trust-plane/commit/ceda53d0bb231c39db479c940fd6247c70fe6594), all six release-branch [GitHub Actions jobs #42421031014](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/42421031014) completed successfully on November 7, 2026.
 
-## Release blockers and measured evidence
+| Measured check | Actual result |
+|---|---|
+| Root pytest, Ruff, mypy and four demos | **PASS:** 733 collected, 732 passed, 1 explicitly documented optional third-party skip |
+| Full AgentDojo benchmark **tests** | **PASS:** 226 tests; 0 failures, errors or skips |
+| Synthetic incident harness and payment acceptance | **PASS:** 11 tests; 0 failures, errors or skips |
+| Pinned agentgateway v1.6.0 executable | **PASS:** 9 tests |
+| Pinned ToolHive v0.55.2 executable | **PASS:** 8 tests |
+| Name-only negative controls and Docker-runtime failure classification | **PASS:** 3 tests; real Docker MCP Gateway behavior remains **NOT_MEASURED** |
 
-The latest six-job run available at the time of this snapshot was [GitHub Actions #42068445542](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/42068445542), on commit `2c67b82`.
+The payment acceptance test now proves both sides of the boundary: a synthetic $480 USD payment to the trusted vendor account is forwarded, while a $640 USD attempt to an unapproved account is denied without an upstream execution. The fixture supplies an explicit $1,000 USD maximum and USD allowlist. No real funds or private credentials were used. **The original scripted calls, expected outcomes, and payments-v2 policy were not changed to get a green result.** The earlier failing CI remains in the Git history as evidence of the bug.
 
-| Gate | Measured status |
-| --- | --- |
-| Root suite, Ruff lint, format, mypy, four demos | **PASS** — 733 tests, 0 failures/errors, 1 documented optional skip |
-| agentgateway v1.6.0 pinned binary | **PASS** |
-| ToolHive v0.55.2 pinned binary | **PASS** |
-| D4 name-only and Docker-unavailable checks | **PASS**; real Docker MCP Gateway comparison still **NOT_MEASURED** |
-| E1/E2 targeted incident suite | **FAIL** — 11 tests, 1 failure; remaining 10 passed |
-| Full AgentDojo benchmark test suite | **FAIL** — 226 tests, 1 failure; remaining 225 passed |
+These are **test counts, not published benchmark attack-success rates**. Live-agent subscription sweeps and the Docker MCP Gateway product comparison have not been measured. This is not an independent audit.
 
-**Known failing scenario:** The real MCP proxy refuses both an unauthorized-destination synthetic payment **and** an intended legitimate payment. The existing incident fixture delegates `pay:vendor` without a required per-payment monetary maximum. The policy now fails closed on an unbounded payment; the fixture must be corrected through the documented owner decision to prove legitimate utility without loosening security. The incident's original calls and expected outcome must not be silently weakened.
+## Remaining 1.0 release gates
 
-**Stop points:** Independent security review, E2 owner ruling and corrected end-to-end evidence; annotation pre-registration owner gate; live-agent quota gate; final compatibility/packaging gate; explicit owner permission for PRs, merging to `main`, the `v1.0.0` tag and publication to PyPI. No successful v1.0.0 release is claimed.
+1. **F1 and G1:** complete and verify the planned live-agent runner (without spending subscription quota) and the local red-team challenge with its evidence exporter. A real CLI smoke test can be `NOT_MEASURED` if no supported logged-in CLI is available.
+2. **A1 OWNER GATE:** owner reviews all 97 pre-injection task annotations and their utility-change audit. Only the owner may create the `bench-annotations-v1` preregistration tag. See [annotation review](../../bench/annotations/OWNER_REVIEW.md). Some development/security tests predate the tag; disclose that chronology rather than claiming no earlier tests.
+3. **A2 / D5:** after that tag, run a full, version-pinned competitor sweep; report harmful-action reach and legitimate utility from raw results. Real Docker MCP Gateway may remain `ENV_BLOCKED`/`NOT_MEASURED` if it cannot run; never substitute the name-only reference for Docker.
+4. **F2 OWNER GATE:** obtain explicit approval before using the owner's Claude Code or Codex subscriptions for live-agent sweeps.
+5. **H1–H3:** run the deterministic compatibility freeze, write the evidence-backed results page, set all distribution versions to 1.0.0 in lockstep, complete the 11-step release audit, and verify full multi-platform CI, packaging, advisories, SBOM and isolated-wheel install.
+6. **H3 OWNER GATES:** open PRs (B11 first, then B12), merge, create a `v1.0.0` tag, and publish to PyPI only with specific owner approval.
 
-## Try the safe local demonstration
+We enabled the **normal cross-platform and packaging CI workflow on branch pushes** to gather preflight evidence without creating or merging a PR. This does not change tag rules or publishing permissions. See [release-gate tracker](../release-v1/RELEASE_GATES.md).
+
+## Try the latest source with a safe local demo
 
 ```bash
 git clone --branch release/v1/B12-atp-1.0 --single-branch https://github.com/TimelessVisions/agent-trust-plane.git
@@ -40,10 +43,6 @@ cd agent-trust-plane
 uv run atp demo wrap
 ```
 
-Requires Python 3.12+ and `uv`. The demo uses a local synthetic MCP server; it requires no production credentials or payment integration. Do **not** connect this development candidate to live funds or customer-critical tools.
+Requires Python 3.12+ and `uv`; uses a local synthetic MCP server. Do **not** connect this candidate to live payment services or customer-critical production tools. The enforcement path must be mediated by the proxy; an agent with direct upstream access can bypass it.
 
-## Feedback from technical reviewers
-
-Constructive feedback is especially useful on the documented authorization boundary, schema-pin races, delegated monetary limits and synthetic incident reproducibility. Share reproducible findings through the repository's [issue tracker](https://github.com/TimelessVisions/agent-trust-plane/issues), and report actual vulnerabilities through [SECURITY.md](../../SECURITY.md) rather than posting secrets in public issues.
-
-This document reflects measured evidence at its cited commit, not a claim that later commits or configurations passed the same gates.
+Please report actual vulnerabilities using [SECURITY.md](../../SECURITY.md), rather than posting secrets publicly. Other technical feedback is welcome through the [issue tracker](https://github.com/TimelessVisions/agent-trust-plane/issues).

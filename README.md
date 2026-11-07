@@ -10,7 +10,7 @@ uv run atp mcp init -- <your mcp server>    # then: atp mcp wrap   (Streamable H
 uv run atp regression add <trace> && uv run atp test atp-regression.yaml
 ```
 
-> **Latest development snapshot — unreleased v1 candidate, NOT v1.0.0.** You are viewing `release/v1/B12-atp-1.0`, which contains newer work than `main`. The published release and Python package metadata remain **v0.3.2** until the owner-gated release process is complete. Experimental; no users yet; not independently audited. **Not ready for production financial actions.** The current full release-branch CI is red because a synthetic payment incident correctly fails closed but also blocks an intended legitimate payment with no configured monetary maximum. See [development and release status](docs/status/v1-development.md) and [security boundaries](docs/security/threat-model.md).
+> **Latest development snapshot — unreleased v1 candidate, NOT v1.0.0.** You are viewing `release/v1/B12-atp-1.0`, which contains newer work than `main`. The published release and Python package metadata remain **v0.3.2** until the owner-gated release process is complete. Experimental; no users yet; not independently audited. **Not ready for production financial actions.** All six Linux release-branch verification jobs passed after the synthetic payment fixture was given a reviewed $1,000 USD limit; the $640 wrong-destination payment remains denied. This does not clear the remaining benchmark, live-agent, challenge, packaging, and owner-only release gates. See [development and release status](docs/status/v1-development.md) and [security boundaries](docs/security/threat-model.md).
 
 ## Get the latest code (unreleased development branch)
 

@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/v1/B12-atp-1.0']
   pull_request:
 
 # Least privilege: nothing here needs to write to the repository.

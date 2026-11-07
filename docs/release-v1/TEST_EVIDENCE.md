@@ -140,3 +140,21 @@ Branch `release/v1/B2-supply-chain-and-false-green`, still product version
   exited 0 on the pytest step; the “445 passed, 1 skipped” line is the
   local 3.12 run only.
 - An independent re-run from a clean checkout by a different worker.
+
+
+## 2026-11-07: bounded MCP payment incident resolved (v1 development branch)
+
+**Workflow:** [GitHub Actions run #42421031014](https://github.com/TimelessVisions/agent-trust-plane/actions/runs/42421031014), exact commit `ceda53d0bb231c39db479c940fd6247c70fe6594`, branch `release/v1/B12-atp-1.0`. All six jobs completed **PASS**. Execution was in the GitHub-hosted Linux runner.
+
+| Verification | JUnit counts | Result |
+|---|---|---|
+| Root suite, with Ruff, mypy and demos | tests=733, failures=0, errors=0, skipped=1 | **PASS**. Skip is the documented opt-in third-party filesystem test, not silently counted. |
+| Full AgentDojo benchmark **test suite** | tests=226, failures=0, errors=0, skipped=0 | **PASS**. Does not constitute a measured public competitor attack sweep. |
+| E1/E2 local MCP incident suite | tests=11, failures=0, errors=0, skipped=0 | **PASS**. Includes all four synthetic incident fixtures and companion regression invocations. |
+| Pinned agentgateway v1.6.0 executable | tests=9, failures=0, errors=0, skipped=0 | **PASS**. |
+| Pinned ToolHive v0.55.2 executable | tests=8, failures=0, errors=0, skipped=0 | **PASS**. |
+| D4 reference and Docker-unavailable negative controls | tests=3, failures=0, errors=0, skipped=0 | **PASS**. Actual Docker MCP Gateway product authorization remains NOT_MEASURED. |
+
+**Specific E2 repair:** the original synthetic `under-limit-redirect/case.yaml`, scripted calls and wrong-destination denial expectations were unchanged. The only amendment was adding `max_amount: {amount: "1000.00", currency: "USD"}` and `currencies: ["USD"]` to the *test fixture's* MCP wrapper authority. The proxy allowed a $480 USD legitimate synthetic payment to `acct-nw-4471` and denied the $640 USD wrong-account attempt to `acct-offshore-9931`. The MCP fixture asserts its upstream journal contains only the invoice read and legitimate payment. The companion `payments-v2` regression passed 3/3 with `PAYMENT_DESTINATION_RESOURCE_MISMATCH` for the wrong-account call. No real funds transferred. Earlier red CI on the unbounded fixture remains preserved in Git history and in the SDD ledger.
+
+**Remaining non-measured release gates:** F1, G1, A1 review/tag, A2/D5 public comparative rates, F2 quota decision, H1 freeze, H2 results, H3 packaging/full-matrix and owner actions. Do not confuse an all-green six-job unit and real-fixture workflow with an approved 1.0 release.
