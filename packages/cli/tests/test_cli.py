@@ -128,8 +128,18 @@ def test_generated_keys_never_start_with_a_dash(
     from atp_gateway.settings import GatewaySettings
 
     real = secrets.token_urlsafe
-    draws = iter(["-" + real(48)[1:], real(48)] * 8)
-    monkeypatch.setattr(secrets, "token_urlsafe", lambda n=None: next(draws))
+    attempts = 0
+
+    def alternating_keys(n: int | None = None) -> str:
+        nonlocal attempts
+        # Alternate forced-leading-dash and safe keys without a fixed-length
+        # iterator: setup paths may request more secrets on some platforms.
+        # Each forced dash still exercises new_secret_key's retry behavior.
+        attempts += 1
+        value = real(n)
+        return ("-" if attempts % 2 else "A") + value[1:]
+
+    monkeypatch.setattr(secrets, "token_urlsafe", alternating_keys)
 
     monkeypatch.chdir(tmp_path)
     home = AtpHome(tmp_path / "home").ensure()
@@ -148,4 +158,5 @@ def test_generated_keys_never_start_with_a_dash(
     # keys dir; settings: the ephemeral operator key. (The Ed25519 keys are files, not
     # pasted values.)
     assert len(values) == 7
+    assert attempts >= 2  # a forced invalid draw and a retry both occurred
     assert not [v for v in values if v.startswith("-")]
