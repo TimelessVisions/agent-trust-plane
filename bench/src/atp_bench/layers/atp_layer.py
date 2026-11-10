@@ -161,6 +161,48 @@ def _write_yaml(path: Path, doc: dict) -> None:
     path.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
+def prepare_wrap_params(
+    suite: DojoSuite,
+    annotation: Annotation,
+    injection_task: str | None,
+    journal: Path,
+    workdir: Path,
+    timeout_s: float,
+    dump_env: Path | None = None,
+    deliveries: Path | None = None,
+) -> StdioServerParameters:
+    """Write the ATP home and rendered configs under ``workdir``; return the ``atp mcp wrap``
+    command that serves the suite behind the policy. Shared by the replay and live tracks."""
+    from atp_cli.home import AtpHome
+
+    workdir = Path(workdir).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    home = workdir / "atp-home"
+    AtpHome(home).ensure()
+    # dump_env is passed only when asked for: the replay track's calls stay exactly as before
+    extra = (dump_env, deliveries) if deliveries is not None else (dump_env,) if dump_env else ()
+    argv = suite_server_argv(suite.name, injection_task, journal, *extra)
+    config, policies = render_atp_config(suite, annotation, argv, home)
+    # The proxy gives up on a hung upstream before the client-side timeout fires.
+    config["request_timeout_seconds"] = max(1.0, timeout_s)
+    config_path = workdir / "atp-mcp.yaml"
+    _write_yaml(config_path, config)
+    _write_yaml(workdir / "policies.yaml", policies)
+    _write_yaml(home / "policies.yaml", policies)  # where ATP loads declared sets from
+    wrap_args = [
+        "-m", "atp_cli.main", "mcp", "wrap",
+        "--config", str(config_path),
+        "--home", str(home),
+        "--mode", "enforce",
+        "--log-level", "warning",
+    ]  # fmt: skip
+    return StdioServerParameters(
+        command=sys.executable,
+        args=wrap_args,
+        env={**get_default_environment(), "ATP_HOME": str(home)},
+    )
+
+
 class AtpLayer:
     name = "atp"
 
@@ -180,31 +222,8 @@ class AtpLayer:
         journal: Path,
         workdir: Path,
     ) -> Iterator[Session]:
-        from atp_cli.home import AtpHome
-
-        workdir = Path(workdir).resolve()
-        workdir.mkdir(parents=True, exist_ok=True)
-        home = workdir / "atp-home"
-        AtpHome(home).ensure()
-        argv = suite_server_argv(suite.name, injection_task, journal)
-        config, policies = render_atp_config(suite, annotation, argv, home)
-        # The proxy gives up on a hung upstream before the client-side timeout fires.
-        config["request_timeout_seconds"] = max(1.0, self.timeout_s)
-        config_path = workdir / "atp-mcp.yaml"
-        _write_yaml(config_path, config)
-        _write_yaml(workdir / "policies.yaml", policies)
-        _write_yaml(home / "policies.yaml", policies)  # where ATP loads declared sets from
-        wrap_args = [
-            "-m", "atp_cli.main", "mcp", "wrap",
-            "--config", str(config_path),
-            "--home", str(home),
-            "--mode", "enforce",
-            "--log-level", "warning",
-        ]  # fmt: skip
-        params = StdioServerParameters(
-            command=sys.executable,
-            args=wrap_args,
-            env={**get_default_environment(), "ATP_HOME": str(home)},
+        params = prepare_wrap_params(
+            suite, annotation, injection_task, journal, workdir, self.timeout_s
         )
         with StdioMcpSession(params, classify, call_timeout_s=self.timeout_s + 5) as session:
             yield session

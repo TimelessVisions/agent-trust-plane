@@ -213,3 +213,38 @@ Following the owner's instruction to fix the incomplete security acceptance test
 **Gate disposition:** E2 is now PASS **for the versioned synthetic scenario**; this is neither a live-money security guarantee nor an independent audit. F1, G1, A1, A2/D5, F2, H1-H3 and cross-platform full release gates remain open. A branch CI preflight is enabled to collect multi-platform and packaging evidence, without a PR, merge, tag or publication.
 
 Ruling: accept the narrowly configured $1,000 USD synthetic delegated limit as the smallest correction consistent with the original legitimate/forbidden payment expectations — it preserves fail-closed behavior on missing monetary limits and keeps the wrong-account denial intact — cost if wrong: a careless operator might interpret this illustrative maximum as a safe limit for real funds; the fixture is synthetic and does not authorize live payment usage.
+
+
+### F1 live-agent runner — implemented on `work/f1-claude` (base `dd6d70e`), UNCOMMITTED, awaiting independent review
+
+Files: `bench/src/atp_bench/live/{__init__,agents,runner}.py`, `bench/live/README.md`, `suite_server --dump-env`, `dojo.{dump_env,load_env,utility,security}`, `atp_bench live` CLI (plan-only unless `--execute`; Codex also needs `--accept-codex-shell-risk`), `atp_layer.prepare_wrap_params` (extracted, shared by both tracks), `tests/test_live.py` (33 tests) + `tests/fake_agent.py`.
+
+**Measured (Windows 11, Python 3.12.10 bench / 3.14 root venv, isolated `--basetemp` outside the repo; counts read from JUnit XML):**
+- Bench, full, after the last code edit (2026-11-08 03:26–04:02Z, 2121 s): **tests=264, failures=4, errors=0, skipped=0.**
+- Root, full (2026-11-08): **tests=733, failures=0, errors=0, skipped=1** (the opt-in third-party filesystem test).
+- Ruff check and format clean (284 files); `mypy` clean (82 files); strict mypy on `live/` clean; `git diff --check` clean (tracked and new files).
+- The 4 bench failures are environment, not F1: `test_agentgateway_layer` x2 (`ENV_BLOCKED: agentgateway: linux binary`; pass in the Linux CI lane, 9/9 in run 41998777874), `test_tools::test_fetch_verifies_sha` (Windows has no exec bit), `test_suite_server::test_http_mode_journals_like_stdio` (SSE/HTTP transport on this machine: times out >540 s on a pristine `git archive HEAD` export AND on this tree, rc=124 for both; the full suite reports `MCPError(-32000)`). The first three fail identically on the pristine export. No F1 test fails.
+- An earlier bench run had 5 failures: one was a real defect of mine (leftover work directory: `rmtree(ignore_errors=True)` raced a just-killed process) — now removed with retries and asserted in three tests; another earlier one (`test_atp_timeout_is_inconclusive`) was my regression from the `prepare_wrap_params` refactor, fixed.
+- The earlier 9 root failures (`test_migrate`, `test_home_keys`: `WinError 32`) were file locking in the in-repo `.pytest-tmp`; a different subset failed on every run, all 41 tests in those two files passed twice with a basetemp outside the repo, and the full root suite passed. No test was changed.
+- Mutation checks (runner/agents/tests): 8 + 1 + 1 mutations; every one caught after adding the negative end-to-end test and the clean-exit child test.
+- Subscription use: none. An autouse fixture makes any test that starts a real `claude`/`codex` executable (even `--version`) fail; the guard was itself verified. Only fake agents ran.
+
+**NOT_MEASURED (must not be read as PASS):** integration with the real Claude Code and Codex CLIs. The plan's real smoke run (banking `user_task_0`, claude-code, open layer) was not run (owner: not yet). Unverified until then: `--restricted` with `--allowedTools`; `--permission-prompts none` in `-p` mode; that Claude's `init` carries `mcp_servers` and `plugins` (the runner fails closed if not); the `CLAUDE_CODE_DISABLE_CLAUDE_MDS/AUTO_MEMORY` variables; Codex JSONL schema; Codex auto-approval of MCP calls; `project_doc_max_bytes=0` against `~/.codex/AGENTS.md`.
+
+**Residual vulnerabilities:** (1) Codex's shell cannot be proven removed (`--disable shell_tool` accepted, `unified_exec` stays on) and `-s read-only` does not stop reads of user files such as `~/.codex/auth.json`; mitigated by an empty cwd, `--ignore-user-config`, command events stopping the sweep with output never stored, and the opt-in gate, which is preserved and not enabled. Text the model prints itself is not covered. (2) Claude user-level instructions/memory depend on two unverified env vars. (3) `scrub()` is pattern-based; the allow-list is the primary control. (4) Windows Job Object assignment happens just after process creation (negligible race). (5) Name-only live adapter does not exist.
+
+Ruling: `utility`/`security` take an optional trailing `traces` argument — AgentDojo prefers trace-based checks — cost if wrong: none.
+Ruling: `--dump-env` writes at start and after every call, not only on shutdown — killed servers leave the final state and the file proves the server started — cost if wrong: one write per call.
+Ruling: only usage-limit (and ENV_BLOCKED) records are retried on resume; every other INCONCLUSIVE is final (owner confirmed 2026-11-08) — cost if wrong: a retried run costs quota.
+Ruling: usage-limit regex applies only to a failed run (`rate_limit_event` appears on healthy Claude streams) and also matches `hit your limit|limit reached` — cost if wrong: an oddly worded limit is INCONCLUSIVE without stopping the sweep.
+Ruling: the agent environment drops `ANTHROPIC_*`, `OPENAI_*`, `CODEX_API*`, `CLAUDE_CODE_USE_*`, `AWS_*`, `AZURE_*` and any `*API_KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL` (not `CLAUDE_CODE_OAUTH_TOKEN`) — an API key would bill the API — cost if wrong: such logins must be adjusted.
+Ruling: Codex runs with `--ignore-user-config` and feature `--disable`s — the operator's `config.toml` defines MCP servers including a terminal tool — cost if wrong: none for auth.
+Ruling: Codex MCP config uses dotted `-c` keys; inline tables are rejected (verified with `codex mcp list --json`).
+Ruling: Codex runs are refused without the explicit shell-risk acknowledgement, and any Codex command event is an isolation failure that stops the sweep — cost if wrong: Codex sweeps need the flag.
+Ruling: Claude runs are INCONCLUSIVE (and the sweep stops) if the `init` event is missing, or lists a shell/file/web/sub-agent tool, an MCP server other than `dojo`, a foreign `mcp__` tool or any plugin; a missing `result` event is INCONCLUSIVE — unavailable evidence is never a success — cost if wrong: a false stop if `init` lacks those fields.
+Ruling: stored evidence is an allow-list projection of the stream, then scrubbed; Codex shell output is never stored; all emails are scrubbed (including AgentDojo's synthetic ones) — cost if wrong: less readable transcripts.
+Ruling: cache files are trusted only if they parse and name the same agent/layer/suite/task/injection — cost if wrong: a hand-edited cache is re-run.
+Ruling: Windows uses a Job Object (kill-on-close, terminated after every run); POSIX kills the process group after every run — `taskkill /T` cannot find grandchildren once the agent exited — cost if wrong: a run fails INCONCLUSIVE if the job cannot be assigned.
+Ruling: work directories are removed with retries — see leak defect above.
+Ruling: `prepare_wrap_params` extracted from `AtpLayer.open`; `dump_env` is forwarded only when set because an existing test monkeypatches `suite_server_argv` with three arguments — cost if wrong: none.
+Ruling: `name-only` live adapter (approved for planning only by the owner) is NOT part of F1 acceptance; the CLI refuses the layer and no approximation is claimed.

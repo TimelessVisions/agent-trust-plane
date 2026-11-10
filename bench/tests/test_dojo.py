@@ -24,3 +24,10 @@ def test_counts_are_recorded():
         for n in SUITES
     }
     assert counts == EXPECTED_COUNTS
+
+
+@pytest.mark.parametrize("name", SUITES)
+def test_env_json_round_trip(name):
+    s = load_suite(name)
+    env = s.default_env()
+    assert s.load_env(s.dump_env(env)) == env

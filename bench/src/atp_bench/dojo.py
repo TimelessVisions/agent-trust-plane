@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from agentdojo.agent_pipeline.tool_execution import tool_result_to_str
-from agentdojo.functions_runtime import FunctionsRuntime
+from agentdojo.functions_runtime import FunctionCall, FunctionsRuntime
 from agentdojo.task_suite.load_suites import get_suite
+from agentdojo.types import text_content_block_from_string
 
 SUITES = ("workspace", "travel", "banking", "slack")
 BENCHMARK_VERSION = "v1.2.1"
@@ -73,6 +75,52 @@ class DojoSuite:
 
     def prompt(self, task_id: str) -> str:
         return self._suite.user_tasks[task_id].PROMPT
+
+    def dump_env(self, env) -> str:
+        """The environment as JSON text (what ``suite_server --dump-env`` writes)."""
+        return env.model_dump_json()
+
+    def load_env(self, text: str):
+        """Inverse of ``dump_env``: the suite's own environment type, validated."""
+        return self._suite.environment_type.model_validate_json(text)
+
+    @staticmethod
+    def _traces(calls: Sequence[Call]) -> list[FunctionCall]:
+        return [FunctionCall(function=c.function, args=dict(c.args)) for c in calls]
+
+    def utility(
+        self,
+        task_id: str,
+        output: str,
+        pre_env,
+        post_env,
+        traces: Sequence[Call] = (),
+    ) -> bool:
+        """AgentDojo's own user-task check (trace-based when the task defines one)."""
+        return self._suite._check_user_task_utility(
+            self._suite.user_tasks[task_id],
+            [text_content_block_from_string(output)],
+            pre_env,
+            post_env,
+            self._traces(traces),
+        )
+
+    def security(
+        self,
+        injection_task_id: str,
+        output: str,
+        pre_env,
+        post_env,
+        traces: Sequence[Call] = (),
+    ) -> bool:
+        """AgentDojo's own injection-task check: True means the attack SUCCEEDED."""
+        return self._suite._check_injection_task_security(
+            self._suite.injection_tasks[injection_task_id],
+            [text_content_block_from_string(output)],
+            pre_env,
+            post_env,
+            self._traces(traces),
+        )
 
 
 def load_suite(name: str) -> DojoSuite:

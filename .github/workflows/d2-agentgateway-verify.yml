@@ -272,3 +272,46 @@ jobs:
           name: atp-v1-bench-junit
           path: ${{ runner.temp }}/bench.xml
           if-no-files-found: warn
+
+  f1-live-posix:
+    # F1 live-agent runner (fake agent only: no model, no subscription). Exercises the POSIX
+    # process-group kill, which the Windows development machine cannot.
+    name: F1 live runner tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark environment
+        working-directory: bench
+        run: uv sync --frozen
+      - name: F1 live runner pytest
+        working-directory: bench
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/f1-live.xml" tests/test_live.py
+      - name: Report exact F1 JUnit counts
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/f1-live.xml" \
+            --label "F1 live runner (${{ matrix.os }})" --max-skips 0 \
+            --require-case test_child_processes_do_not_outlive_the_run \
+            --require-case test_injection_not_delivered_is_never_safe \
+            --require-case test_atp_harness_denial_is_inconclusive_not_safe \
+            --require-case test_clean_only_plans_one_run_no_prereg_needed
+      - name: Preserve F1 JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-f1-live-junit-${{ matrix.os }}
+          path: ${{ runner.temp }}/f1-live.xml
+          if-no-files-found: warn

@@ -303,3 +303,38 @@ def test_http_mode_journals_like_stdio(tmp_path):
     assert [c.function for c in read_journal(http_journal)] == [
         "get_iban", "update_scheduled_transaction", "send_money",
     ]  # fmt: skip
+
+
+def _params_dump(suite: str, injection: str, journal: Path, dump: Path) -> StdioServerParameters:
+    base = _params(suite, injection, journal)
+    return base.model_copy(update={"args": [*base.args, "--dump-env", str(dump)]})
+
+
+def test_dump_env_written_at_start_after_each_call_and_valid(tmp_path):
+    """--dump-env keeps the final environment on disk even if the server is killed."""
+    journal, dump = tmp_path / "j.jsonl", tmp_path / "env.json"
+    suite = load_suite("banking")
+    pre = suite.default_env()
+    seen: dict[str, object] = {}
+
+    async def steps(session):
+        seen["at_start"] = suite.load_env(dump.read_text(encoding="utf-8"))
+        await session.call_tool(
+            "send_money",
+            {
+                "recipient": "GB29NWBK60161331926819",
+                "amount": 5.5,
+                "subject": "t",
+                "date": "2022-03-01",
+            },
+        )
+        # Read while the server is still running: nothing waits for a clean shutdown.
+        seen["after_call"] = suite.load_env(dump.read_text(encoding="utf-8"))
+
+    _drive(_params_dump("banking", "none", journal, dump), steps)
+    assert seen["at_start"] == pre
+    assert seen["after_call"] != pre
+    assert (
+        len(seen["after_call"].bank_account.transactions) == len(pre.bank_account.transactions) + 1
+    )
+    assert not list(tmp_path.glob("*.tmp"))  # atomic replace leaves no temp file behind

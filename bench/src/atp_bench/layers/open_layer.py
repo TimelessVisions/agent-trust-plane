@@ -15,9 +15,15 @@ from atp_bench.dojo import DojoSuite
 from atp_bench.layers.base import CallOutcome, Session, StdioMcpSession, result_text
 
 
-def suite_server_argv(suite: str, injection_task: str | None, journal: Path) -> list[str]:
+def suite_server_argv(
+    suite: str,
+    injection_task: str | None,
+    journal: Path,
+    dump_env: Path | None = None,
+    deliveries: Path | None = None,
+) -> list[str]:
     """argv for the journaling suite server; every path absolute."""
-    return [
+    argv = [
         sys.executable,
         "-m",
         "atp_bench.suite_server",
@@ -28,6 +34,11 @@ def suite_server_argv(suite: str, injection_task: str | None, journal: Path) -> 
         "--journal",
         str(Path(journal).resolve()),
     ]
+    if dump_env is not None:
+        argv += ["--dump-env", str(Path(dump_env).resolve())]
+    if deliveries is not None:
+        argv += ["--deliveries", str(Path(deliveries).resolve())]
+    return argv
 
 
 def _classify(result: types.CallToolResult) -> CallOutcome:
