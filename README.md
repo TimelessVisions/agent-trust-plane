@@ -10,17 +10,15 @@ uv run atp mcp init -- <your mcp server>    # then: atp mcp wrap   (Streamable H
 uv run atp regression add <trace> && uv run atp test atp-regression.yaml
 ```
 
-> **Latest development snapshot — unreleased v1 candidate, NOT v1.0.0.** You are viewing `release/v1/B12-atp-1.0`, which contains newer work than `main`. The published release and Python package metadata remain **v0.3.2** until the owner-gated release process is complete. Experimental; no users yet; not independently audited. **Not ready for production financial actions.** All six Linux release-branch verification jobs passed after the synthetic payment fixture was given a reviewed $1,000 USD limit; the $640 wrong-destination payment remains denied. This does not clear the remaining benchmark, live-agent, challenge, packaging, and owner-only release gates. See [development and release status](https://github.com/TimelessVisions/agent-trust-plane/blob/release/v1/B12-atp-1.0/docs/status/v1-development.md) and [security boundaries](https://github.com/TimelessVisions/agent-trust-plane/blob/release/v1/B12-atp-1.0/docs/security/threat-model.md).
+> **v0.4.0** — signed delegation roots, Ed25519 execution grants with key rotation, tool-definition pinning, cumulative spend budgets, a working human-approval flow, and versioned file formats. See the [changelog](https://github.com/TimelessVisions/agent-trust-plane/blob/main/CHANGELOG.md) (this release has breaking changes; `atp migrate` upgrades your files). Experimental and not independently audited; **not ready for production financial actions**. [Security boundaries](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/threat-model.md) · [what is and is not measured](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/release-v1/RELEASE_GATES.md).
 
-## Get the latest code (unreleased development branch)
+## Install
 
 ```bash
-git clone --branch release/v1/B12-atp-1.0 --single-branch https://github.com/TimelessVisions/agent-trust-plane.git
-cd agent-trust-plane
-uv run atp demo wrap
+uvx agent-trust-plane demo wrap     # no clone needed; or: pip install agent-trust-plane
 ```
 
-This is **source access for evaluation**, not an installable v1.0.0 release or an endorsement for production enforcement. The `main` branch and [GitHub Releases](https://github.com/TimelessVisions/agent-trust-plane/releases) remain at v0.3.2 until release-gate approval. [Review the latest feature and verification status](https://github.com/TimelessVisions/agent-trust-plane/blob/release/v1/B12-atp-1.0/docs/status/v1-development.md) before trying it with your own MCP server.
+Verified in CI on Linux and Windows, Python 3.12 and 3.13. 733 tests in the root suite, plus a model-free benchmark harness that replays 97 AgentDojo tasks and their prompt-injection attacks through authorization layers (`bench/`; the public harm/utility rates are not published yet).
 
 ## Why this exists
 
@@ -47,7 +45,7 @@ Then, offline: `atp trace list` · `atp policy explain TRACE` · `atp regression
 Prerequisites: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/). No API keys, no Docker, no database setup, no secrets to copy.
 
 ```bash
-git clone --branch release/v1/B12-atp-1.0 --single-branch https://github.com/TimelessVisions/agent-trust-plane.git && cd agent-trust-plane
+git clone https://github.com/TimelessVisions/agent-trust-plane.git && cd agent-trust-plane
 uv run atp demo wrap          # syncs the workspace on first run; 37 s cold on the maintainer machine
 ```
 
@@ -107,7 +105,7 @@ Guarantees, assumptions, deployment requirements, non-guarantees and known gaps 
 - The hash chain catches edits by non-writers; a DB writer can recompute it: [docs/security/trace-integrity.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/trace-integrity.md).
 - Declared policies are limit/equality rules; use OPA/Cedar for more ([why-not-just-opa.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/policies/why-not-just-opa.md)). Prompt injection is bounded, not detected.
 
-Evidence for what *is* handled: 439 tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
+Evidence for what *is* handled: 733 tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
 
 ## Contributing
 

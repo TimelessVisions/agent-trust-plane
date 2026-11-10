@@ -6,6 +6,8 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
 ### Added
 - MCP tool-definition pinning: `atp mcp init` captures a SHA-256 of the
   tool name, description and inputSchema. A changed definition is omitted from
@@ -179,8 +181,7 @@ changes may land in minor versions and are called out).
 ### Security
 - Lockfile pins the lowest releases that clear PYSEC-2026-4320
   (`certifi==2026.10.19`), CVE-2026-114603 (`opentelemetry-api==1.45.1`),
-  and PYSEC-2026-4141 / PYSEC-2026-4183 (`pyjwt==2.15.0`). Product version
-  stays 0.3.2. Reachability is recorded in
+  and PYSEC-2026-4141 / PYSEC-2026-4183 (`pyjwt==2.15.0`). Reachability is recorded in
   `docs/release-v1/REUSE_DECISIONS.md`.
 - The MCP proxy refuses a config that copies `ATP_OPERATOR_KEY`,
   `ATP_GRANT_SIGNING_KEY`, or the agent token into the upstream. A
@@ -222,7 +223,7 @@ changes may land in minor versions and are called out).
 - A sandbox MCP server journals each tool name before any file change. New
   tests require an allowed write to be received, an unauthorized delete to
   be absent from that journal, the denial to be explainable, and a policy
-  edit to fail the pinned regression check. Version is unchanged at 0.3.2.
+  edit to fail the pinned regression check.
 
 ## [0.3.2] - 2026-09-17
 

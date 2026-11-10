@@ -1,6 +1,6 @@
 [project]
 name = "agent-trust-plane"
-version = "0.3.2"
+version = "0.4.0"
 description = "Authorization boundary and security regression testing for AI agent tool calls (MCP): decide on arguments against delegated authority, bind decisions to single-use grants, replay, and pin denials as CI tests. Experimental."
 readme = "README.md"
 requires-python = ">=3.12"
