@@ -111,22 +111,23 @@ def _payment_envelope(grant_id: str) -> ActionEnvelope:
 # ------------------------------------------------------------ A: engine only
 def bench_engine(n: int) -> list[dict[str, Any]]:
     from atp_core import AuthorityConstraints, Money
-    from atp_identity import DelegationRequest
+    from atp_identity import DelegationRequest, EphemeralPrincipalKeys, sign_root_request
 
-    svc = DelegationService(InMemoryDelegationStore())
+    keys = EphemeralPrincipalKeys()
+    svc = DelegationService(InMemoryDelegationStore(), principal_keys=keys)
     now = datetime.now(UTC)
-    root = svc.issue(
-        DelegationRequest(
-            label="root",
-            grantor=HUMAN,
-            grantee=HUMAN,
-            capabilities=frozenset({"pay:vendor"}),
-            resource_scope=("vendor:*",),
-            constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
-            expires_at=now + timedelta(days=1),
-        ),
-        now=now,
+    unsigned = DelegationRequest(
+        label="root",
+        grantor=HUMAN,
+        grantee=HUMAN,
+        capabilities=frozenset({"pay:vendor"}),
+        resource_scope=("vendor:*",),
+        constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
+        expires_at=now + timedelta(days=1),
     )
+    # The human signs its own root (C5).
+    signed = sign_root_request(unsigned.model_dump(mode="json", exclude_none=True), keys, now=now)
+    root = svc.issue(DelegationRequest.model_validate(signed), now=now)
     ap = svc.issue(
         DelegationRequest(
             label="ap",
@@ -157,10 +158,14 @@ def bench_engine(n: int) -> list[dict[str, Any]]:
 
     import sqlite3
 
-    from atp_audit import EventType, InMemoryTraceStore, SqliteTraceStore
-    from atp_gateway.grants import GrantSigner, new_grant_claims
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    signer = GrantSigner(b"benchmark-signing-key-at-least-32-bytes-long!!")
+    from atp_audit import EventType, InMemoryTraceStore, SqliteTraceStore
+    from atp_gateway.grants import GrantSigner, GrantVerifier, kid_for, new_grant_claims
+
+    grant_key = Ed25519PrivateKey.from_private_bytes(bytes(32))
+    signer = GrantSigner(grant_key, kid_for(grant_key.public_key()))
+    verifier = GrantVerifier({signer.kid: grant_key.public_key()})
     claims = new_grant_claims(
         trace_id=env.trace_id,
         decision_id="dec_bench",
@@ -172,9 +177,9 @@ def bench_engine(n: int) -> list[dict[str, Any]]:
         now=now,
     )
     s, c = timed(lambda _: signer.mint(claims), n)
-    rows.append(summarise("A3. grant mint (HMAC-SHA256)", s, c))
+    rows.append(summarise("A3. grant mint (Ed25519)", s, c))
     token = signer.mint(claims)
-    s, c = timed(lambda _: signer.verify(token), n)
+    s, c = timed(lambda _: verifier.verify(token), n)
     rows.append(summarise("A4. grant verify", s, c))
 
     payload = {"envelope": env.model_dump(mode="json"), "action_hash": env.action_hash}
@@ -214,11 +219,21 @@ def bench_gateway_asgi(n: int) -> dict[str, Any]:
 
 
 def bench_gateway_sqlite(n: int) -> dict[str, Any]:
+    from atp_gateway.grant_keys import generate_grant_key
+
     db = Path(tempfile.mkdtemp(prefix="atp-bench-gw-")) / "atp.db"
+    from atp_identity import FilePrincipalKeys
+    from finance_agent import HUMAN
+
+    kid = generate_grant_key(db.parent / "keys")
+    # Root delegations are signed by the human's own key (C5).
+    FilePrincipalKeys(db.parent / "principals").generate(HUMAN.id)
     app = create_app(
         GatewaySettings(
             database_path=str(db),
-            grant_signing_key="benchmark-signing-key-at-least-32-bytes-long!!",
+            grant_keys_dir=str(db.parent / "keys"),
+            grant_signing_kid=kid,
+            principal_keys_dir=str(db.parent / "principals"),
             operator_key="benchmark-operator-key-at-least-32-bytes-long!!",
         )
     )
@@ -229,7 +244,7 @@ def bench_gateway_sqlite(n: int) -> dict[str, Any]:
 
 
 def bench_gateway_http(n: int, gw: LocalGateway) -> dict[str, Any]:
-    client = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+    client = gw.operator_client()
     return _bench_gateway(client, n, "C. gateway authorize+execute (HTTP loopback)")
 
 
@@ -273,7 +288,7 @@ def bench_mcp(n: int, gw: LocalGateway) -> tuple[dict[str, Any], dict[str, Any],
     direct_dir, proxy_dir = tmp / "direct", tmp / "proxy"
     direct_dir.mkdir()
     proxy_dir.mkdir()
-    operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+    operator = gw.operator_client()
     agent = PrincipalRef(id="bench-agent", kind=PrincipalKind.AGENT)
     human = PrincipalRef(id="bench-human", kind=PrincipalKind.HUMAN)
     token = operator.issue_credential(agent.model_dump(mode="json"), label="bench")["token"]
@@ -303,6 +318,7 @@ def bench_mcp(n: int, gw: LocalGateway) -> tuple[dict[str, Any], dict[str, Any],
     cfg.write_text(
         yaml.safe_dump(
             {
+                "version": 1,
                 "gateway": gw.url,
                 "server_name": "notes",
                 "principal": human.model_dump(mode="json"),
@@ -340,6 +356,7 @@ def bench_mcp(n: int, gw: LocalGateway) -> tuple[dict[str, Any], dict[str, Any],
     wrap_cfg.write_text(
         yaml.safe_dump(
             {
+                "version": 1,
                 "server_name": "notes",
                 "upstream": {
                     "command": sys.executable,

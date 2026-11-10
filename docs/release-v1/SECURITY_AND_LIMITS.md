@@ -44,10 +44,12 @@ create them.
    copy of the server cannot do the real work. This is a configuration
    pattern. There is no vault.
 3. **Gateway credentials stay off the upstream.** `ATP_OPERATOR_KEY`,
-   `ATP_GRANT_SIGNING_KEY`, and the agent token (`ATP_AGENT_TOKEN` unless
-   `agent_token_env` says otherwise) must not be copied into
-   `upstream.env`, `upstream.headers`, or `upstream.headers_env`. The
-   proxy refuses to start when that copy is visible in the config.
+   `ATP_GRANT_SIGNING_KID`, `ATP_GRANT_KEYS_DIR`, `ATP_HOME`, the grant
+   key itself (a PEM private key or a `grant-<kid>.key` path), and the
+   agent token (`ATP_AGENT_TOKEN` unless `agent_token_env` says otherwise)
+   must not be copied into `upstream.env`, `upstream.headers`,
+   `upstream.headers_env` or `upstream.args`. The proxy refuses to start
+   when that copy is visible in the config.
    An upstream API token under a different variable name is allowed.
 4. **The operator key is not on the agent host.** It is the operator
    credential (`docs/security/deployment.md`). Agents do not receive it.

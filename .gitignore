@@ -16,6 +16,7 @@ htmlcov/
 *.db-journal
 *.sqlite
 data/
+!bench/data/
 eval-reports/
 
 # node
@@ -28,6 +29,7 @@ next-env.d.ts
 # env
 .env
 .env.local
+atp-keys/
 
 # os / editors
 .DS_Store
@@ -38,3 +40,7 @@ Thumbs.db
 
 # local ATP home (keys + evidence store)
 .atp/
+
+# the 0.3.2 upgrade fixture is a real (throwaway demo) home and must be committed
+!tests/upgrade/fixtures/home-0.3.2/**
+tests/upgrade/fixtures/home-0.3.2/**/atp.db-*

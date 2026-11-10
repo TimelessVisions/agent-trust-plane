@@ -43,12 +43,13 @@ from atp_identity import AuthenticatedAgent, DelegationRequest
 from gateway_fixtures import (
     AP_AGENT,
     ATTACKER_ACCOUNT,
+    GRANT_KEY_SETTINGS,
     HUMAN,
     NOW,
     OPERATOR_KEY,
     ORCHESTRATOR,
-    SIGNING_KEY,
     Clock,
+    signed_root,
 )
 
 
@@ -56,7 +57,7 @@ def _runtime(clock: Clock) -> Runtime:
     rt = build_runtime(
         GatewaySettings(
             database_path=":memory:",
-            grant_signing_key=SIGNING_KEY,
+            **GRANT_KEY_SETTINGS,
             operator_key=OPERATOR_KEY,
         )
     )
@@ -67,14 +68,17 @@ def _runtime(clock: Clock) -> Runtime:
 def _chain(rt: Runtime, limit: str = "1000") -> str:
     tp = rt.trust_plane
     root = tp.issue_delegation(
-        DelegationRequest(
-            label="root",
-            grantor=HUMAN,
-            grantee=HUMAN,
-            capabilities=frozenset({"pay:vendor", "read:invoice"}),
-            resource_scope=("vendor:*", "invoice:*"),
-            constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
-            expires_at=NOW + timedelta(days=30),
+        signed_root(
+            DelegationRequest(
+                label="root",
+                grantor=HUMAN,
+                grantee=HUMAN,
+                capabilities=frozenset({"pay:vendor", "read:invoice"}),
+                resource_scope=("vendor:*", "invoice:*"),
+                constraints=AuthorityConstraints(max_amount=Money(amount="10000", currency="USD")),
+                expires_at=NOW + timedelta(days=30),
+            ),
+            NOW,
         )
     )
     orch = tp.issue_delegation(

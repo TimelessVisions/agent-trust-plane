@@ -1,0 +1,13 @@
+{
+  "generator": "scripts/make_032_fixture.py",
+  "package": "agent-trust-plane==0.3.2",
+  "command": "atp demo --out <tmp> wrap",
+  "renamed": {
+    "dot-atp": ".atp",
+    "dot-atp/dot-gitignore": ".atp/.gitignore"
+  },
+  "traces": [
+    "8e5031658d06",
+    "40878214290b"
+  ]
+}

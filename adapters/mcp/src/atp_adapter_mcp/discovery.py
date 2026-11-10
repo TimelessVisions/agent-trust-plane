@@ -18,7 +18,7 @@ from typing import Any
 from mcp import types
 
 from atp_adapter_mcp.config import AuthorityConfig, ProxyConfig, UpstreamConfig
-from atp_adapter_mcp.mapping import PathNormalization, ToolMapping
+from atp_adapter_mcp.mapping import PathNormalization, ToolMapping, tool_definition_sha256
 
 PATH_ARGUMENTS = ("path", "file_path", "filepath", "filename", "directory", "dir", "source")
 ID_ARGUMENTS = (
@@ -121,6 +121,7 @@ def propose_config(
                 resource_template=template,
                 path_normalization=norm,
                 description=_clean(tool.description),
+                schema_sha256=tool_definition_sha256(tool),
             )
         except ValueError:
             # A tool name outside the MCP naming guidance cannot be mapped; it
@@ -169,6 +170,18 @@ def propose_config(
         "capability before relying on it"
     )
     return proposal
+
+
+def grant_hints(config: ProxyConfig, config_name: str = "atp-mcp.yaml") -> list[str]:
+    """One line per tool mapped to a destructive capability the config does not
+    delegate, saying exactly what to add to grant it."""
+    granted = set(config.authority.capabilities) if config.authority else set()
+    destroy = f"{config.server_name}:destroy"
+    return [
+        f'  to allow {m.mcp_tool}: add "{m.capability}" to authority.capabilities in {config_name}'
+        for m in config.tools
+        if m.capability == destroy and m.capability not in granted
+    ]
 
 
 def render_header(proposal: Proposal, command: str) -> str:

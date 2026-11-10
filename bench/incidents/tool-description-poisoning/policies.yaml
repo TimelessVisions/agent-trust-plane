@@ -1,0 +1,5 @@
+version: 1
+policy_sets:
+  - version: description-fixture-v1
+    description: Synthetic read-only file scope policy
+    rules: []

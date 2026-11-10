@@ -1,0 +1,271 @@
+{
+  "finished_at": "2026-11-01T12:00:00.104000Z",
+  "policy_set": "notes-v1",
+  "results": [
+    {
+      "decision": {
+        "action_hash": "d4fe88ff00a0b9b3e8d30f170e07bd45a44c9f8a043aa46d38e903289c2ed04f",
+        "approval": null,
+        "decided_at": "2026-11-01T12:00:00.090000Z",
+        "decision_id": "dec_0628d98737f64c92a361bce9b7cb067d",
+        "effective_authority": {
+          "budgets": [],
+          "capabilities": [
+            "notes:read",
+            "notes:write"
+          ],
+          "constraints": {
+            "budget": null,
+            "currencies": null,
+            "max_amount": null
+          },
+          "expires_at": "2026-11-02T12:00:00.082000Z",
+          "grant_chain": [
+            "grt_0fe7682f9b2449d5bf67f820fec663ba",
+            "grt_6369850dad244a17ac468a48e3a5709e"
+          ],
+          "holder": {
+            "id": "notes-agent",
+            "kind": "agent"
+          },
+          "resource_scope": [
+            "*"
+          ],
+          "root_principal": {
+            "id": "local-user",
+            "kind": "human"
+          }
+        },
+        "enforcement": "enforce",
+        "envelope_id": "env_473fdf37ffce4a75bbc5705cb3489ec1",
+        "evaluations": [
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": "2026-11-02T12:00:00.082000+00:00",
+                "name": "chain_expires_at",
+                "requested": "2026-11-01T12:00:00.090000+00:00",
+                "satisfied": true
+              }
+            ],
+            "message": "delegation chain of 2 grant(s) rooted at human:local-user is valid",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "delegation.valid",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": [
+                  "notes:read",
+                  "notes:write"
+                ],
+                "name": "capability",
+                "requested": "notes:write",
+                "satisfied": true
+              }
+            ],
+            "message": "capability 'notes:write' is held",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "capability.required",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": [
+                  "*"
+                ],
+                "name": "resource_scope",
+                "requested": "id:todo",
+                "satisfied": true
+              }
+            ],
+            "message": "resource 'id:todo' is within scope",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "resource.scope",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": 2000,
+                "name": "text.length",
+                "requested": 8,
+                "satisfied": true
+              }
+            ],
+            "message": "text length 8 within 2000",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "rule.short-notes",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          }
+        ],
+        "explanation": "all 4 applicable policies passed",
+        "matched_policy": null,
+        "outcome": "ALLOW",
+        "policy_set_version": "notes-v1",
+        "reason_code": "ALLOWED",
+        "replay_of": null,
+        "trace_id": "51c792117eff"
+      },
+      "duration_ms": 1,
+      "error": null,
+      "expected_outcome": "ALLOW",
+      "expected_policy": null,
+      "expected_reason": "ALLOWED",
+      "explanation": "ALLOW ALLOWED under notes-v1",
+      "name": "write allowed",
+      "observed_outcome": "ALLOW",
+      "observed_policy": null,
+      "observed_reason": "ALLOWED",
+      "passed": true,
+      "trace_id": "51c792117eff"
+    },
+    {
+      "decision": {
+        "action_hash": "6204c0620a17028ee9878434fc6a6b5a33252df37a7fe474b6738cc9545017c2",
+        "approval": null,
+        "decided_at": "2026-11-01T12:00:00.099000Z",
+        "decision_id": "dec_3929be1b024144efb9000f2e56abe49c",
+        "effective_authority": {
+          "budgets": [],
+          "capabilities": [
+            "notes:read",
+            "notes:write"
+          ],
+          "constraints": {
+            "budget": null,
+            "currencies": null,
+            "max_amount": null
+          },
+          "expires_at": "2026-11-02T12:00:00.082000Z",
+          "grant_chain": [
+            "grt_0fe7682f9b2449d5bf67f820fec663ba",
+            "grt_6369850dad244a17ac468a48e3a5709e"
+          ],
+          "holder": {
+            "id": "notes-agent",
+            "kind": "agent"
+          },
+          "resource_scope": [
+            "*"
+          ],
+          "root_principal": {
+            "id": "local-user",
+            "kind": "human"
+          }
+        },
+        "enforcement": "enforce",
+        "envelope_id": "env_3af49a01d21646c59471016f36d0cb69",
+        "evaluations": [
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": "2026-11-02T12:00:00.082000+00:00",
+                "name": "chain_expires_at",
+                "requested": "2026-11-01T12:00:00.099000+00:00",
+                "satisfied": true
+              }
+            ],
+            "message": "delegation chain of 2 grant(s) rooted at human:local-user is valid",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "delegation.valid",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": [
+                  "notes:read",
+                  "notes:write"
+                ],
+                "name": "capability",
+                "requested": "notes:destroy",
+                "satisfied": false
+              }
+            ],
+            "message": "capability 'notes:destroy' is not held by agent:notes-agent; held: ['notes:read', 'notes:write']",
+            "outcome": "DENY",
+            "policy": {
+              "id": "capability.required",
+              "version": "v1"
+            },
+            "reason_code": "CAPABILITY_NOT_GRANTED"
+          },
+          {
+            "constraints": [
+              {
+                "detail": null,
+                "limit": [
+                  "*"
+                ],
+                "name": "resource_scope",
+                "requested": "id:todo",
+                "satisfied": true
+              }
+            ],
+            "message": "resource 'id:todo' is within scope",
+            "outcome": "ALLOW",
+            "policy": {
+              "id": "resource.scope",
+              "version": "v1"
+            },
+            "reason_code": "ALLOWED"
+          }
+        ],
+        "explanation": "capability 'notes:destroy' is not held by agent:notes-agent; held: ['notes:read', 'notes:write']",
+        "matched_policy": {
+          "id": "capability.required",
+          "version": "v1"
+        },
+        "outcome": "DENY",
+        "policy_set_version": "notes-v1",
+        "reason_code": "CAPABILITY_NOT_GRANTED",
+        "replay_of": null,
+        "trace_id": "100f69cba74a"
+      },
+      "duration_ms": 2,
+      "error": null,
+      "expected_outcome": "DENY",
+      "expected_policy": "capability.required.v1",
+      "expected_reason": "CAPABILITY_NOT_GRANTED",
+      "explanation": "DENY CAPABILITY_NOT_GRANTED by capability.required.v1 under notes-v1",
+      "name": "delete denied",
+      "observed_outcome": "DENY",
+      "observed_policy": "capability.required.v1",
+      "observed_reason": "CAPABILITY_NOT_GRANTED",
+      "passed": true,
+      "trace_id": "100f69cba74a"
+    }
+  ],
+  "run_id": "reg_c91f2ace951c400a83ba2a89ef282575",
+  "started_at": "2026-11-01T12:00:00.081000Z",
+  "suite": "recorded regression cases",
+  "summary": {
+    "failed": 0,
+    "ok": true,
+    "passed": 2
+  }
+}

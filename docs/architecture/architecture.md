@@ -17,7 +17,7 @@ flowchart LR
     subgraph Gateway["Trust gateway (services/gateway)"]
         API[FastAPI routes]
         TP[TrustPlane service]
-        G[Execution grants<br/>HMAC + store]
+        G[Execution grants<br/>Ed25519 + store]
         T[Tool registry]
     end
 
@@ -104,7 +104,12 @@ action_hash        what an execution grant would be bound to
 
 ### Execution grant (`atp_gateway.grants`)
 
-`atp-grant/1` = `base64url(canonical claims) . base64url(HMAC-SHA256)`
+`atp-grant/2` = `base64url(header) . base64url(canonical claims) . base64url(Ed25519 signature)`,
+with `header = {"alg": "EdDSA", "kid": <kid>, "v": "atp-grant/2"}` and the
+signature over `base64url(header) . base64url(claims)`. `kid` is the first 16
+hex characters of SHA-256 over the raw public key. Keys live in
+`.atp/keys/grant-<kid>.{key,pub,retired}`; see `docs/formal/grant-lifecycle.md`
+for rotation. `atp-grant/1` (HMAC) tokens are rejected as `GRANT_MALFORMED`.
 
 Claims: `grant_id, trace_id, decision_id, envelope_id, action_hash, agent_id,
 policy_set_version, issued_at, expires_at`. A server-side record tracks
@@ -157,7 +162,7 @@ sequenceDiagram
     AG->>GW: POST /authorize
     GW-->>AG: ALLOW + signed single-use grant (TTL 120s)
     AG->>GW: POST /execute (envelope, grant)
-    GW->>GW: verify HMAC, expiry, action_hash == envelope.action_hash
+    GW->>GW: verify Ed25519 (by kid), expiry, action_hash == envelope.action_hash
     GW->>GW: re-resolve delegation (still valid?)
     GW->>GS: UPDATE status='consumed' WHERE status='issued'
     GS-->>GW: rowcount 1
@@ -198,7 +203,7 @@ Two credential kinds, never interchangeable:
 | Credential | Header | Who holds it | What it permits |
 |---|---|---|---|
 | Agent credential `atpa_<id>.<secret>` | `Authorization: Bearer …` | one agent | authorize, execute, write its own provenance, delegate *from its own* grants, revoke grants it issued |
-| Operator key | `X-ATP-Operator-Key` | the deployment operator | issue/list/revoke agent credentials, human-rooted delegations, policy-set override, run evals, read traces/ledger/delegations, replay |
+| Operator key | `X-ATP-Operator-Key` | the deployment operator | issue/list/revoke agent credentials, human-rooted delegations (a root also needs the human's own signature), policy-set override, run evals, read traces/ledger/delegations, replay |
 
 Credentials are issued by `POST /agents/{id}/credentials` (token shown once,
 SHA-256 stored), listed without secrets, and revoked by id. Revocation and

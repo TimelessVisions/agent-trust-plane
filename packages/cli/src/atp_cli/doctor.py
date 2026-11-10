@@ -94,11 +94,17 @@ def _env_file(root: Path) -> Check:
             "create with `uv run atp keygen --write .env`",
         )
     text = env.read_text(encoding="utf-8", errors="replace")
-    has = all(k in text for k in ("ATP_GRANT_SIGNING_KEY=", "ATP_OPERATOR_KEY="))
+    needed = ("ATP_OPERATOR_KEY=", "ATP_GRANT_KEYS_DIR=", "ATP_GRANT_SIGNING_KID=")
+    has = all(k in text for k in needed)
+    legacy = "ATP_GRANT_SIGNING_KEY=" in text and not has
     return Check(
         ".env with gateway keys",
         has,
-        "present" if has else "present but missing keys",
+        "present"
+        if has
+        else "has the 0.3 HMAC ATP_GRANT_SIGNING_KEY, which 1.0 no longer accepts"
+        if legacy
+        else "present but missing keys",
         "" if has else "run `uv run atp keygen --write .env.new` and merge",
     )
 

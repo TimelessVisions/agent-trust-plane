@@ -12,6 +12,9 @@ def new_id(prefix: str) -> str:
 def new_secret_key() -> str:
     """A 64-character URL-safe secret that never starts with "-".
 
+    Used for the operator key only; execution grants use Ed25519 key pairs
+    (``atp_gateway.grant_keys``).
+
     Keys are pasted into command lines (`atp record --operator-key KEY`), and
     argparse reads a leading "-" as another option. token_urlsafe draws one
     about 1 time in 64, so redraw until it does not.

@@ -360,3 +360,236 @@ def test_payments_include_reuses_builtin_policies(tmp_path: Path) -> None:
     assert {"payments.vendor.max_amount", "payments.vendor.approved_destination"} <= ids
     threshold = next(pol for pol in ps.policies if pol.id == "payments.approval_threshold")
     assert str(threshold.threshold.amount) == "500"  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------- argument_subset_of
+def _subset_set(optional: bool = False, values: list[Any] | None = None) -> Any:
+    rule: dict[str, Any] = {
+        "id": "recipients",
+        "applies_to": {"tool": "mcp.notes", "action": "write_note"},
+        "kind": "argument_subset_of",
+        "argument": "to",
+        "values": values if values is not None else ["a@x", "b@x", "c@x"],
+    }
+    if optional:
+        rule["optional"] = True
+    return build_policy_set(
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+        ).policy_sets[0]
+    )
+
+
+def test_subset_allows_all_known() -> None:
+    d = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": ["a@x", "b@x"]}))
+    assert d.outcome is DecisionOutcome.ALLOW
+    empty = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": []}))
+    assert empty.outcome is DecisionOutcome.ALLOW
+
+
+def test_subset_denies_one_unknown() -> None:
+    d = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": ["a@x", "evil@y"]}))
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
+    assert d.matched_policy is not None and d.matched_policy.id == "rule.recipients"
+    ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
+    c = ev.constraints[0]
+    assert c.satisfied is False
+    assert c.limit == {"allowed": ["a@x", "b@x", "c@x"], "offending": ["evil@y"]}
+    assert "evil@y" in ev.message
+    # case-sensitive, like argument_allowed_values
+    upper = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": ["A@x"]}))
+    assert upper.outcome is DecisionOutcome.DENY
+
+
+def test_subset_scalar_treated_as_list() -> None:
+    ok = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": "a@x"}))
+    assert ok.outcome is DecisionOutcome.ALLOW
+    bad = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"to": "evil@y"}))
+    assert bad.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
+
+
+def test_subset_missing_argument_denies_unless_optional() -> None:
+    d = PolicyEngine().evaluate(_subset_set(), ctx(arguments={"text": "a"}))
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_MISSING
+    ok = PolicyEngine().evaluate(_subset_set(optional=True), ctx(arguments={"text": "a"}))
+    assert ok.outcome is DecisionOutcome.ALLOW
+
+
+def test_subset_requires_values() -> None:
+    from pydantic import ValidationError
+
+    base = {
+        "id": "r",
+        "applies_to": {"tool": "*"},
+        "kind": "argument_subset_of",
+        "argument": "to",
+    }
+    with pytest.raises(ValidationError, match=r"argument_subset_of needs .values."):
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [base]}]}
+        )
+
+
+def _subset_decide(values: list[Any], arg: Any) -> Any:
+    return PolicyEngine().evaluate(_subset_set(values=values), ctx(arguments={"to": arg}))
+
+
+def test_subset_is_type_strict() -> None:
+    assert _subset_decide([1], [1]).outcome is DecisionOutcome.ALLOW
+    assert _subset_decide([1, 2], [2, 1]).outcome is DecisionOutcome.ALLOW
+    for values, arg in (
+        ([1], ["1"]),
+        (["1"], [1]),
+        (["True"], [True]),
+        ([True], ["True"]),
+        ([1], [True]),
+        ([True], [1]),
+    ):
+        d = _subset_decide(values, arg)
+        assert d.outcome is DecisionOutcome.DENY, (values, arg)
+        assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED, (values, arg)
+    assert _subset_decide([True], True).outcome is DecisionOutcome.ALLOW
+
+
+def test_subset_malformed_shapes_deny_as_invalid() -> None:
+    for arg in (
+        [None],
+        ["a@x", None],
+        [{"k": "a@x"}],
+        [["a@x"]],
+        [1.0],
+        {"k": "a@x"},
+        {},
+        None,
+        1.5,
+    ):
+        d = _subset_decide(["a@x", "None", "{'k': 'a@x'}", "['a@x']", "1.0"], arg)
+        assert d.outcome is DecisionOutcome.DENY, arg
+        assert d.reason_code is ReasonCode.ARGUMENT_INVALID, arg
+
+
+def test_subset_malformed_multibyte_does_not_raise() -> None:
+    # canonical JSON keeps non-ASCII; 150 two-byte chars straddle the 200-byte mark.
+    for arg in ({"k": "é" * 150}, [{"k": "é" * 150}], [["é" * 150]]):
+        d = _subset_decide(["a@x"], arg)
+        assert d.outcome is DecisionOutcome.DENY, arg
+        assert d.reason_code is ReasonCode.ARGUMENT_INVALID, arg
+        ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
+        assert len(ev.constraints[0].requested) <= 200
+
+
+def test_allowed_values_multibyte_dict_argument_denies_without_raising() -> None:
+    rule = {
+        "id": "tag",
+        "applies_to": {"tool": "*"},
+        "kind": "argument_allowed_values",
+        "argument": "tag",
+        "values": ["work"],
+    }
+    ps = build_policy_set(
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+        ).policy_sets[0]
+    )
+    d = PolicyEngine().evaluate(ps, ctx(arguments={"tag": [{"k": "é" * 150}]}))
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_NOT_ALLOWED
+
+
+_NULL_RULES: dict[str, dict[str, Any]] = {
+    "argument_subset_of": {"values": ["a"]},
+    "argument_allowed_values": {"values": ["a"]},
+    "argument_max": {"max": 10},
+    "argument_min": {"min": 1},
+    "argument_max_length": {"max_length": 20},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_NULL_RULES))
+def test_explicit_null_is_absent_only_when_optional(kind: str) -> None:
+    def decide(optional: bool) -> Any:
+        rule = {
+            "id": "r",
+            "applies_to": {"tool": "*"},
+            "kind": kind,
+            "argument": "x",
+            "optional": optional,
+            **_NULL_RULES[kind],
+        }
+        ps = build_policy_set(
+            PolicyFile.model_validate(
+                {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+            ).policy_sets[0]
+        )
+        return PolicyEngine().evaluate(ps, ctx(arguments={"x": None}))
+
+    assert decide(True).outcome is DecisionOutcome.ALLOW
+    denied = decide(False)
+    assert denied.outcome is DecisionOutcome.DENY
+    if kind == "argument_max_length":
+        assert denied.reason_code is ReasonCode.ARGUMENT_INVALID
+
+
+def test_subset_deny_message_is_bounded() -> None:
+    values = [f"v{n}@x" for n in range(500)]
+    d = _subset_decide(values, ["evil@y"])
+    ev = next(e for e in d.evaluations if e.policy.id == "rule.recipients")
+    assert "evil@y" in ev.message and len(ev.message) < 300
+
+
+def _one_rule_decide(rule: dict[str, Any], arguments: dict[str, Any]) -> Any:
+    ps = build_policy_set(
+        PolicyFile.model_validate(
+            {"version": 1, "policy_sets": [{"version": "v", "rules": [rule]}]}
+        ).policy_sets[0]
+    )
+    return PolicyEngine().evaluate(ps, ctx(arguments=arguments))
+
+
+def test_required_denies_explicit_null() -> None:
+    rule = {"id": "r", "applies_to": {"tool": "*"}, "kind": "argument_required", "arguments": ["x"]}
+    d = _one_rule_decide(rule, {"x": None})
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_MISSING
+    assert "missing or null" in d.explanation
+    assert _one_rule_decide(rule, {"x": "v"}).outcome is DecisionOutcome.ALLOW
+
+
+def test_forbidden_denies_explicit_null() -> None:
+    rule = {
+        "id": "r",
+        "applies_to": {"tool": "*"},
+        "kind": "argument_forbidden",
+        "arguments": ["x"],
+    }
+    d = _one_rule_decide(rule, {"x": None})
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is ReasonCode.ARGUMENT_FORBIDDEN
+    assert _one_rule_decide(rule, {}).outcome is DecisionOutcome.ALLOW
+
+
+_OUT_OF_BOUNDS: dict[str, tuple[dict[str, Any], Any, ReasonCode]] = {
+    "argument_subset_of": ({"values": ["a"]}, ["a", "b"], ReasonCode.ARGUMENT_NOT_ALLOWED),
+    "argument_allowed_values": ({"values": ["a"]}, "b", ReasonCode.ARGUMENT_NOT_ALLOWED),
+    "argument_max": ({"max": 10}, 11, ReasonCode.ARGUMENT_EXCEEDS_LIMIT),
+    "argument_min": ({"min": 1}, 0, ReasonCode.ARGUMENT_BELOW_MINIMUM),
+    "argument_max_length": ({"max_length": 2}, "abc", ReasonCode.ARGUMENT_TOO_LONG),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_OUT_OF_BOUNDS))
+def test_optional_with_out_of_bounds_value_still_denies(kind: str) -> None:
+    extra, value, code = _OUT_OF_BOUNDS[kind]
+    rule = {
+        "id": "r",
+        "applies_to": {"tool": "*"},
+        "kind": kind,
+        "argument": "x",
+        "optional": True,
+        **extra,
+    }
+    d = _one_rule_decide(rule, {"x": value})
+    assert d.outcome is DecisionOutcome.DENY
+    assert d.reason_code is code

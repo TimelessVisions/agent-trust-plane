@@ -1,0 +1,24 @@
+{
+  "from_version": "notes-v1",
+  "rows": [
+    {
+      "case": "write allowed",
+      "from_outcome": "ALLOW",
+      "from_reason": "ALLOWED",
+      "to_outcome": "DENY",
+      "to_policy": "rule.tiny-notes.v1",
+      "to_reason": "ARGUMENT_TOO_LONG",
+      "transition": "ALLOW_TO_DENY"
+    },
+    {
+      "case": "delete denied",
+      "from_outcome": "DENY",
+      "from_reason": "CAPABILITY_NOT_GRANTED",
+      "to_outcome": "DENY",
+      "to_policy": "capability.required.v1",
+      "to_reason": "CAPABILITY_NOT_GRANTED",
+      "transition": "UNCHANGED_DENY"
+    }
+  ],
+  "to_version": "notes-v2"
+}

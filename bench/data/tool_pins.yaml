@@ -1,0 +1,22 @@
+# Pinned competitor binaries for the bench layers (fetched by atp_bench.tools.fetch_tool).
+# sha256 is the hash of the release ASSET as downloaded (the binary, or the archive).
+# Values were copied from each release's published checksum asset on 2026-11-05 and the
+# downloaded assets were re-hashed to match. A null sha256 makes fetch raise EnvBlocked.
+agentgateway:
+  version: v1.6.0
+  platforms:
+    linux-amd64:
+      url: https://github.com/agentgateway/agentgateway/releases/download/v1.6.0/agentgateway-linux-amd64
+      # published: agentgateway-linux-amd64.sha256
+      sha256: 496ed27e6a96b55a9ad7cabe5c2be7172511f44a3cb113e533d22bf93a7f079d
+      archive: none
+      executable: agentgateway
+toolhive:
+  version: v0.55.2
+  platforms:
+    linux-amd64:
+      url: https://github.com/stacklok/toolhive/releases/download/v0.55.2/toolhive_0.55.2_linux_amd64.tar.gz
+      # published: toolhive_0.55.2_checksums.txt (no per-asset .sha256 exists for ToolHive)
+      sha256: 4336f1fafe173140e8d6a9f0537c32aff35059b4563b664905751fda6f612f44
+      archive: tar.gz
+      executable: thv

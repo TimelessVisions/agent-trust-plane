@@ -18,15 +18,36 @@ Two ways to run:
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from atp_adapter_mcp.mapping import ToolMapping
-from atp_core import SCOPE_PATTERN, PrincipalKind, PrincipalRef, read_bounded_text
+from atp_core import (
+    SCOPE_PATTERN,
+    Budget,
+    Money,
+    PrincipalKind,
+    PrincipalRef,
+    check_file_version,
+    read_bounded_text,
+    warn_if_unversioned,
+)
+
+CONFIG_KIND = "atp-mcp.yaml"
+
+# Tools the gateway executes itself (its ToolRegistry's registered tools, as
+# opposed to the external prefixes it releases to a trusted executor). The
+# adapter must not import atp_gateway, so this is the one copy of that list;
+# a test builds the gateway runtime and asserts the two agree. A mapping onto
+# one of these would have the gateway run the action on ALLOW (a payment
+# settles) while the proxy reports the call as denied, so it is refused.
+GATEWAY_EXECUTED_TOOLS: frozenset[str] = frozenset({"payments"})
 
 
 class UpstreamConfig(BaseModel):
@@ -84,6 +105,19 @@ class AuthorityConfig(BaseModel):
     capabilities: tuple[str, ...] = Field(min_length=1)
     resource_scope: tuple[str, ...] = Field(min_length=1)
     expires_in: str = Field(default="12h", pattern=r"^\d+[smhd]$")
+    max_amount: Money | None = Field(
+        default=None,
+        description="Explicit maximum value per payment. If omitted, payment policies deny.",
+    )
+    currencies: frozenset[str] | None = Field(
+        default=None,
+        description="Explicit currency allowlist for delegated payment actions.",
+    )
+    budget: Budget | None = Field(
+        default=None,
+        description="Cumulative spend per UTC day/week/month for actions whose arguments "
+        "carry an `amount`. Counted per principal and agent, so it binds across sessions.",
+    )
 
     @model_validator(mode="after")
     def _patterns(self) -> AuthorityConfig:
@@ -95,17 +129,29 @@ class AuthorityConfig(BaseModel):
         for c in self.capabilities:
             if not re.fullmatch(r"^[A-Za-z0-9._:-]{1,128}$", c):
                 raise ValueError(f"invalid capability {c!r}")
+        if self.currencies is not None:
+            for currency in self.currencies:
+                if not re.fullmatch(r"[A-Z]{3}", currency):
+                    raise ValueError(f"invalid delegated currency {currency!r}")
+            if self.max_amount is not None and self.max_amount.currency not in self.currencies:
+                raise ValueError("maximum payment currency must be present in delegated currencies")
         return self
 
 
 class ProxyConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    version: Literal[1] = Field(
+        default=1,
+        description="File format version. A file without it loads as 1 with a "
+        "DeprecationWarning; `atp migrate` adds it.",
+    )
     gateway: str = Field(default="http://127.0.0.1:8000")
     server_name: str = Field(
         pattern=r"^[A-Za-z0-9._-]+$",
         max_length=48,
-        description="Short name for the upstream; envelopes use tool='mcp.<server_name>'.",
+        description="Short name for the upstream. Mapped calls use their mapping's `tool`; "
+        "unmapped calls use tool='mcp.<server_name>'.",
     )
     principal: PrincipalRef = Field(
         default=PrincipalRef(id="local-user", kind=PrincipalKind.HUMAN),
@@ -143,6 +189,11 @@ class ProxyConfig(BaseModel):
     )
     request_timeout_seconds: float = Field(default=30.0, ge=1, le=600)
 
+    @field_validator("version", mode="before")
+    @classmethod
+    def _supported_version(cls, value: Any) -> int:
+        return check_file_version(value, CONFIG_KIND)
+
     @model_validator(mode="after")
     def _unique_tools(self) -> ProxyConfig:
         seen: set[str] = set()
@@ -150,6 +201,17 @@ class ProxyConfig(BaseModel):
             if m.mcp_tool in seen:
                 raise ValueError(f"tool {m.mcp_tool!r} is mapped twice")
             seen.add(m.mcp_tool)
+        return self
+
+    @model_validator(mode="after")
+    def _no_mapping_onto_gateway_executed_tools(self) -> ProxyConfig:
+        """Refuse, in every mode, a mapping whose ``tool`` the gateway runs itself."""
+        native = sorted({m.envelope_tool for m in self.tools}.intersection(GATEWAY_EXECUTED_TOOLS))
+        if native:
+            raise ValueError(
+                f"mapping tool(s) {native} name a tool the gateway executes itself; "
+                "a proxied MCP tool needs its own tool name (e.g. 'mcp.<server_name>')"
+            )
         return self
 
     @model_validator(mode="after")
@@ -163,27 +225,45 @@ class ProxyConfig(BaseModel):
         whether some other process can also spawn the upstream command.
         """
         forbidden = gateway_credential_env_names(self.agent_token_env)
-        leaked = sorted(set(self.upstream.env).intersection(forbidden))
-        leaked += [
-            f"headers_env:{var}" for var in self.upstream.headers_env.values() if var in forbidden
-        ]
-        for header, value in self.upstream.headers.items():
+        up = self.upstream
+        leaked = sorted(set(up.env).intersection(forbidden))
+        leaked += [f"headers_env:{var}" for var in up.headers_env.values() if var in forbidden]
+        for header, value in up.headers.items():
             for var in forbidden:
                 secret = os.environ.get(var, "")
                 if secret and value == secret:
                     leaked.append(f"header:{header}=${var}")
+        # The Ed25519 grant key: its PEM, its file, or the directory holding it.
+        places: list[tuple[str, str]] = [(f"env:{k}", v) for k, v in up.env.items()]
+        places += [(f"header:{k}", v) for k, v in up.headers.items()]
+        places += [
+            (f"headers_env:{var}", os.environ.get(var, "")) for var in up.headers_env.values()
+        ]
+        places += [(f"args[{i}]", a) for i, a in enumerate(up.args)]
+        for where, value in places:
+            what = grant_key_material(value)
+            if what:
+                leaked.append(f"{where} ({what})")
         if leaked:
             raise ValueError(
                 "refusing to start: gateway credentials would be given to the upstream "
-                f"({', '.join(leaked)}). Keep ATP_OPERATOR_KEY, ATP_GRANT_SIGNING_KEY, "
+                f"({', '.join(leaked)}). Keep ATP_OPERATOR_KEY, ATP_GRANT_SIGNING_KID, "
+                "ATP_GRANT_KEYS_DIR, ATP_HOME, the grant key files (grant-<kid>.key), "
                 f"and ${self.agent_token_env} out of upstream.env, upstream.headers, "
-                "and upstream.headers_env."
+                "upstream.headers_env and upstream.args."
             )
         return self
 
     @property
     def envelope_tool(self) -> str:
+        """The tool stamped on envelopes for unmapped calls (and what `atp mcp init`
+        writes into every mapping). Mapped calls use ``ToolMapping.envelope_tool``."""
         return f"mcp.{self.server_name}"
+
+    @property
+    def mapped_tools(self) -> tuple[str, ...]:
+        """Distinct envelope tools across ``tools``, sorted."""
+        return tuple(sorted({m.envelope_tool for m in self.tools}))
 
     @property
     def agent_ref(self) -> PrincipalRef:
@@ -202,12 +282,53 @@ class ProxyConfig(BaseModel):
         return next((m for m in self.tools if m.mcp_tool == tool_name), None)
 
 
-_GATEWAY_CREDENTIAL_ENV = ("ATP_OPERATOR_KEY", "ATP_GRANT_SIGNING_KEY")
+_GATEWAY_CREDENTIAL_ENV = (
+    "ATP_OPERATOR_KEY",
+    "ATP_GRANT_SIGNING_KEY",  # the 0.3.x HMAC key; still never handed on
+    "ATP_GRANT_SIGNING_KID",
+    "ATP_GRANT_KEYS_DIR",
+    "ATP_HOME",  # holds keys.env and keys/
+)
+_GRANT_KEY_FILE = re.compile(r"grant-[0-9a-f]{16}\.key\b")
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
 
 def gateway_credential_env_names(agent_token_env: str) -> frozenset[str]:
     return frozenset({*_GATEWAY_CREDENTIAL_ENV, agent_token_env})
+
+
+def _grant_key_dirs() -> list[Path]:
+    dirs = []
+    if os.environ.get("ATP_GRANT_KEYS_DIR"):
+        dirs.append(Path(os.environ["ATP_GRANT_KEYS_DIR"]))
+    dirs.append(Path(os.environ.get("ATP_HOME") or ".atp") / "keys")
+    out = []
+    for d in dirs:
+        with contextlib.suppress(OSError, ValueError, RuntimeError):
+            out.append(d.expanduser().resolve())
+    return out
+
+
+def grant_key_material(value: str) -> str | None:
+    """Why ``value`` would hand the upstream the grant signing key, or None."""
+    if not value:
+        return None
+    if "PRIVATE KEY-----" in value:
+        return "a PEM private key"
+    if _GRANT_KEY_FILE.search(value):
+        return "a grant key file"
+    try:
+        path = Path(value).expanduser().resolve()
+    except (OSError, ValueError, RuntimeError):
+        return None
+    for keys_dir in _grant_key_dirs():
+        if path == keys_dir or path.is_relative_to(keys_dir):
+            return "the grant key directory"
+        if keys_dir.is_relative_to(path):
+            # The ATP home itself, or any ancestor of the keys directory:
+            # access to it is access to the keys below it.
+            return "a directory containing the grant keys"
+    return None
 
 
 def url_host(url: str) -> str:
@@ -232,7 +353,9 @@ def shared_upstream_warning(url: str) -> str | None:
         "upstream is not loopback; the proxy cannot prove it is the only client. "
         "Anything that can open this URL bypasses authorization unless the "
         "upstream accepts connections only from the proxy and the proxy alone "
-        "holds the upstream credential."
+        "holds the upstream credential. Never give the upstream ATP_OPERATOR_KEY, "
+        "ATP_GRANT_SIGNING_KID, or read access to the grant keys "
+        "(.atp/keys/grant-<kid>.key): with them it can act as the operator or mint grants."
     )
 
 
@@ -240,11 +363,15 @@ def load_config(path: str | Path) -> ProxyConfig:
     raw: Any = yaml.safe_load(read_bounded_text(path))
     if not isinstance(raw, dict):
         raise ValueError(f"{path}: expected a mapping at top level")
+    warn_if_unversioned(raw, path, CONFIG_KIND)
     return ProxyConfig.model_validate(raw)
 
 
 def dump_config(config: ProxyConfig, path: str | Path, *, header: str = "") -> None:
-    data = config.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
+    data = {
+        "version": config.version,
+        **config.model_dump(mode="json", exclude_none=True, exclude_defaults=True),
+    }
     data["server_name"] = config.server_name
     text = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
     Path(path).write_text(header + text, encoding="utf-8")

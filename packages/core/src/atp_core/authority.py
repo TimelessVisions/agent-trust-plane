@@ -3,12 +3,61 @@ checks against them)."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atp_core.money import Money
 from atp_core.principals import PrincipalRef
+
+BudgetPeriod = Literal["day", "week", "month"]
+
+
+class Budget(BaseModel):
+    """Cumulative spend allowed per calendar period, in one currency.
+
+    Periods are anchored to UTC calendar boundaries: a ``day`` starts at
+    00:00 UTC, a ``week`` at 00:00 UTC on Monday (ISO 8601), a ``month`` at
+    00:00 UTC on its first day. Spend counts in the period in which it was
+    authorized.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    amount: Money = Field(description="Total allowed per period, in the budget's currency.")
+    period: BudgetPeriod
+
+    def period_start(self, at: datetime) -> datetime:
+        t = at.astimezone(UTC)
+        day = datetime(t.year, t.month, t.day, tzinfo=UTC)
+        if self.period == "day":
+            return day
+        if self.period == "week":
+            return day - timedelta(days=t.weekday())  # Monday is weekday() == 0
+        return datetime(t.year, t.month, 1, tzinfo=UTC)
+
+    def period_end(self, at: datetime) -> datetime:
+        start = self.period_start(at)
+        if self.period == "day":
+            return start + timedelta(days=1)
+        if self.period == "week":
+            return start + timedelta(days=7)
+        if start.month == 12:
+            return datetime(start.year + 1, 1, 1, tzinfo=UTC)
+        return datetime(start.year, start.month + 1, 1, tzinfo=UTC)
+
+
+class ChainBudget(BaseModel):
+    """A budget as it sits on one grant of a resolved chain. Spend is counted
+    per (root principal, grantee of that grant), so every action below the
+    grant counts against it, across sessions and sibling grants."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    grant_id: str
+    grantee: PrincipalRef
+    budget: Budget
 
 
 class AuthorityConstraints(BaseModel):
@@ -28,6 +77,11 @@ class AuthorityConstraints(BaseModel):
     currencies: frozenset[str] | None = Field(
         default=None,
         description="Currencies this authority may transact in. None = inherit.",
+    )
+    budget: Budget | None = Field(
+        default=None,
+        description="Cumulative spend per UTC calendar period for everything done under "
+        "this grant. Every budget on a chain applies; the tightest binds.",
     )
 
 
@@ -50,6 +104,10 @@ class EffectiveAuthority(BaseModel):
     )
     constraints: AuthorityConstraints
     expires_at: datetime = Field(description="Earliest expiry across the chain.")
+    budgets: tuple[ChainBudget, ...] = Field(
+        default=(),
+        description="Every budget on the chain, root first. Each applies independently.",
+    )
 
     @property
     def depth(self) -> int:

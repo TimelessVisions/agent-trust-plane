@@ -5,7 +5,13 @@ logic. Other packages import from here so that identity, policy, and audit do
 not depend on one another.
 """
 
-from atp_core.authority import AuthorityConstraints, EffectiveAuthority
+from atp_core.authority import (
+    AuthorityConstraints,
+    Budget,
+    BudgetPeriod,
+    ChainBudget,
+    EffectiveAuthority,
+)
 from atp_core.canonical import canonical_hash, canonical_json, sha256_hex
 from atp_core.decision import (
     ApprovalRequirement,
@@ -19,6 +25,13 @@ from atp_core.decision import (
 from atp_core.envelope import ActionEnvelope, ContentSource, ContentTrust, Provenance
 from atp_core.errors import ATPError, DelegationError, EnvelopeError, GrantError, ToolError
 from atp_core.files import MAX_INPUT_BYTES, read_bounded_text
+from atp_core.fileversion import (
+    FILE_FORMAT_VERSION,
+    UnversionedFileWarning,
+    check_file_version,
+    show_unversioned_file_warnings,
+    warn_if_unversioned,
+)
 from atp_core.ids import new_id, new_secret_key, new_trace_id
 from atp_core.money import Money
 from atp_core.principals import PrincipalKind, PrincipalRef
@@ -27,6 +40,7 @@ from atp_core.resources import RESOURCE_PATTERN, SCOPE_PATTERN
 from atp_core.timeutil import ensure_aware, in_seconds, utcnow
 
 __all__ = [
+    "FILE_FORMAT_VERSION",
     "MAX_INPUT_BYTES",
     "RESOURCE_PATTERN",
     "SCOPE_PATTERN",
@@ -34,6 +48,9 @@ __all__ = [
     "ActionEnvelope",
     "ApprovalRequirement",
     "AuthorityConstraints",
+    "Budget",
+    "BudgetPeriod",
+    "ChainBudget",
     "ConstraintEvaluation",
     "ContentSource",
     "ContentTrust",
@@ -52,8 +69,10 @@ __all__ = [
     "Provenance",
     "ReasonCode",
     "ToolError",
+    "UnversionedFileWarning",
     "canonical_hash",
     "canonical_json",
+    "check_file_version",
     "ensure_aware",
     "in_seconds",
     "new_id",
@@ -61,5 +80,7 @@ __all__ = [
     "new_trace_id",
     "read_bounded_text",
     "sha256_hex",
+    "show_unversioned_file_warnings",
     "utcnow",
+    "warn_if_unversioned",
 ]

@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 
 from atp_core import (
     AuthorityConstraints,
+    ChainBudget,
     DelegationError,
     EffectiveAuthority,
     PrincipalKind,
@@ -26,6 +27,7 @@ from atp_core import (
     utcnow,
 )
 from atp_identity.grants import DelegationGrant, DelegationRequest
+from atp_identity.principal_keys import PrincipalKeys, verify_root
 from atp_identity.scope import covers, scope_covers
 from atp_identity.store import DelegationStore
 
@@ -50,8 +52,15 @@ class ResolvedChain(BaseModel):
 
 
 class DelegationService:
-    def __init__(self, store: DelegationStore) -> None:
+    """``principal_keys`` holds the public keys of the humans whose root
+    grants this service accepts. Without it no root verifies: every chain is
+    denied (fail closed)."""
+
+    def __init__(
+        self, store: DelegationStore, *, principal_keys: PrincipalKeys | None = None
+    ) -> None:
         self._store = store
+        self.principal_keys = principal_keys
 
     @property
     def store(self) -> DelegationStore:
@@ -123,6 +132,7 @@ class DelegationService:
                 ReasonCode.DELEGATION_ROOT_NOT_HUMAN,
                 f"root grant {root.grant_id} must be a human's self-issued authority",
             )
+        verify_root(root, self.principal_keys)
         leaf = chain[-1]
         if agent is not None and leaf.grantee != agent:
             raise DelegationError(
@@ -150,7 +160,9 @@ class DelegationService:
         else:
             self._check_against_parent(request, now)
 
+        ids: dict[str, str] = {"grant_id": request.grant_id} if request.grant_id else {}
         grant = DelegationGrant(
+            **ids,  # type: ignore[arg-type]
             label=request.label,
             grantor=request.grantor,
             grantee=request.grantee,
@@ -158,9 +170,20 @@ class DelegationService:
             capabilities=request.capabilities,
             resource_scope=request.resource_scope,
             constraints=request.constraints,
-            issued_at=now,
+            issued_at=request.issued_at or now,
             expires_at=request.expires_at,
+            signature=request.signature,
+            signer_kid=request.signer_kid,
         )
+        if grant.is_root:
+            # The human's signature, checked before the grant is stored (and
+            # again on every resolution). The operator cannot supply it.
+            verify_root(grant, self.principal_keys)
+            if self._store.get(grant.grant_id) is not None:
+                raise DelegationError(
+                    ReasonCode.DELEGATION_CHAIN_BROKEN,
+                    f"grant {grant.grant_id} already exists",
+                )
         self._store.put(grant)
         return grant
 
@@ -296,4 +319,12 @@ def _intersect(chain: tuple[DelegationGrant, ...]) -> EffectiveAuthority:
         resource_scope=effective_scope,
         constraints=AuthorityConstraints(max_amount=max_amount, currencies=currencies),
         expires_at=expires_at,
+        # Budgets are not intersected into one: each is counted against its own
+        # grant's (root, grantee) and checked on its own, so the tightest binds
+        # and budgets with different periods apply independently.
+        budgets=tuple(
+            ChainBudget(grant_id=g.grant_id, grantee=g.grantee, budget=g.constraints.budget)
+            for g in chain
+            if g.constraints.budget is not None
+        ),
     )

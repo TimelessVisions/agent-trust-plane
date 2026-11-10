@@ -74,6 +74,8 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ATP_OPERATOR_KEY", raising=False)
     monkeypatch.delenv("ATP_GRANT_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("ATP_GRANT_SIGNING_KID", raising=False)
+    monkeypatch.delenv("ATP_GRANT_KEYS_DIR", raising=False)
     monkeypatch.setenv("NOTES_DIR", str(notes))
     assert (
         _run(
@@ -94,6 +96,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path
     )
     # The generated config does not know the server's env; add it and tighten the scope.
     data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    assert data["version"] == 1  # `atp mcp init` writes the current file format version
     data["upstream"]["env"] = {"NOTES_DIR": str(notes)}
     data["authority"]["resource_scope"] = ["id:*", "tool:*"]
     config.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
@@ -238,3 +241,24 @@ def test_home_is_authoritative_over_stray_env(
     assert settings.operator_key == home.keys()["ATP_OPERATOR_KEY"]
     assert settings.enforcement_mode == "enforce"
     assert os.path.basename(settings.database_path) == "atp.db"
+
+
+def test_wrap_external_tools_extend_env_prefixes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mapped tools are added to $ATP_EXTERNAL_TOOL_PREFIXES, not swapped in for it."""
+    from atp_cli.home import AtpHome
+
+    home = AtpHome(tmp_path / "h").ensure()
+    monkeypatch.delenv("ATP_EXTERNAL_TOOL_PREFIXES", raising=False)
+    assert home.settings(external_tools=("dojo.banking",)).external_tool_prefix_list() == [
+        "mcp.",
+        "dojo.banking",
+    ]
+    monkeypatch.setenv("ATP_EXTERNAL_TOOL_PREFIXES", "mcp.,ext.")
+    assert home.settings().external_tool_prefix_list() == ["mcp.", "ext."]
+    assert home.settings(external_tools=("dojo.banking",)).external_tool_prefix_list() == [
+        "mcp.",
+        "ext.",
+        "dojo.banking",
+    ]

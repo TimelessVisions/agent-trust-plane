@@ -64,7 +64,8 @@ Full matrix incl. what was *not* verified: [compatibility.md](compatibility.md).
 ## Config reference (`atp-mcp.yaml`)
 
 ```yaml
-server_name: fs                     # envelopes use tool "mcp.fs"
+version: 1                          # file format version; `atp migrate` adds it to older files
+server_name: fs                     # unmapped calls use tool "mcp.fs"
 principal: {id: local-user, kind: human}     # default
 agent: {id: fs-agent, kind: agent}           # default "<server_name>-agent"
 policy_set: fs-v1                   # declared in .atp/policies.yaml (wrap) or built-in
@@ -103,6 +104,18 @@ path-like arguments (`path`, `file_path`, `directory`, …) → `path:{arg}`
 with normalisation; id-like arguments → `<arg>:{arg}`; otherwise
 `tool:<name>`. Annotations are unverified server claims; the file is a
 proposal you review (`../security/safe-defaults.md`).
+
+Each mapping's `tool` is the envelope tool for calls it matches, so a
+declared rule's `applies_to.tool` must name it. `atp mcp init` writes
+`tool: mcp.<server_name>` for every mapping. A mapping whose `tool` the
+gateway runs itself (`payments`) is refused when the config loads, in both
+`atp mcp wrap` and `atp mcp proxy`: on ALLOW the gateway would execute the
+action itself while the proxy reported the call as denied. `atp mcp wrap`
+releases every mapping `tool` to the proxy for execution by appending the
+mapping tools to `ATP_EXTERNAL_TOOL_PREFIXES` (or to the default `mcp.` when
+it is unset); it adds to that variable, it does not override it. In proxy
+mode, a remote gateway must list any mapping `tool` outside `mcp.` in its
+own `ATP_EXTERNAL_TOOL_PREFIXES`.
 
 ## Policies that apply
 

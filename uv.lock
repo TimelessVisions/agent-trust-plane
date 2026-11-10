@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -31,9 +31,10 @@ build-constraints = [{ name = "hatchling", specifier = "==1.32.0" }]
 
 [[package]]
 name = "agent-trust-plane"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "mcp" },
@@ -67,6 +68,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "mcp", specifier = ">=2.2,<3" },
@@ -195,7 +197,7 @@ wheels = [
 
 [[package]]
 name = "atp-adapter-http"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "adapters/http" }
 dependencies = [
     { name = "atp-core" },
@@ -210,7 +212,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-adapter-mcp"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "adapters/mcp" }
 dependencies = [
     { name = "atp-adapter-http" },
@@ -229,7 +231,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-audit"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "packages/audit" }
 dependencies = [
     { name = "atp-core" },
@@ -240,7 +242,7 @@ requires-dist = [{ name = "atp-core", editable = "packages/core" }]
 
 [[package]]
 name = "atp-cli"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "atp-adapter-http" },
@@ -267,7 +269,7 @@ requires-dist = [
 
 [[package]]
 name = "atp-core"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "packages/core" }
 dependencies = [
     { name = "pydantic" },
@@ -278,7 +280,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.10" }]
 
 [[package]]
 name = "atp-evals"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "packages/evals" }
 dependencies = [
     { name = "atp-core" },
@@ -307,6 +309,7 @@ dependencies = [
     { name = "atp-core" },
     { name = "atp-identity" },
     { name = "atp-policy" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
@@ -319,6 +322,7 @@ requires-dist = [
     { name = "atp-core", editable = "packages/core" },
     { name = "atp-identity", editable = "packages/identity" },
     { name = "atp-policy", editable = "packages/policy" },
+    { name = "cryptography", specifier = ">=50" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
@@ -326,18 +330,22 @@ requires-dist = [
 
 [[package]]
 name = "atp-identity"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "packages/identity" }
 dependencies = [
     { name = "atp-core" },
+    { name = "cryptography" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "atp-core", editable = "packages/core" }]
+requires-dist = [
+    { name = "atp-core", editable = "packages/core" },
+    { name = "cryptography", specifier = ">=50" },
+]
 
 [[package]]
 name = "atp-policy"
-version = "0.3.2"
+version = "0.4.0"
 source = { editable = "packages/policy" }
 dependencies = [
     { name = "atp-core" },

@@ -31,6 +31,7 @@ import json
 import logging
 import re
 import sys
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -45,14 +46,14 @@ from mcp.server.stdio import stdio_server
 from mcp.shared._httpx_utils import create_mcp_http_client
 
 from atp_adapter_http import AgentClient, GatewayError, TrustPlaneClient
-from atp_adapter_mcp.config import ProxyConfig, shared_upstream_warning
-from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY
-from atp_core import ActionEnvelope, Provenance, canonical_json, new_trace_id
+from atp_adapter_mcp.config import ProxyConfig, UpstreamConfig, shared_upstream_warning
+from atp_adapter_mcp.mapping import UNMAPPED_CAPABILITY, tool_definition_sha256
+from atp_core import ActionEnvelope, Provenance, canonical_hash, canonical_json, new_trace_id
 
 log = logging.getLogger("atp.mcp-proxy")
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._:-]")
-PROXY_VERSION = "0.3.2"
+PROXY_VERSION = "0.4.0"
 
 
 def _safe_action(name: str) -> str:
@@ -82,13 +83,30 @@ class Upstream:
     tools: list[types.Tool]
     transport: str
     protocol_version: str | None = None
+    tool_list_state: dict[str, bool] | None = None
 
     def tool(self, name: str) -> types.Tool | None:
         return next((t for t in self.tools if t.name == name), None)
 
 
+def upstream_process_env(up: UpstreamConfig) -> dict[str, str]:
+    """The whole environment a stdio upstream is started with: the SDK's minimal
+    default (HOME, PATH, ...; no ATP_* variables) plus ``upstream.env``, which
+    ``ProxyConfig`` has already checked for gateway credentials and grant keys."""
+    return {**get_default_environment(), **up.env}
+
+
 @contextlib.asynccontextmanager
 async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
+    state = {"dirty": False}
+
+    async def on_notification(message: types.ServerNotification | Exception) -> None:
+        # No I/O in the notification handler: MCP dispatchers can invoke it
+        # inline. The next tools/list refreshes; pinned tools/call always
+        # revalidates independently of whether the notification was delivered.
+        if isinstance(message, types.ToolListChangedNotification):
+            state["dirty"] = True
+
     up = config.upstream
     if up.url:
         import httpx2
@@ -104,7 +122,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
         async with (
             http,
             streamable_http_client(up.url, http_client=http) as (read, write),
-            ClientSession(read, write) as session,
+            ClientSession(read, write, message_handler=on_notification) as session,
         ):
             init = await session.initialize()
             listed = await session.list_tools()
@@ -113,16 +131,20 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
                 tools=list(listed.tools),
                 transport="http",
                 protocol_version=_negotiated_protocol(init),
+                tool_list_state=state,
             )
         return
     assert up.command is not None
     params = StdioServerParameters(
         command=up.command,
         args=list(up.args),
-        env={**get_default_environment(), **up.env},
+        env=upstream_process_env(up),
         cwd=up.cwd,
     )
-    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+    async with (
+        stdio_client(params) as (read, write),
+        ClientSession(read, write, message_handler=on_notification) as session,
+    ):
         init = await session.initialize()
         listed = await session.list_tools()
         yield Upstream(
@@ -130,6 +152,7 @@ async def connect_upstream(config: ProxyConfig) -> AsyncIterator[Upstream]:
             tools=list(listed.tools),
             transport="stdio",
             protocol_version=_negotiated_protocol(init),
+            tool_list_state=state,
         )
 
 
@@ -158,6 +181,10 @@ class TrustPlaneProxy:
         self.client = client
         self.upstream = upstream
         self.delegation_grant_id: str = config.delegation_grant_id or ""
+        # Calls that got REQUIRE_APPROVAL, keyed by (tool, arguments). The same
+        # call again re-submits the same envelope (same trace, same action
+        # hash) so an approval recorded on that trace can authorize it once.
+        self._awaiting_approval: OrderedDict[str, ActionEnvelope] = OrderedDict()
         self.server: Server[Any] = Server(
             f"atp-proxy:{config.server_name}",
             version=PROXY_VERSION,
@@ -171,13 +198,35 @@ class TrustPlaneProxy:
         )
 
     # ------------------------------------------------------------ tools/list
+    async def _refresh_upstream_tools(self) -> bool:
+        """Re-read the source of truth; never forward if pinned verification fails."""
+        try:
+            listed = await self.upstream.session.list_tools()
+        except Exception as exc:
+            log.warning("could not revalidate upstream tools/list: %s", type(exc).__name__)
+            return False
+        self.upstream.tools = list(listed.tools)
+        if self.upstream.tool_list_state is not None:
+            self.upstream.tool_list_state["dirty"] = False
+        return True
+
+    def _pin_matches(self, tool: types.Tool) -> bool:
+        mapping = self.config.mapping_for(tool.name)
+        if mapping is None or mapping.schema_sha256 is None:
+            return True
+        return tool_definition_sha256(tool) == mapping.schema_sha256
+
     async def _list_tools(
         self, _ctx: ServerRequestContext[Any], _params: types.PaginatedRequestParams | None
     ) -> types.ListToolsResult:
+        state = self.upstream.tool_list_state
+        if state is not None and state["dirty"] and not await self._refresh_upstream_tools():
+            return types.ListToolsResult(tools=[])
         tools = [
             t
             for t in self.upstream.tools
-            if self.config.expose_unmapped_tools or self.config.mapping_for(t.name) is not None
+            if self._pin_matches(t)
+            and (self.config.expose_unmapped_tools or self.config.mapping_for(t.name) is not None)
         ]
         return types.ListToolsResult(tools=tools)
 
@@ -187,11 +236,33 @@ class TrustPlaneProxy:
     ) -> types.CallToolResult:
         name = params.name
         arguments: dict[str, Any] = dict(params.arguments or {})
+        mapping = self.config.mapping_for(name)
+        if mapping is not None and mapping.schema_sha256 is not None:
+            # Refresh at the execution boundary, even if an untrusted upstream
+            # omits tools/list_changed. Never execute based only on a stale list.
+            if not await self._refresh_upstream_tools():
+                return _denied(
+                    {
+                        "reason_code": "UPSTREAM_ERROR",
+                        "message": "could not revalidate pinned tool definition",
+                    }
+                )
+            tool = self.upstream.tool(name)
+            if tool is None or not self._pin_matches(tool):
+                return _denied(
+                    {
+                        "reason_code": "TOOL_DEFINITION_CHANGED",
+                        "message": f"tool {name!r} differs from its approved definition pin",
+                    }
+                )
         if self.upstream.tool(name) is None:
             return _denied({"reason_code": "TOOL_UNKNOWN", "message": f"no such tool: {name}"})
 
         try:
-            envelope = self._envelope_for(name, arguments)
+            call_key = canonical_hash({"tool": name, "arguments": arguments})
+            envelope = self._awaiting_approval.pop(call_key, None) or self._envelope_for(
+                name, arguments
+            )
         except ArgumentsTooLargeError as exc:
             return _denied({"reason_code": "TOOL_ARGUMENTS_TOO_LARGE", "message": str(exc)})
         except ValueError as exc:
@@ -219,6 +290,28 @@ class TrustPlaneProxy:
                     envelope.trace_id,
                 )
                 return await self._forward_shadow(name, arguments, envelope.trace_id)
+            if decision.outcome.value == "REQUIRE_APPROVAL":
+                self._awaiting_approval[call_key] = envelope
+                while len(self._awaiting_approval) > MAX_AWAITING_APPROVAL:
+                    self._awaiting_approval.popitem(last=False)
+                role = decision.approval.approver_role if decision.approval else "an approver"
+                return _denied(
+                    {
+                        "reason_code": decision.reason_code.value,
+                        "outcome": decision.outcome.value,
+                        "message": (
+                            f"{decision.explanation}. Needs {role} approval on trace "
+                            f"{envelope.trace_id}: run `atp approve {envelope.trace_id} "
+                            f"--as <approver-id>`, then retry this exact call once."
+                        ),
+                        "approver_role": role,
+                        "approve_command": f"atp approve {envelope.trace_id}",
+                        "matched_policy": (
+                            decision.matched_policy.qualified if decision.matched_policy else None
+                        ),
+                        "trace_id": envelope.trace_id,
+                    }
+                )
             return _denied(
                 {
                     "reason_code": decision.reason_code.value,
@@ -349,7 +442,7 @@ class TrustPlaneProxy:
             agent=self.config.agent_ref,
             delegation_grant_id=self.delegation_grant_id,
             capability=mapping.capability,
-            tool=self.config.envelope_tool,
+            tool=mapping.envelope_tool,
             action=mapping.action,
             resource=resource,
             arguments=_bounded(arguments),
@@ -358,6 +451,7 @@ class TrustPlaneProxy:
 
 
 MAX_ARGUMENT_BYTES = 15 * 1024
+MAX_AWAITING_APPROVAL = 256
 
 
 class ArgumentsTooLargeError(ValueError):
@@ -398,7 +492,9 @@ def main(argv: list[str] | None = None) -> None:
     import argparse
 
     from atp_adapter_mcp.config import load_config
+    from atp_core import show_unversioned_file_warnings
 
+    show_unversioned_file_warnings()
     parser = argparse.ArgumentParser(prog="atp-mcp-proxy")
     parser.add_argument("--config", required=True, help="path to the proxy YAML config")
     parser.add_argument("--log-level", default="info")

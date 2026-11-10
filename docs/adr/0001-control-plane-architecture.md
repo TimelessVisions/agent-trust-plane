@@ -78,6 +78,11 @@ server-side existence, and then **atomically** transitions the record from
 1). Only then does the tool run. Any failure records an
 `execution_blocked` event with a specific reason code.
 
+**Update (1.0):** grants are now Ed25519 with a `kid` in a signed header
+(`atp-grant/2`, `docs/formal/grant-lifecycle.md`), so keys rotate without
+invalidating live grants and a future separate executor needs only public
+keys. The reasoning below is kept as the 0.x record.
+
 **Why HMAC and not an asymmetric signature.** In the MVP the authorizer and
 the executor are the same process, so a shared secret is sufficient and avoids
 key distribution. The token format is versioned (`atp-grant/1`) so it can be

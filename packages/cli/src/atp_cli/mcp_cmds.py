@@ -21,13 +21,14 @@ from atp_adapter_mcp import (
     UpstreamConfig,
     connect_upstream,
     dump_config,
+    grant_hints,
     load_config,
     propose_config,
     render_header,
     serve,
 )
-from atp_cli.home import AtpHome
-from atp_core import utcnow
+from atp_cli.home import LOCAL_HUMAN, AtpHome
+from atp_core import PrincipalKind, utcnow
 from atp_evals.regression.format import parse_duration
 from atp_gateway import create_app
 
@@ -103,6 +104,8 @@ def init_config(
     _err(f"wrote {out}: {len(tools)} tool(s) mapped under tool 'mcp.{server_name}'")
     for note in proposal.notes:
         _err(f"note: {note}")
+    for hint in grant_hints(config, out.name):
+        _err(hint)
     _err(f"next: atp mcp wrap --config {out}   (add --mode shadow to observe first)")
     return 0
 
@@ -146,14 +149,28 @@ def wrap(
         _err(f"{config_path} has no `authority` section; `atp mcp wrap` needs one to delegate")
         return 2
 
-    home = AtpHome(home_dir).ensure()
-    settings = home.settings(enforcement_mode=mode, default_policy_set=config.policy_set)
+    # The session's human gets its own key; the home signs its root grant.
+    human = config.principal.id if config.principal.kind is PrincipalKind.HUMAN else LOCAL_HUMAN
+    home = AtpHome(home_dir).ensure(human=human)
+    settings = home.settings(
+        enforcement_mode=mode,
+        default_policy_set=config.policy_set,
+        external_tools=config.mapped_tools,
+    )
     from atp_gateway import build_runtime
 
     try:
         runtime = build_runtime(settings)
     except Exception as exc:
         _err(f"could not start the local gateway from {home.path}: {str(exc)[:500]}")
+        return 2
+    internal = [t for t in config.mapped_tools if not runtime.trust_plane.tools.is_external(t)]
+    if internal:
+        _err(
+            f"{config_path}: mapping tool(s) {internal} name a tool the gateway executes itself; "
+            "a proxied MCP tool needs its own tool name"
+        )
+        runtime.close()
         return 2
     app = create_app(settings, runtime=runtime)
     operator = TrustPlaneClient.for_app(app, operator_key=runtime.operator_key)
@@ -196,6 +213,18 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
     issued = operator.issue_credential(
         agent, label=f"wrap:{config.server_name}", expires_at=expires.isoformat()
     )
+    # A payment must be bounded by an explicit, operator-reviewed amount.
+    # Mirror monetary constraints on both grants so the root and leaf cannot
+    # accidentally widen one another. Cumulative budgets remain leaf-only:
+    # duplicating them at root would double-count spending along the chain.
+    payment_limits: dict[str, Any] = {}
+    if config.authority.max_amount is not None:
+        payment_limits["max_amount"] = config.authority.max_amount.model_dump(mode="json")
+    if config.authority.currencies is not None:
+        payment_limits["currencies"] = sorted(config.authority.currencies)
+    leaf_constraints = dict(payment_limits)
+    if config.authority.budget is not None:
+        leaf_constraints["budget"] = config.authority.budget.model_dump(mode="json")
     root = operator.issue_delegation(
         {
             "label": f"{config.principal.id}: local authority for {config.server_name}",
@@ -203,6 +232,7 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
             "grantee": human,
             "capabilities": list(config.authority.capabilities),
             "resource_scope": list(config.authority.resource_scope),
+            **({"constraints": payment_limits} if payment_limits else {}),
             "expires_at": (expires + timedelta(minutes=1)).isoformat(),
         }
     )["grant_id"]
@@ -214,6 +244,7 @@ def seed_session(operator: TrustPlaneClient, config: ProxyConfig) -> tuple[str, 
             "parent_grant_id": root,
             "capabilities": list(config.authority.capabilities),
             "resource_scope": list(config.authority.resource_scope),
+            **({"constraints": leaf_constraints} if leaf_constraints else {}),
             "expires_at": expires.isoformat(),
         }
     )["grant_id"]

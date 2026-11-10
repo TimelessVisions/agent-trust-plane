@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -114,3 +114,30 @@ class HealthView(BaseModel):
     grant_ttl_seconds: int
     tools: list[str]
     enforcement_mode: str = "enforce"
+
+
+class ApprovalRequest(BaseModel):
+    """``POST /approvals/{trace_id}`` (operator key). The approver must hold the
+    decision's ``approver_role`` in the gateway's ``ATP_APPROVER_ROLES``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    approver: PrincipalRef
+    decision: Literal["approve", "deny"] = "approve"
+    expires_in: str = Field(default="15m", description="e.g. 15m, 900s, 1h; at most 24h")
+
+
+class ApprovalView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    approval_id: str
+    trace_id: str
+    action_hash: str
+    approver: PrincipalRef
+    approver_role: str
+    decision: Literal["approve", "deny"]
+    status: str
+    issued_at: datetime
+    expires_at: datetime
+    kid: str
+    signature: str

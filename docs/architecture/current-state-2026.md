@@ -129,7 +129,8 @@ cryptography beyond `hmac`/`hashlib`. No Hypothesis.
 
 ## Architectural inconsistencies
 
-- The proxy authorizes with an envelope whose `tool` is `mcp.<server>` and
+- The proxy authorizes with an envelope whose `tool` is the matched mapping's
+  `tool` (`mcp.<server>` as written by `atp mcp init`; unmapped calls always) and
   whose `resource` is template-derived; the regression suite pins that
   string. A rename of `server_name` silently invalidates every recorded case
   (cases are pinned to the literal tool name — acceptable, but undocumented).

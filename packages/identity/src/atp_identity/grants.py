@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from atp_core import AuthorityConstraints, PrincipalRef, ensure_aware, new_id, utcnow
 from atp_identity.scope import validate_pattern
@@ -38,6 +38,12 @@ class DelegationGrant(BaseModel):
     issued_at: datetime = Field(default_factory=utcnow)
     expires_at: datetime
     revoked_at: datetime | None = None
+
+    # Root grants only: the human grantor's Ed25519 signature over the grant's
+    # canonical JSON without these two fields and ``revoked_at``
+    # (``atp_identity.principal_keys``). Child grants stay unsigned.
+    signature: str | None = Field(default=None, max_length=200)
+    signer_kid: str | None = Field(default=None, pattern=r"^[0-9a-f]{16}$")
 
     @field_validator("capabilities")
     @classmethod
@@ -85,7 +91,25 @@ class DelegationRequest(BaseModel):
     constraints: AuthorityConstraints = Field(default_factory=AuthorityConstraints)
     expires_at: datetime
 
-    @field_validator("expires_at")
+    # A root request is the human's signed grant: the signer chooses the grant
+    # id and issue time, because both are part of what is signed.
+    grant_id: str | None = Field(default=None, pattern=r"^grt_[0-9a-f]{32}$")
+    issued_at: datetime | None = None
+    signature: str | None = Field(default=None, max_length=200)
+    signer_kid: str | None = Field(default=None, pattern=r"^[0-9a-f]{16}$")
+
+    @field_validator("expires_at", "issued_at")
     @classmethod
-    def _aware(cls, value: datetime) -> datetime:
-        return ensure_aware(value)
+    def _aware(cls, value: datetime | None) -> datetime | None:
+        return ensure_aware(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def _signed_fields_only_on_roots(self) -> DelegationRequest:
+        if self.parent_grant_id is not None and any(
+            v is not None for v in (self.grant_id, self.issued_at, self.signature, self.signer_kid)
+        ):
+            raise ValueError(
+                "grant_id, issued_at, signature and signer_kid are only accepted on a root "
+                "grant; child grants are issued and resolved by the gateway"
+            )
+        return self

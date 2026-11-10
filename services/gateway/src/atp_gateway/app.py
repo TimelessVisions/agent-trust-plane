@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -31,6 +33,7 @@ _FORBIDDEN = {
     ReasonCode.AGENT_IDENTITY_MISMATCH,
     ReasonCode.OPERATOR_KEY_REQUIRED,
     ReasonCode.POLICY_SET_OVERRIDE_FORBIDDEN,
+    ReasonCode.APPROVER_ROLE_MISSING,
 }
 
 
@@ -41,11 +44,23 @@ def status_for(exc: ATPError) -> int:
         return 403
     if exc.reason_code in _NOT_FOUND:
         return 404
+    if exc.reason_code is ReasonCode.APPROVAL_INVALID:
+        return 422
     if isinstance(exc, DelegationError):
         return 422
     if isinstance(exc, GrantError):
         return 403
     return 409
+
+
+def invalid_fields(errors: Any) -> list[str]:
+    """``loc`` paths of validation errors, e.g. ``body.grantor``; never values."""
+    out: list[str] = []
+    for err in errors:
+        path = ".".join(str(p) for p in err.get("loc", ()))
+        if path and path not in out:
+            out.append(path)
+    return out
 
 
 def create_app(settings: GatewaySettings | None = None, runtime: Runtime | None = None) -> FastAPI:
@@ -93,6 +108,15 @@ def create_app(settings: GatewaySettings | None = None, runtime: Runtime | None 
             status_code=status,
             content={"reason_code": exc.reason_code.value, "message": exc.message},
             headers=headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def _request_invalid(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # Field paths only. FastAPI's default 422 echoes the submitted values
+        # ("input"), which can carry secrets; this one never does.
+        return JSONResponse(
+            status_code=422,
+            content={"error": "request_invalid", "fields": invalid_fields(exc.errors())},
         )
 
     app.include_router(router)

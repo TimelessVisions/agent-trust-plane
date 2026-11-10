@@ -1,6 +1,6 @@
 [project]
 name = "agent-trust-plane"
-version = "0.3.2"
+version = "0.4.0"
 description = "Authorization boundary and security regression testing for AI agent tool calls (MCP): decide on arguments against delegated authority, bind decisions to single-use grants, replay, and pin denials as CI tests. Experimental."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -42,6 +42,7 @@ dependencies = [
   "httpx>=0.28",
   "pyyaml>=6.0",
   "mcp>=2.2,<3",
+  "cryptography>=50",
 ]
 
 [project.urls]
@@ -152,6 +153,8 @@ testpaths = [
   "examples/finance-agent/tests",
   "examples/notes-mcp-server/tests",
   "packages/cli/tests",
+  "tests/compat",
+  "tests/upgrade",
 ]
 addopts = "-q --strict-markers --import-mode=importlib --basetemp=.pytest-tmp"
 pythonpath = [
@@ -172,7 +175,7 @@ filterwarnings = ["error::DeprecationWarning:atp_.*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["apps", ".venv"]
+extend-exclude = ["apps", ".venv", "docs/superpowers"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "W", "SIM", "RUF"]

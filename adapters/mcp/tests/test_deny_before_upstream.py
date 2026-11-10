@@ -132,6 +132,7 @@ def _config(
     else:
         raise AssertionError(transport)
     cfg = {
+        "version": 1,
         "server_name": "notes",
         "policy_set": "notes-v1",
         "principal": {"id": "local-user", "kind": "human"},

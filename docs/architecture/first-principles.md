@@ -37,7 +37,7 @@ carry a decision, a mode, or a policy choice.
 |---|---|---|
 | The gateway process and its store | It resolves authority, decides, mints grants, writes evidence | Total: a DB writer can forge everything (`security-review.md` O4) |
 | The operator key | Issues credentials, roots delegations, overrides policy, reads evidence | Total (O1) |
-| Grant signing key | Grants are HMAC | Forged grants; single-use store still limits to recorded grant ids |
+| Grant signing key | Grants are Ed25519 (`kid`); the private key is a file the gateway reads | Forged grants; single-use store still limits to recorded grant ids |
 | Policy source | Policy sets are code or a YAML file loaded at start | Wrong policy = wrong decisions, but recorded under that policy version |
 | The executor of external tools (the MCP proxy) | It holds the upstream and a bearer token | Can forward what it likes to *its* upstream; cannot mint grants or forge decisions (O14) |
 | Deployment boundary | Tools must be reachable only via the gateway/proxy | Bypass (O3/O13) |

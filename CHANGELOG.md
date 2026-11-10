@@ -6,11 +6,182 @@ changes may land in minor versions and are called out).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
+### Added
+- MCP tool-definition pinning: `atp mcp init` captures a SHA-256 of the
+  tool name, description and inputSchema. A changed definition is omitted from
+  tools/list and denied before gateway authorization with
+  `TOOL_DEFINITION_CHANGED`. The proxy revalidates on
+  `notifications/tools/list_changed` and before each pinned call; legacy
+  mappings without a pin remain accepted for compatibility.
+- `atp mcp init` prints, for each tool mapped to a destructive capability
+  it did not delegate, the exact line to grant it:
+  `  to allow delete_note: add "notes:destroy" to authority.capabilities in atp-mcp.yaml`.
+- A working `REQUIRE_APPROVAL` path. `POST /approvals/{trace_id}` (operator
+  key; body `{approver, decision: "approve"|"deny", expires_in: "15m"}`) and
+  `atp approve TRACE_ID --as APPROVER_ID [--deny] [--expires 15m]` (local
+  home, or `--gateway URL` with `$ATP_OPERATOR_KEY`) record a decision bound
+  to the trace's `action_hash` and signed with the active grant key. The
+  approver must hold the decision's `approver_role` in the new
+  `ATP_APPROVER_ROLES` setting (`human:alice=finance-manager;...`). When the
+  agent re-submits the identical envelope, the gateway mints exactly one
+  grant; a second retry is `APPROVAL_ALREADY_USED`. New reason codes
+  `APPROVAL_ALREADY_USED`, `APPROVAL_DENIED`, `APPROVAL_EXPIRED`,
+  `APPROVAL_INVALID`, `APPROVAL_NOT_REQUESTED`, `APPROVAL_ALREADY_DECIDED`,
+  `APPROVER_ROLE_MISSING`; new audit events `approval_granted` and
+  `approval_denied`. The MCP proxy's REQUIRE_APPROVAL denial names the trace
+  and `atp approve <trace>`, and re-sends the same envelope when the agent
+  repeats the identical call. See `docs/policies/approvals.md`.
+- `atp keygen --rotate` makes a new active grant key for the ATP home
+  (`--home`, `$ATP_HOME` or `./.atp`), or for a serve `.env` with
+  `--env PATH`. The old private key is deleted, and its public key keeps
+  verifying for one grant TTL after the rotation time, which is stored in
+  `grant-<kid>.retired`; restart the gateway to load the new key.
+- `atp migrate PATH...` brings `atp-mcp.yaml`, `policies.yaml` and
+  regression suites to the current file format version in place. The kind
+  of each file is detected from its content, not its name. It adds
+  `version: 1` above the first key (after any `---` line) and keeps
+  comments, line endings and a UTF-8 BOM; it turns `version: "1"` or `1.0`
+  into `1`. A file whose comments it could not keep (a flow mapping with
+  comments) is refused with exit 2 and left unchanged. A JSON suite stays
+  JSON. Through a symlink it updates the file the link points at. It is
+  idempotent, prints one line per file, and exits 2 on a file it does not
+  recognise or a version it does not support.
+  `atp regression migrate` is an alias.
+- Declarative policy rule kind `argument_subset_of`: passes when every item
+  of a list argument is in `values`, using the same exact-type comparison as
+  `argument_allowed_values` (`1`, `"1"` and `true` are distinct). A scalar
+  counts as one item and an empty list passes. Denies with
+  `ARGUMENT_NOT_ALLOWED`, reporting the allowed values and the offending
+  items; a dict, null, float or nested list denies with `ARGUMENT_INVALID`.
+
+### Changed
+- **BREAKING:** versioned evidence and trace formats, and a 422 that does not
+  echo input. Evidence bundles are now `bundle_version: 2`, which adds one
+  field, `trace_format: "atp-trace/1"`; `atp evidence verify` (and
+  `verify_bundle`) still accepts version 1 bundles from 0.3.x and rejects
+  any other version with `unsupported bundle_version`. Trace exports
+  (`GET /traces/{id}`, `atp trace show --json`) carry
+  `format: "atp-trace/1"`. A request that fails validation now gets
+  `422 {"error": "request_invalid", "fields": ["body.grantor", ...]}`
+  instead of FastAPI's default body, which echoed the submitted values; an
+  invalid approval `expires_in` and invalid payment arguments no longer echo
+  the value either.
+- **BREAKING:** root delegations are signed by the human's own key. A root
+  grant (`parent_grant_id: null`) must carry `signature` and `signer_kid`:
+  an Ed25519 signature by the human grantor's principal key over the
+  canonical JSON of the grant without `signature`, `signer_kid` and
+  `revoked_at`. `DelegationGrant` gains `signature` and `signer_kid`; a root
+  `POST /delegations` body carries the signed `grant_id`, `issued_at`,
+  `signature` and `signer_kid` (still with the operator key). Issuance and
+  every chain resolution verify it; failures deny with the new reason codes
+  `DELEGATION_ROOT_UNSIGNED` and `DELEGATION_ROOT_SIGNATURE_INVALID`. The
+  operator key alone can no longer create a root grant for a human. Child
+  grants stay unsigned. Principal keys live at `<dir>/<stem>.key` (mode 0600)
+  and `<dir>/<stem>.pub`, where `<stem>` is the id (`:` as `%3A`) plus `-`
+  and the first 12 hex characters of SHA-256 over the exact id, so ids that
+  differ only in case never share a file; `atp principal keygen HUMAN_ID [--home H | --dir D]`
+  creates them, and a served gateway trusts the `.pub` files in the new
+  `ATP_PRINCIPAL_KEYS_DIR` (which `atp keygen --write` now sets; unset on a
+  persistent gateway, every root is denied). An ephemeral `:memory:`
+  gateway generates per-process human keys. `AtpHome.ensure()` creates the
+  local human's key in `.atp/principals/` (`local-user`, or the
+  `atp-mcp.yaml` `principal` under `atp mcp wrap`). Upgrading a 0.3.x
+  home, its first `ensure()` runs a one-shot migration that signs, in place,
+  the unsigned roots whose grantor has a key there and that were issued
+  before that key file was written (so existing chains and traces keep
+  working), then writes `.atp/principals/.roots-migrated` (mode 0600); a
+  home created by 1.0 writes it at creation. The marker is outside `atp.db`,
+  so write access to the database alone never yields a signed root: an
+  unsigned root written into `atp.db` stays unsigned and is denied. `TrustPlaneClient` takes `sign_root=`
+  (`for_app` uses the in-process runtime's keys; `LocalGateway.operator_client()`
+  signs too). `kid_for` and `write_file_atomic` moved to
+  `atp_identity.keys` (re-exported by the gateway); `atp-identity` now
+  depends on `cryptography`.
+- **BREAKING:** a failure outcome reported with the grant's own agent
+  credential no longer releases a held budget reservation; it stays counted
+  until the operator confirms the failure on
+  `POST /executions/{grant_id}/outcome` with `X-ATP-Operator-Key`, which the
+  route now accepts (refused with `EXECUTION_OUTCOME_ALREADY_REPORTED` once a
+  success was reported for the grant). Failures the gateway observes itself (a tool error)
+  still release. If a reservation was released before its grant is consumed
+  (clock skew between gateways), execution is blocked with
+  `PAYMENT_EXCEEDS_BUDGET` and the grant's remaining reservation rows are
+  released. `ReservationStore.hold` returns whether the
+  reservation is held.
+- **BREAKING:** cumulative spend budgets with reservation semantics. A
+  delegation grant's `constraints` take `budget: {amount: Money, period:
+  day|week|month}` (UTC calendar periods; a week starts on Monday), and
+  `atp-mcp.yaml` `authority` takes the same `budget`, which `atp mcp wrap`
+  puts on the session agent's grant. `authorize` reserves the amount
+  atomically when it mints a grant (SQLite `BEGIN IMMEDIATE` plus a sum
+  check), execution settles it, a failed outcome releases it, and a
+  reservation whose grant expires unused is released lazily (next
+  reservation, `atp trace list`); once consumed (e.g. released to an
+  external executor) it is held until an outcome is reported. Only an
+  argument named `amount` is budgeted. Replay of a budget denial reports
+  `budget_reevaluated: false` and no outcome change. Every budget on a chain
+  applies; the tightest binds. Over budget is DENY with the new reason code
+  `PAYMENT_EXCEEDS_BUDGET`, and `atp policy explain` shows `limit`,
+  `spent`, `reserved` and `requested`. Breaking: `EffectiveAuthority` (in
+  every recorded decision) gains `budgets`, `AuthorityConstraints` gains
+  `budget`, the database gains a `budget_reservations` table, and an action
+  with an `amount` under a budgeted chain in another currency, or with an
+  invalid amount, is now denied. An approval never lifts a budget. See
+  `docs/policies/policies.md`, "Budgets".
+- **BREAKING:** execution grants are Ed25519 with a key id. The token is
+  `atp-grant/2`: `b64url(header).b64url(claims).b64url(sig)` with header
+  `{"alg": "EdDSA", "kid": <kid>, "v": "atp-grant/2"}`, the signature over
+  the first two segments, and `kid` = the first 16 hex characters of SHA-256
+  over the raw public key. `atp-grant/1` (HMAC) tokens are rejected with
+  `GRANT_MALFORMED`; an unknown `kid` is `GRANT_SIGNATURE_INVALID`. Claims no
+  longer carry `v` (it is in the header); stored 0.3 grant rows still load.
+  The `grant_issued` trace event records `kid` instead of `key_fingerprint`.
+- **BREAKING:** grant keys are files. The ATP home keeps
+  `.atp/keys/grant-<kid>.key` (PKCS8 PEM, mode 0600 where the OS allows) and
+  `grant-<kid>.pub`, and `keys.env` holds `ATP_GRANT_SIGNING_KID`; the
+  private key is never written to an env file. A 0.3 home's HMAC
+  `ATP_GRANT_SIGNING_KEY` is migrated once by `AtpHome.ensure()` (and by any
+  offline command that opens the home): an Ed25519 key is generated, then the
+  HMAC line is removed, keeping the operator key and comments; `.gitignore`
+  gains `keys/`. Traces and evidence bundles are keyless hash chains and still
+  verify. A persistent `atp serve` gateway configured only with
+  `ATP_GRANT_SIGNING_KEY` refuses to start; `atp keygen --write .env` now
+  writes `ATP_OPERATOR_KEY`, `ATP_GRANT_KEYS_DIR` and `ATP_GRANT_SIGNING_KID`
+  and puts the key pair in `atp-keys/` next to the file (or `--keys-dir`).
+  `GatewaySettings.signing_key_bytes()` is removed; use `grant_keyring()`.
+  `cryptography>=50` is a new dependency.
+- **BREAKING:** the MCP proxy refuses a config that gives the upstream
+  `ATP_GRANT_SIGNING_KID`, `ATP_GRANT_KEYS_DIR`, `ATP_HOME`, a PEM private
+  key, a `grant-<kid>.key` path or the grant key directory, in
+  `upstream.env`, `headers`, `headers_env` or `args`. The non-loopback
+  upstream warning names the grant key too.
+- **BREAKING:** `atp-mcp.yaml` (`ProxyConfig`), `policies.yaml`
+  (`PolicyFile`) and regression suites (`Suite`) have a top-level
+  `version: 1` (`Literal[1]`). Any other value, including `2`, `"1"`,
+  `1.0` and `true`, is refused with "unsupported atp-mcp.yaml version 2;
+  this atp supports 1" (or `policies.yaml` / `regression suite`). The proxy
+  config had no `version` field before, so `version:` in it used to be an
+  unknown-key error.
+- **BREAKING (deprecation):** a file without `version:` still loads as
+  version 1, but emits one `UnversionedFileWarning` (a `DeprecationWarning`
+  subclass, exported from `atp_core`) per file per process; `atp`,
+  `atp-mcp-proxy` and `python -m atp_gateway` print it as one `warning:`
+  line on stderr. Run `atp migrate` to add the field.
+  Code that turns `DeprecationWarning` into errors will fail on unversioned
+  files. `policy_sets[].version` is unchanged: it is a set's name.
+- `atp mcp init` writes `version: 1` as the first key of `atp-mcp.yaml`, and
+  `dump_policy_file` writes `version: 1` first.
+- `argument_required` treats an argument sent as an explicit `null` as
+  missing and denies with `ARGUMENT_MISSING`; it used to pass. This matches
+  optional `argument_*` rules, where `null` counts as absent.
+  `argument_forbidden` still treats `null` as present and denies.
+
 ### Security
 - Lockfile pins the lowest releases that clear PYSEC-2026-4320
   (`certifi==2026.10.19`), CVE-2026-114603 (`opentelemetry-api==1.45.1`),
-  and PYSEC-2026-4141 / PYSEC-2026-4183 (`pyjwt==2.15.0`). Product version
-  stays 0.3.2. Reachability is recorded in
+  and PYSEC-2026-4141 / PYSEC-2026-4183 (`pyjwt==2.15.0`). Reachability is recorded in
   `docs/release-v1/REUSE_DECISIONS.md`.
 - The MCP proxy refuses a config that copies `ATP_OPERATOR_KEY`,
   `ATP_GRANT_SIGNING_KEY`, or the agent token into the upstream. A
@@ -19,6 +190,27 @@ changes may land in minor versions and are called out).
   `docs/release-v1/SECURITY_AND_LIMITS.md`.
 
 ### Fixed
+- The MCP proxy stamps each envelope with the matched `ToolMapping.tool`.
+  It used `mcp.<server_name>` for every call and ignored the mapping, so a
+  declared rule whose `applies_to.tool` named the mapping's `tool` never
+  matched. `atp mcp init` still writes `tool: mcp.<server_name>`, so its
+  configs behave as before; unmapped calls keep `mcp.<server_name>`.
+  A mapping onto a tool the gateway executes itself (`payments`) is refused
+  when the config loads, in `atp mcp wrap` and `atp mcp proxy` alike.
+  `atp mcp wrap` releases every mapping `tool` to the proxy by adding it to
+  `ATP_EXTERNAL_TOOL_PREFIXES` (default `mcp.`). A remote gateway needs any
+  mapping `tool` outside `mcp.` in its own `ATP_EXTERNAL_TOOL_PREFIXES`.
+  The benchmark no longer retargets rules to `mcp.<server_name>`.
+- `argument_max_length` denies a non-optional explicit `null` argument with
+  `ARGUMENT_INVALID`; it was measured as the 4-character string `"null"` and
+  passed under any limit of 4 or more.
+- Declarative `argument_*` rules with `optional: true` now treat an argument
+  sent as an explicit `null` like an absent one (pass). Previously
+  `argument_subset_of` and `argument_allowed_values` denied it. Without
+  `optional`, `null` is denied as before.
+- `argument_allowed_values` no longer raises `UnicodeDecodeError` when the
+  argument is a dict or list whose canonical JSON has a multibyte character
+  at byte 200; it denies with `ARGUMENT_NOT_ALLOWED` as intended.
 - CI runs pytest with the warnings plugin enabled, so
   `DeprecationWarning` from `atp_*` fails the job. The opt-in third-party
   filesystem server is reported as NOT_MEASURED instead of disappearing
@@ -31,7 +223,7 @@ changes may land in minor versions and are called out).
 - A sandbox MCP server journals each tool name before any file change. New
   tests require an allowed write to be received, an unauthorized delete to
   be absent from that journal, the denial to be explainable, and a policy
-  edit to fail the pinned regression check. Version is unchanged at 0.3.2.
+  edit to fail the pinned regression check.
 
 ## [0.3.2] - 2026-09-17
 

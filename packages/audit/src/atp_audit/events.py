@@ -19,6 +19,8 @@ class EventType(StrEnum):
     POLICY_EVALUATED = "policy_evaluated"
     DECISION_MADE = "decision_made"
     APPROVAL_REQUESTED = "approval_requested"
+    APPROVAL_GRANTED = "approval_granted"
+    APPROVAL_DENIED = "approval_denied"
     GRANT_ISSUED = "grant_issued"
     EXECUTION_ATTEMPTED = "execution_attempted"
     EXECUTION_BLOCKED = "execution_blocked"

@@ -1,0 +1,20 @@
+[
+  {
+    "action": "mcp.notes.delete_note",
+    "at": "2026-11-01T12:00:00+00:00",
+    "last": "decision_made",
+    "outcome": "DENY",
+    "reason": "CAPABILITY_NOT_GRANTED",
+    "resource": "id:todo",
+    "trace_id": "450b07293449"
+  },
+  {
+    "action": "mcp.notes.write_note",
+    "at": "2026-11-01T12:00:00+00:00",
+    "last": "execution_completed",
+    "outcome": "ALLOW",
+    "reason": "ALLOWED",
+    "resource": "id:todo",
+    "trace_id": "6c45ef7775b7"
+  }
+]

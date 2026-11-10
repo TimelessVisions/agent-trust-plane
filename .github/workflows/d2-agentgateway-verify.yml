@@ -1,0 +1,274 @@
+name: ATP v1 release-branch evidence
+
+on:
+  push:
+    branches:
+      - release/v1/B12-atp-1.0
+
+# Isolated branch verification. No PR, tags, merge, deployment, or publication.
+permissions:
+  contents: read
+
+concurrency:
+  group: atp-v1-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  d2-real-binary:
+    name: D2 pinned agentgateway v1.6.0
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark environment
+        working-directory: bench
+        run: uv sync --frozen
+      - name: Fetch and verify SHA256-pinned agentgateway binary
+        working-directory: bench
+        run: |
+          uv run --no-sync python -c "from atp_bench.tools import fetch_tool; import hashlib; p=fetch_tool('agentgateway'); print('Binary path:', p); print('Binary SHA256:', hashlib.sha256(p.read_bytes()).hexdigest())"
+      - name: Execute real binary-backed D2 tests
+        working-directory: bench
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/d2.xml" tests/test_agentgateway_layer.py
+      - name: Verify JUnit measurements and required binary cases
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/d2.xml" \
+            --label "D2 pinned agentgateway v1.6.0" --min-tests 9 --max-skips 0 \
+            --require-case test_rendered_rules_match_atp_semantics_on_binary \
+            --require-case test_resource_ids_and_unicode_match_atp_on_binary
+      - name: Preserve D2 JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-d2-junit
+          path: ${{ runner.temp }}/d2.xml
+          if-no-files-found: warn
+
+
+  d3-toolhive:
+    name: D3 pinned ToolHive v0.55.2 authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Verify Docker runtime for real ToolHive behavior
+        run: |
+          if ! docker info > "${{ runner.temp }}/docker-info.txt" 2>&1; then
+            echo "ENV_BLOCKED: Docker engine unavailable for ToolHive remote workload"
+            cat "${{ runner.temp }}/docker-info.txt"
+            exit 1
+          fi
+      - name: Install pinned benchmark dependencies
+        working-directory: bench
+        run: uv sync --frozen
+      - name: Fetch SHA256-pinned ToolHive executable
+        working-directory: bench
+        run: |
+          uv run --no-sync python -c "from atp_bench.tools import fetch_tool; import hashlib; p=fetch_tool('toolhive'); print('ToolHive binary:', p); print('SHA256:', hashlib.sha256(p.read_bytes()).hexdigest())"
+      - name: Execute Cedar policy and real ToolHive E2E tests
+        working-directory: bench
+        env:
+          ATP_D3_E2E_PROOF: ${{ runner.temp }}/d3-e2e.json
+        run: |
+          uv run --no-sync pytest -q -s -p no:cacheprovider \
+            --junitxml="${{ runner.temp }}/d3.xml" tests/test_toolhive_layer.py
+      - name: Require real upstream allow/deny evidence
+        if: always()
+        run: |
+          if test ! -s "${{ runner.temp }}/d3-e2e.json"; then
+            echo "D3 NOT_MEASURED: real ToolHive allow/deny proof missing."
+            echo "A green ENV_BLOCKED-path unit test is not binary-backed authorization proof."
+            exit 1
+          fi
+          cat "${{ runner.temp }}/d3-e2e.json"
+      - name: Gate measured JUnit cases
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/d3.xml" \
+            --label "D3 real ToolHive Cedar" --min-tests 8 --max-skips 0 \
+            --require-case test_layer_e2e_or_env_blocked \
+            --require-case test_scalar_limit_rendered
+      - name: Preserve ToolHive E2E proof and JUnit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-d3-evidence
+          path: |
+            ${{ runner.temp }}/d3.xml
+            ${{ runner.temp }}/d3-e2e.json
+            ${{ runner.temp }}/docker-info.txt
+          if-no-files-found: warn
+
+
+  d4-reference:
+    name: D4 name-only and Docker-runtime negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark dependencies
+        working-directory: bench
+        run: uv sync --frozen
+      - name: D4 negative control and name-only upstream tests
+        working-directory: bench
+        run: |
+          uv run --no-sync pytest -q -p no:cacheprovider \
+            --junitxml="${{ runner.temp }}/d4.xml" tests/test_d4_layers.py
+      - name: Require measured D4 reference tests
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/d4.xml" \
+            --label "D4 name-only reference and Docker absent" --min-tests 3 --max-skips 0 \
+            --require-case test_name_only_allows_granted_tool_with_any_args \
+            --require-case test_name_only_denies_ungranted_tool \
+            --require-case test_docker_absent_is_env_blocked
+      - name: Preserve D4 JUnit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-d4-junit
+          path: ${{ runner.temp }}/d4.xml
+          if-no-files-found: warn
+
+
+  e1-e2-incidents:
+    name: E1 fixture runner and E2 real MCPoison replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark environment
+        working-directory: bench
+        run: uv sync --frozen
+      - name: Run incident fixture protocol and real ATP proxy case
+        working-directory: bench
+        run: |
+          uv run --no-sync pytest -q -s -p no:cacheprovider \
+            --junitxml="${{ runner.temp }}/incidents.xml" \
+            tests/test_incidents.py tests/test_incident_cases.py
+      - name: Require measured incident JUnit cases
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/incidents.xml" \
+            --label "E1 incident runner and E2 MCPoison" --min-tests 5 --max-skips 0 \
+            --require-case test_incident_runner_reports_per_layer \
+            --require-case test_mcpoison_incident_real_server_and_atp_proxy \
+            --require-case test_mcpoison_companion_atp_regression_is_not_a_schema_pin
+      - name: Preserve incident evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-e1-e2-junit
+          path: ${{ runner.temp }}/incidents.xml
+          if-no-files-found: warn
+
+  root-verify:
+    name: Root full suite, type checks and demos
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked root workspace
+        run: uv sync --frozen --all-packages
+      - name: Ruff lint
+        run: uv run --no-sync ruff check .
+      - name: Ruff format
+        run: uv run --no-sync ruff format --check .
+      - name: Mypy
+        run: uv run --no-sync mypy
+      - name: Root pytest
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/root.xml"
+      - name: Report exact root JUnit counts and all skips
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/root.xml" \
+            --label "Root Python suite" --min-tests 713 --max-skips 1
+      - name: Demo wrap
+        run: uv run --no-sync atp demo wrap --out "${{ runner.temp }}/wrap"
+      - name: Demo injection
+        run: uv run --no-sync atp demo injection
+      - name: Demo regression
+        run: uv run --no-sync atp demo regression --out "${{ runner.temp }}/regression.yaml"
+      - name: Demo MCP
+        run: uv run --no-sync atp demo mcp
+      - name: Preserve root JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-root-junit
+          path: ${{ runner.temp }}/root.xml
+          if-no-files-found: warn
+
+  full-benchmark:
+    name: Full AgentDojo benchmark tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.13
+      - name: Sync locked benchmark environment
+        working-directory: bench
+        run: uv sync --frozen
+      - name: Full AgentDojo benchmark pytest
+        working-directory: bench
+        run: uv run --no-sync pytest -q -p no:cacheprovider --junitxml="${{ runner.temp }}/bench.xml"
+      - name: Report exact full benchmark JUnit counts
+        if: always()
+        run: |
+          python3 scripts/report_junit.py "${{ runner.temp }}/bench.xml" \
+            --label "Full AgentDojo benchmark suite" --min-tests 201 --max-skips 0
+      - name: Preserve benchmark JUnit artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: atp-v1-bench-junit
+          path: ${{ runner.temp }}/bench.xml
+          if-no-files-found: warn

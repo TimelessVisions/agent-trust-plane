@@ -60,14 +60,14 @@ Legend: **blocked** (test exists) · **residual** (documented gap) ·
 
 | Attack | Result | Evidence |
 |---|---|---|
-| Forged / modified token | blocked (HMAC, canonical re-encoding check) | `TestForgedGrants` |
+| Forged / modified token | blocked (Ed25519 by `kid`, signed header, canonical re-encoding check) | `TestForgedGrants` |
 | Modified action, target or arguments after authorization | blocked (`GRANT_ENVELOPE_MISMATCH`) | EVAL-007, stateful `execute_tampered` |
 | Different agent | blocked (`GRANT_AUDIENCE_MISMATCH` + identity binding) | `test_grant_audience_is_enforced_*` |
 | Different tool / policy | n/a: both are inside the hashed action fields / claims | `action_fields()` |
 | Duplicate and concurrent execution | blocked; 8-thread race → 1 side effect | `TestConcurrentGrantConsumption`, exhaustive state machine |
 | Expired token; revoked authority after authorization | blocked | state machine, stateful test |
 | Server restart | grants persist (SQLite); after key rotation, signatures fail | `test_persistence`, O6 |
-| Signature algorithm confusion | n/a: fixed HMAC-SHA256, versioned format `atp-grant/1` | `grants.py` |
+| Signature algorithm confusion | blocked: the header must be exactly `{"alg": "EdDSA", "kid", "v": "atp-grant/2"}`; no other `alg` is read; `atp-grant/1` is GRANT_MALFORMED | `test_header_must_be_exactly_eddsa_v2`, `test_v1_hmac_token_rejected` |
 | Audience confusion across gateways | blocked: record must exist locally | `test_grant_from_another_gateway_instance_is_unknown` |
 | Nonce collision | n/a: 128-bit random ids; store rejects unknown ids | — |
 | Revoke overwriting a consumed record | **found and fixed** (F18) | `test_grant_state_machine.py` |

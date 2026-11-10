@@ -1,6 +1,6 @@
 """Declarative policy sets loaded from YAML.
 
-The format is deliberately small: eight rule kinds, exact tool/action
+The format is deliberately small: nine rule kinds, exact tool/action
 matching, no expressions, no regular expressions, no globbing. It exists so
 that a developer can bound an MCP tool ("`text` at most 2000 characters",
 "`amount` at most 1000", "never `rm -rf`") without editing Python, and so
@@ -37,11 +37,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from atp_core import ConstraintEvaluation, PolicyEvaluation, ReasonCode
 from atp_core.canonical import canonical_json
 from atp_core.files import read_bounded_text
+from atp_core.fileversion import FILE_FORMAT_VERSION, check_file_version, warn_if_unversioned
 from atp_policy.base import Policy, PolicyContext, PolicySet
 from atp_policy.policies import (
     CapabilityRequiredPolicy,
@@ -55,7 +56,8 @@ from atp_policy.policies import (
 )
 from atp_policy.registry import DEFAULT_APPROVAL_THRESHOLD
 
-POLICY_FILE_VERSION = 1
+POLICY_FILE_VERSION = FILE_FORMAT_VERSION
+POLICY_FILE_KIND = "policies.yaml"
 _IDENT = r"^[A-Za-z0-9._:-]+$"
 _RULE_ID = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 _ARG = r"^[A-Za-z_][A-Za-z0-9_]{0,63}$"
@@ -64,6 +66,7 @@ RuleKind = Literal[
     "argument_max",
     "argument_min",
     "argument_allowed_values",
+    "argument_subset_of",
     "argument_max_length",
     "argument_required",
     "argument_forbidden",
@@ -114,6 +117,7 @@ class RuleSpec(BaseModel):
             "argument_max",
             "argument_min",
             "argument_allowed_values",
+            "argument_subset_of",
             "argument_max_length",
         )
         if needs_arg and not self.argument:
@@ -126,6 +130,8 @@ class RuleSpec(BaseModel):
             raise ValueError(f"rule {self.id}: argument_min needs 'min'")
         if k == "argument_allowed_values" and not self.values:
             raise ValueError(f"rule {self.id}: argument_allowed_values needs 'values'")
+        if k == "argument_subset_of" and not self.values:
+            raise ValueError(f"rule {self.id}: argument_subset_of needs 'values'")
         if self.values is not None and len(self.values) > MAX_ALLOWED_VALUES:
             raise ValueError(f"rule {self.id}: at most {MAX_ALLOWED_VALUES} values")
         if k == "argument_max_length" and self.max_length is None:
@@ -167,8 +173,17 @@ class PolicySetSpec(BaseModel):
 class PolicyFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    version: int = Field(default=POLICY_FILE_VERSION, ge=1, le=1)
+    version: Literal[1] = Field(
+        default=1,
+        description="File format version (not a policy set name). A file without it "
+        "loads as 1 with a DeprecationWarning; `atp migrate` adds it.",
+    )
     policy_sets: tuple[PolicySetSpec, ...] = Field(min_length=1)
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _supported_version(cls, value: Any) -> int:
+        return check_file_version(value, POLICY_FILE_KIND)
 
     @model_validator(mode="after")
     def _unique(self) -> PolicyFile:
@@ -251,7 +266,8 @@ class DeclaredRule(Policy):
                 ),
             )
         if k == "argument_required":
-            missing = [a for a in (spec.arguments or ()) if a not in args]
+            # An explicit null counts as missing, as for optional rules (R15).
+            missing = [a for a in (spec.arguments or ()) if args.get(a) is None]
             c = ConstraintEvaluation(
                 name="required_arguments",
                 requested=sorted(args),
@@ -260,10 +276,13 @@ class DeclaredRule(Policy):
             )
             if missing:
                 return self.deny(
-                    ReasonCode.ARGUMENT_MISSING, f"required argument(s) missing: {missing}", (c,)
+                    ReasonCode.ARGUMENT_MISSING,
+                    f"required argument(s) missing or null: {missing}",
+                    (c,),
                 )
             return self.allow("required arguments present", (c,))
         if k == "argument_forbidden":
+            # An explicit null is present: the caller sent the key, so it is denied.
             present = [a for a in (spec.arguments or ()) if a in args]
             c = ConstraintEvaluation(
                 name="forbidden_arguments",
@@ -279,7 +298,8 @@ class DeclaredRule(Policy):
 
         assert spec.argument is not None
         name = spec.argument
-        if name not in args:
+        # With `optional: true`, an explicit null is the same as an absent argument.
+        if name not in args or (spec.optional and args[name] is None):
             c = ConstraintEvaluation(
                 name=name, requested=None, limit=self._limit_text(), satisfied=spec.optional
             )
@@ -294,6 +314,15 @@ class DeclaredRule(Policy):
 
         if k == "argument_max_length":
             assert spec.max_length is not None
+            if value is None:
+                # Fail closed: null has no length, so it is not measured as the string "null".
+                c = ConstraintEvaluation(
+                    name=f"{name}.length",
+                    requested=None,
+                    limit=spec.max_length,
+                    satisfied=False,
+                )
+                return self.deny(ReasonCode.ARGUMENT_INVALID, f"{name} is null, not a value", (c,))
             length = (
                 len(value) if isinstance(value, str | list | dict) else len(canonical_json(value))
             )
@@ -318,7 +347,7 @@ class DeclaredRule(Policy):
                 name=name,
                 requested=value
                 if isinstance(value, str | int | bool)
-                else canonical_json(value)[:200].decode(),
+                else canonical_json(value).decode()[:200],
                 limit=allowed,
                 satisfied=ok,
             )
@@ -329,6 +358,43 @@ class DeclaredRule(Policy):
                     (c,),
                 )
             return self.allow(f"{name} is an allowed value", (c,))
+
+        if k == "argument_subset_of":
+            # A list/tuple of scalars, or one scalar (= one-item list). Scalars are str, int and
+            # bool only. Each item must match an allowed value by exact type and equality, as in
+            # argument_allowed_values (type() identity keeps True out of an int allow-list).
+            allowed = list(spec.values or ())
+            items = list(value) if isinstance(value, list | tuple) else [value]
+            if any(type(i) not in (str, int, bool) for i in items):
+                c = ConstraintEvaluation(
+                    name=name,
+                    requested=canonical_json(value).decode()[:200],
+                    limit="list of str/int/bool, or one such scalar",
+                    satisfied=False,
+                )
+                return self.deny(
+                    ReasonCode.ARGUMENT_INVALID,
+                    f"{name} must be a list of strings/integers/booleans or one such scalar",
+                    (c,),
+                )
+            offending = [
+                i for i in items if not any(type(i) is type(v) and i == v for v in allowed)
+            ]
+            shown = [_fmt(i)[:200] for i in offending[:50]]
+            c = ConstraintEvaluation(
+                name=name,
+                requested=[i if len(_fmt(i)) <= 200 else _fmt(i)[:200] for i in items[:50]],
+                limit={"allowed": allowed, "offending": shown},
+                satisfied=not offending,
+            )
+            if offending:
+                return self.deny(
+                    ReasonCode.ARGUMENT_NOT_ALLOWED,
+                    f"{name} has {len(offending)} item(s) outside the {len(allowed)} allowed "
+                    f"values: {shown[:10]}",
+                    (c,),
+                )
+            return self.allow(f"every item of {name} is an allowed value", (c,))
 
         dec = _to_decimal(value)
         if dec is None:
@@ -368,7 +434,7 @@ class DeclaredRule(Policy):
             return _fmt(s.min)
         if s.kind == "argument_max_length":
             return s.max_length
-        if s.kind == "argument_allowed_values":
+        if s.kind in ("argument_allowed_values", "argument_subset_of"):
             return list(s.values or ())
         return None
 
@@ -402,6 +468,7 @@ def load_policy_file(path: str | Path) -> PolicyFile:
     raw: Any = yaml.safe_load(read_bounded_text(p))
     if not isinstance(raw, dict):
         raise ValueError(f"{p}: expected a mapping at top level")
+    warn_if_unversioned(raw, p, POLICY_FILE_KIND)
     return PolicyFile.model_validate(raw)
 
 
@@ -410,8 +477,10 @@ def load_policy_sets(path: str | Path) -> list[PolicySet]:
 
 
 def dump_policy_file(policy_file: PolicyFile, path: str | Path) -> None:
-    data = policy_file.model_dump(mode="json", exclude_none=True, exclude_defaults=True)
-    data["version"] = policy_file.version
+    data = {
+        "version": policy_file.version,
+        **policy_file.model_dump(mode="json", exclude_none=True, exclude_defaults=True),
+    }
     Path(path).write_text(
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8"
     )

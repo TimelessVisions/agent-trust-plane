@@ -12,7 +12,7 @@ provides or claims to.
   Cedar's validator), coverage, formal analysis (Cedar), bundles, decision
   logs.
 - Mature evaluators, large communities, Kubernetes/Envoy integrations.
-- Expressiveness ATP's eight rule kinds will never match.
+- Expressiveness ATP's nine rule kinds will never match.
 
 If your policies are complex, write them in Rego or Cedar. ATP's policy
 boundary (`atp_policy.base.Policy`: `applies_to(ctx)` and `evaluate(ctx)`

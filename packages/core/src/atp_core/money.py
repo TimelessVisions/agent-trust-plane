@@ -27,6 +27,9 @@ class Money(BaseModel):
             # Floats arrive from JSON; normalise through str() so 12500.0 becomes
             # exactly 12500.00 rather than a binary approximation.
             value = str(value)
+        if isinstance(value, str) and value != value.strip():
+            # Decimal() would quietly strip it; an amount on the wire is exact text.
+            raise ValueError(f"invalid monetary amount: {value!r} (leading/trailing whitespace)")
         try:
             dec = Decimal(value)
         except (InvalidOperation, TypeError, ValueError) as exc:
@@ -35,10 +38,15 @@ class Money(BaseModel):
             raise ValueError("monetary amount must be finite")
         if dec < 0:
             raise ValueError("monetary amount must be non-negative")
+        try:
+            quantized = dec.quantize(_TWO_PLACES)
+        except InvalidOperation as exc:
+            # Too many digits to carry to 2 places (e.g. "1e30").
+            raise ValueError(f"monetary amount out of range: {value!r}") from exc
         # Reject, never round: "1000.004" must not become 1000.00 and slip under a limit.
-        if dec != dec.quantize(_TWO_PLACES):
+        if dec != quantized:
             raise ValueError("monetary amount must have at most 2 decimal places")
-        return dec.quantize(_TWO_PLACES)
+        return quantized
 
     @field_serializer("amount")
     def _serialise_amount(self, value: Decimal) -> str:

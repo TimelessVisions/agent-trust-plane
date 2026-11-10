@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from atp_adapter_http import TrustPlaneClient
 from atp_cli.main import main
 from atp_gateway.local import LocalGateway
 from finance_agent import (
@@ -53,7 +52,7 @@ def test_record_from_live_gateway(
 ) -> None:
     monkeypatch.delenv("ATP_OPERATOR_KEY", raising=False)
     with LocalGateway() as gw:
-        operator = TrustPlaneClient(gw.url, operator_key=gw.operator_key)
+        operator = gw.operator_client()
         seed = seed_delegation_graph(operator)
         result = run_accounts_payable(
             operator.as_agent(seed.identities.accounts_payable_token),
@@ -129,9 +128,20 @@ def test_generated_keys_never_start_with_a_dash(
     from atp_gateway.settings import GatewaySettings
 
     real = secrets.token_urlsafe
-    draws = iter(["-" + real(48)[1:], real(48)] * 8)
-    monkeypatch.setattr(secrets, "token_urlsafe", lambda n=None: next(draws))
+    attempts = 0
 
+    def alternating_keys(n: int | None = None) -> str:
+        nonlocal attempts
+        # Alternate forced-leading-dash and safe keys without a fixed-length
+        # iterator: setup paths may request more secrets on some platforms.
+        # Each forced dash still exercises new_secret_key's retry behavior.
+        attempts += 1
+        value = real(n)
+        return ("-" if attempts % 2 else "A") + value[1:]
+
+    monkeypatch.setattr(secrets, "token_urlsafe", alternating_keys)
+
+    monkeypatch.chdir(tmp_path)
     home = AtpHome(tmp_path / "home").ensure()
     keygen([])
     settings = GatewaySettings(
@@ -142,7 +152,11 @@ def test_generated_keys_never_start_with_a_dash(
         + capsys.readouterr().out.splitlines()
     )
     values = [line.split("=", 1)[1] for line in lines if line.startswith("ATP_")]
-    values += [settings.operator_key_value(), settings.signing_key_bytes().decode("utf-8")]
+    values += [settings.operator_key_value()]
 
-    assert len(values) == 6
+    # home: operator key, grant kid; keygen: operator key, keys dir, grant kid, principal
+    # keys dir; settings: the ephemeral operator key. (The Ed25519 keys are files, not
+    # pasted values.)
+    assert len(values) == 7
+    assert attempts >= 2  # a forced invalid draw and a retry both occurred
     assert not [v for v in values if v.startswith("-")]

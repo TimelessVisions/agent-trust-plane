@@ -13,46 +13,78 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atp_audit import EventType, IntegrityReport, TraceEvent, TraceStore, TraceSummary
 from atp_core import (
     ActionEnvelope,
+    ApprovalRequirement,
     ATPError,
+    ConstraintEvaluation,
     Decision,
     DecisionOutcome,
     DelegationError,
     EffectiveAuthority,
     EnforcementMode,
     GrantError,
+    Money,
+    PolicyEvaluation,
+    PolicyRef,
+    PrincipalRef,
     ReasonCode,
     ToolError,
+    new_id,
     utcnow,
 )
 from atp_core.sqlite import no_transaction
-from atp_gateway.grants import GrantClaims, GrantSigner, GrantStore, new_grant_claims
+from atp_gateway.approvals import (
+    ApprovalClaims,
+    ApprovalRecord,
+    ApprovalStatus,
+    ApprovalStore,
+    InMemoryApprovalStore,
+    decode_signature,
+    encode_signature,
+    roles_for,
+)
+from atp_gateway.grants import (
+    GrantClaims,
+    GrantSigner,
+    GrantStore,
+    GrantVerifier,
+    new_grant_claims,
+)
 from atp_gateway.tools import ToolRegistry
 from atp_identity import (
     AuthenticatedAgent,
     AuthError,
     BearerCredentialProvider,
+    BudgetLine,
+    BudgetUsage,
     CredentialService,
     DelegationGrant,
     DelegationRequest,
     DelegationService,
     IdentityProvider,
+    InMemoryReservationStore,
+    ReservationResult,
+    ReservationStore,
     ResolvedChain,
+    budget_lines,
 )
 from atp_policy import PolicyContext, PolicyEngine, PolicySetRegistry, VendorDirectory
 
 log = logging.getLogger("atp.gateway")
 
 GATEWAY_ACTOR = "gateway"
+
+BUDGET_POLICY = PolicyRef(id="gateway.budget", version="v1")
 
 # Event types an agent may append itself (provenance about what it saw/did).
 AGENT_WRITABLE_EVENTS = frozenset({EventType.TASK_RECEIVED, EventType.EXTERNAL_CONTENT_INGESTED})
@@ -99,12 +131,23 @@ class ReplayResult(BaseModel):
     original_policy_set_version: str
     replayed_policy_set_version: str
     outcome_changed: bool
+    budget_reevaluated: bool = Field(
+        default=False,
+        description="always false: replay re-runs policy only, never the spend budget",
+    )
     summary: str
 
 
+TRACE_FORMAT: Final = "atp-trace/1"
+
+
 class TraceView(BaseModel):
+    """A trace as exported over HTTP (``GET /traces/{id}``) and by
+    ``atp trace show --json``. ``format`` names the export format."""
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    format: Literal["atp-trace/1"] = TRACE_FORMAT
     trace_id: str
     events: list[TraceEvent]
     integrity: IntegrityReport
@@ -132,12 +175,19 @@ class TrustPlane:
         enforcement_mode: EnforcementMode = "enforce",
         identity: IdentityProvider | None = None,
         transaction: Callable[[], AbstractContextManager[None]] = no_transaction,
+        verifier: GrantVerifier | None = None,
+        approvals: ApprovalStore | None = None,
+        approver_roles: Mapping[str, frozenset[str]] | None = None,
+        reservations: ReservationStore | None = None,
     ) -> None:
         self.delegations = delegations
         self.credentials = credentials
         self.traces = traces
         self.grants = grants
         self.signer = signer
+        # Verifies tokens from the active key and from keys retired less than one
+        # grant TTL ago (rotation); defaults to the signer's own public key.
+        self.verifier = verifier or GrantVerifier({signer.kid: signer.public_key})
         self.policy_sets = policy_sets
         self.vendors = vendors
         self.tools = tools
@@ -149,6 +199,12 @@ class TrustPlane:
         # grant-state change commit together (one fsync) or roll back together.
         self.transaction = transaction
         self.engine = PolicyEngine()
+        self.approvals: ApprovalStore = approvals or InMemoryApprovalStore()
+        # Cumulative budgets: reserve at mint, settle on outcome, release on expiry.
+        self.reservations: ReservationStore = reservations or InMemoryReservationStore()
+        # "kind:id" -> roles. Operator-configured (ATP_APPROVER_ROLES); the only
+        # place a principal holds a role.
+        self.approver_roles: dict[str, frozenset[str]] = dict(approver_roles or {})
         # One lock around each state-changing operation: the MVP stores share a
         # single SQLite connection and the trace chain must not interleave.
         self._lock = threading.RLock()
@@ -303,9 +359,15 @@ class TrustPlane:
         decision = self.engine.evaluate(policy_set, ctx).model_copy(
             update={"enforcement": self.enforcement_mode}
         )
-        self._record_decision(decision)
+        # Budgets are checked before an approval is used, so an over-budget
+        # retry neither spends the approval nor mints a grant, and an
+        # over-budget action is never put to an approver at all.
+        decision, lines, amount = self._check_budgets(envelope, authority, decision, now)
+        used_approval: ApprovalRecord | None = None
+        if decision.outcome is DecisionOutcome.REQUIRE_APPROVAL and decision.approval:
+            decision, used_approval = self._apply_approval(envelope, decision, now)
 
-        grant: IssuedGrant | None = None
+        claims: GrantClaims | None = None
         if decision.outcome is DecisionOutcome.ALLOW:
             claims = new_grant_claims(
                 trace_id=trace_id,
@@ -317,6 +379,20 @@ class TrustPlane:
                 ttl_seconds=self.grant_ttl_seconds,
                 now=now,
             )
+            if lines and amount is not None:
+                # Atomic sum check + insert. Under the gateway lock and inside
+                # the authorize transaction this agrees with the check above;
+                # it is the check that holds across processes.
+                reserved = self.reservations.reserve(
+                    claims.grant_id, lines, amount, expires_at=claims.expires_at, now=now
+                )
+                if not reserved.ok:
+                    decision = _budget_denial(decision, reserved)
+                    claims = None
+        self._record_decision(decision)
+
+        grant: IssuedGrant | None = None
+        if claims is not None:
             self.grants.issue(claims)
             token = self.signer.mint(claims)
             grant = IssuedGrant(token=token, grant_id=claims.grant_id, expires_at=claims.expires_at)
@@ -329,7 +405,8 @@ class TrustPlane:
                     "expires_at": claims.expires_at.isoformat(),
                     "action_hash": claims.action_hash,
                     "single_use": True,
-                    "key_fingerprint": self.signer.key_fingerprint,
+                    "kid": self.signer.kid,
+                    **({"approval_id": used_approval.claims.approval_id} if used_approval else {}),
                 },
             )
         elif decision.outcome is DecisionOutcome.REQUIRE_APPROVAL and decision.approval:
@@ -355,6 +432,226 @@ class TrustPlane:
             )
 
         return AuthorizationResult(decision=decision, execution_grant=grant)
+
+    # ---------------------------------------------------------------- budgets
+    def _check_budgets(
+        self,
+        envelope: ActionEnvelope,
+        authority: EffectiveAuthority | None,
+        decision: Decision,
+        now: datetime,
+    ) -> tuple[Decision, list[BudgetLine], Money | None]:
+        """Peek at every budget on the chain for an action that would otherwise
+        go ahead (ALLOW or REQUIRE_APPROVAL). An action is budgeted when its
+        arguments carry an ``amount``; ``currency`` defaults to the budget's."""
+        if (
+            authority is None
+            or not authority.budgets
+            or decision.outcome is DecisionOutcome.DENY
+            or "amount" not in envelope.arguments
+        ):
+            return decision, [], None
+        currencies = sorted({cb.budget.amount.currency for cb in authority.budgets})
+        raw_currency = envelope.arguments.get("currency")
+        currency = raw_currency if raw_currency is not None else currencies[0]
+        try:
+            raw = envelope.arguments["amount"]
+            if isinstance(raw, bool) or not isinstance(raw, (str, int, float, Decimal)):
+                raise ValueError(raw)
+            amount = Money.model_validate({"amount": raw, "currency": currency})
+        except (ValueError, InvalidOperation):
+            return (
+                _deny(
+                    decision,
+                    ReasonCode.PAYMENT_ARGUMENTS_INVALID,
+                    "a budget applies to this action, and its amount/currency is not a valid "
+                    "non-negative amount with at most 2 decimals",
+                ),
+                [],
+                None,
+            )
+        if currencies != [amount.currency]:
+            return (
+                _deny(
+                    decision,
+                    ReasonCode.PAYMENT_CURRENCY_NOT_PERMITTED,
+                    f"the delegation chain budgets spend in {', '.join(currencies)}; "
+                    f"this action is in {amount.currency}, which no budget can count",
+                    ConstraintEvaluation(
+                        name="budget.currency",
+                        requested=amount.currency,
+                        limit=currencies,
+                        satisfied=False,
+                    ),
+                ),
+                [],
+                None,
+            )
+        lines = budget_lines(authority.budgets, authority.root_principal, now)
+        result = self.reservations.usage(lines, amount, now)
+        if not result.ok:
+            return _budget_denial(decision, result), [], None
+        binding = result.binding
+        assert binding is not None
+        passed = PolicyEvaluation(
+            policy=BUDGET_POLICY,
+            outcome=DecisionOutcome.ALLOW,
+            reason_code=ReasonCode.ALLOWED,
+            message=f"{amount} fits every budget on the chain",
+            constraints=(_budget_constraint(binding, satisfied=True),),
+        )
+        return (
+            decision.model_copy(update={"evaluations": (*decision.evaluations, passed)}),
+            lines,
+            amount,
+        )
+
+    # -------------------------------------------------------------- approvals
+    def _apply_approval(
+        self, envelope: ActionEnvelope, decision: Decision, now: datetime
+    ) -> tuple[Decision, ApprovalRecord | None]:
+        """Turn a REQUIRE_APPROVAL into ALLOW when a valid, unused approval for
+        this trace and this exact ``action_hash`` exists, and use it up. Runs
+        inside the authorize transaction, so the use and the grant commit
+        together. No matching approval: the decision is unchanged."""
+        requirement = decision.approval
+        assert requirement is not None
+        matching = [
+            r
+            for r in self.approvals.for_trace(envelope.trace_id)
+            if r.claims.action_hash == envelope.action_hash
+        ]
+        if not matching:
+            return decision, None
+        record = matching[-1]
+        claims = record.claims
+
+        def deny(code: ReasonCode, message: str) -> tuple[Decision, None]:
+            return (
+                decision.model_copy(
+                    update={
+                        "outcome": DecisionOutcome.DENY,
+                        "reason_code": code,
+                        "explanation": message,
+                    }
+                ),
+                None,
+            )
+
+        try:
+            self.verifier.verify_detached(
+                claims.kid, claims.signing_input(), decode_signature(record.signature), now=now
+            )
+        except (GrantError, ValueError):
+            return deny(ReasonCode.APPROVAL_INVALID, "the recorded approval does not verify")
+        if record.status is ApprovalStatus.DENIED:
+            return deny(
+                ReasonCode.APPROVAL_DENIED,
+                f"{claims.approver} ({claims.approver_role}) denied this action",
+            )
+        if claims.approver_role != requirement.approver_role:
+            return deny(
+                ReasonCode.APPROVER_ROLE_MISSING,
+                f"the approval was given as {claims.approver_role}; this action requires "
+                f"{requirement.approver_role}",
+            )
+        if record.status is ApprovalStatus.USED:
+            return deny(
+                ReasonCode.APPROVAL_ALREADY_USED,
+                f"approval {claims.approval_id} was already used for one execution grant",
+            )
+        if claims.is_expired(now):
+            return deny(
+                ReasonCode.APPROVAL_EXPIRED,
+                f"approval {claims.approval_id} expired at {claims.expires_at.isoformat()}",
+            )
+        if not self.approvals.use(claims.approval_id, now):
+            return deny(
+                ReasonCode.APPROVAL_ALREADY_USED,
+                f"approval {claims.approval_id} was already used for one execution grant",
+            )
+        allowed = decision.model_copy(
+            update={
+                "outcome": DecisionOutcome.ALLOW,
+                "reason_code": ReasonCode.ALLOWED,
+                "explanation": f"{decision.explanation}; approved by {claims.approver} "
+                f"({claims.approver_role}), approval {claims.approval_id}",
+                "approval": None,
+            }
+        )
+        return allowed, record
+
+    def approve(
+        self,
+        trace_id: str,
+        approver: PrincipalRef,
+        decision: Literal["approve", "deny"],
+        *,
+        expires_in: timedelta,
+    ) -> ApprovalRecord:
+        """Record a human decision on a REQUIRE_APPROVAL trace. The caller has
+        already authenticated as the operator; the approver must hold the
+        decision's ``approver_role`` in the configured role map. One decision
+        per trace: approve or deny, and it is final."""
+        with self._lock, self.transaction():
+            now = self.clock()
+            view = self.get_trace(trace_id)
+            original = view.decision
+            if (
+                original is None
+                or view.envelope is None
+                or original.outcome is not DecisionOutcome.REQUIRE_APPROVAL
+                or original.approval is None
+            ):
+                raise ATPError(
+                    ReasonCode.APPROVAL_NOT_REQUESTED,
+                    f"trace {trace_id} has no REQUIRE_APPROVAL decision to approve",
+                )
+            requirement: ApprovalRequirement = original.approval
+            if requirement.approver_role not in roles_for(self.approver_roles, approver):
+                raise ATPError(
+                    ReasonCode.APPROVER_ROLE_MISSING,
+                    f"{approver} does not hold the role {requirement.approver_role!r} "
+                    "this action requires (configure ATP_APPROVER_ROLES)",
+                )
+            existing = self.approvals.for_trace(trace_id)
+            if existing:
+                prior = existing[-1]
+                raise ATPError(
+                    ReasonCode.APPROVAL_ALREADY_DECIDED,
+                    f"trace {trace_id} already has a {prior.status.value} decision by "
+                    f"{prior.claims.approver}; approvals are final",
+                )
+            claims = ApprovalClaims(
+                approval_id=new_id("apr"),
+                trace_id=trace_id,
+                envelope_id=view.envelope.envelope_id,
+                action_hash=original.action_hash,
+                decision_id=original.decision_id,
+                approver=approver,
+                approver_role=requirement.approver_role,
+                decision=decision,
+                issued_at=now,
+                expires_at=now + expires_in,
+                kid=self.signer.kid,
+            )
+            record = ApprovalRecord(
+                claims=claims,
+                signature=encode_signature(self.signer.sign_detached(claims.signing_input())),
+                status=ApprovalStatus.APPROVED if decision == "approve" else ApprovalStatus.DENIED,
+            )
+            self.approvals.put(record)
+            self.traces.append(
+                trace_id,
+                EventType.APPROVAL_GRANTED if decision == "approve" else EventType.APPROVAL_DENIED,
+                GATEWAY_ACTOR,
+                {
+                    **claims.model_dump(mode="json"),
+                    "signature": record.signature,
+                    "authorized_by": "operator",
+                },
+            )
+            return record
 
     def report_shadow_outcome(
         self,
@@ -462,13 +759,29 @@ class TrustPlane:
                 now=now,
             )
             self.grants.consume(claims.grant_id, now)
+            # Consumed: from here the action may happen, so its reservation
+            # no longer lapses with the grant; only an outcome ends it.
+            held = self.reservations.hold(claims.grant_id)
         except (GrantError, DelegationError) as exc:
             return self._blocked(envelope, exc.reason_code, exc.message)
+        if not held:
+            # The reservation was already released: expired by a peer gateway
+            # whose clock runs ahead. Never run a budgeted action unbudgeted.
+            # hold() may have held this grant's other budget lines; free them,
+            # since the action will not run.
+            self.reservations.release(claims.grant_id)
+            return self._blocked(
+                envelope,
+                ReasonCode.PAYMENT_EXCEEDS_BUDGET,
+                "the budget reservation for this grant was released before execution "
+                "(clock skew between gateways?); authorize again",
+            )
 
         try:
             tool = self.tools.get(envelope.tool)
             result = tool.execute(envelope)
         except ToolError as exc:
+            self.reservations.release(claims.grant_id)
             self.traces.append(
                 trace_id,
                 EventType.EXECUTION_FAILED,
@@ -501,6 +814,7 @@ class TrustPlane:
                 result=result,
             )
 
+        self.reservations.settle(claims.grant_id)
         self.traces.append(
             trace_id,
             EventType.EXECUTION_COMPLETED,
@@ -519,20 +833,35 @@ class TrustPlane:
     def report_outcome(
         self,
         grant_id: str,
-        caller: AuthenticatedAgent,
+        caller: AuthenticatedAgent | None,
         *,
         succeeded: bool,
         summary: dict[str, Any],
+        operator: bool = False,
     ) -> TraceEvent:
         """An external executor reports what happened after a release.
 
         Bound to the consumed grant: only its audience may report, only once,
         and only for a grant the gateway actually released.
+
+        The report is trusted for budgets only one way. Success settles the
+        reservation. A failure reported by the grant's own agent does NOT
+        release it (fail closed): otherwise an agent could lie about a payment
+        that moved, free the budget and repeat. Only the operator can confirm
+        a failure and release the reservation, once, also after the agent's
+        own report.
         """
         with self._lock, self.transaction():
-            self._check_credential_live(caller)
+            if not operator:
+                if caller is None:
+                    raise AuthError(
+                        ReasonCode.AGENT_CREDENTIAL_MISSING, "agent credential required"
+                    )
+                self._check_credential_live(caller)
             record = self.grants.get(grant_id)
-            if record is None or record.claims.agent_id != caller.agent.id:
+            if record is None or (
+                not operator and caller is not None and record.claims.agent_id != caller.agent.id
+            ):
                 raise GrantError(
                     ReasonCode.GRANT_AUDIENCE_MISMATCH,
                     "no released grant for this agent with that id",
@@ -552,6 +881,13 @@ class TrustPlane:
             already = any(
                 e.event_type in (EventType.EXECUTION_COMPLETED, EventType.EXECUTION_FAILED)
                 and e.payload.get("grant_id") == grant_id
+                and (
+                    not operator
+                    or e.payload.get("reported_by") == "operator"
+                    # A reported success settled the budget; an operator
+                    # failure after it would contradict the ledger.
+                    or e.event_type is EventType.EXECUTION_COMPLETED
+                )
                 for e in events
             )
             if already:
@@ -560,6 +896,21 @@ class TrustPlane:
                     "an outcome was already reported for this grant",
                 )
             event_type = EventType.EXECUTION_COMPLETED if succeeded else EventType.EXECUTION_FAILED
+            # Settled at the reserved amount: the report comes from the agent's
+            # side, so a lower "actual" in it is not trusted to free budget.
+            if succeeded:
+                self.reservations.settle(grant_id)
+            elif operator:
+                self.reservations.release(grant_id)
+            # else: an agent-reported failure leaves the reservation held.
+            if operator:
+                return self.traces.append(
+                    trace_id,
+                    event_type,
+                    GATEWAY_ACTOR,
+                    {"grant_id": grant_id, "reported_by": "operator", "summary": summary},
+                )
+            assert caller is not None
             return self.traces.append(
                 trace_id,
                 event_type,
@@ -569,6 +920,7 @@ class TrustPlane:
                     "reported_by": "external_executor",
                     "credential_id": caller.credential_id,
                     "summary": summary,
+                    **({} if succeeded else {"budget": "held_until_operator_confirms"}),
                 },
             )
 
@@ -580,7 +932,7 @@ class TrustPlane:
                 ReasonCode.GRANT_MISSING,
                 "execution requires a grant issued by /authorize; none was presented",
             )
-        claims = self.signer.verify(token)
+        claims = self.verifier.verify(token, now=now)
         if claims.is_expired(now):
             raise GrantError(
                 ReasonCode.GRANT_EXPIRED,
@@ -642,14 +994,23 @@ class TrustPlane:
         replayed = self.engine.evaluate(policy_set, ctx).model_copy(
             update={"replay_of": original.decision_id}
         )
-        changed = replayed.outcome != original.outcome or (
-            replayed.reason_code != original.reason_code
-        )
+        # Replay re-runs policy only. Budgets depend on spend at the time, so a
+        # decision the budget check made is not re-evaluated, and the policy
+        # still letting the action reach that check is no change.
+        budget_decided = original.matched_policy == BUDGET_POLICY
+        if budget_decided and replayed.outcome is not DecisionOutcome.DENY:
+            changed = False
+        else:
+            changed = replayed.outcome != original.outcome or (
+                replayed.reason_code != original.reason_code
+            )
         summary = (
             f"{original.policy_set_version}: {original.outcome.value} "
             f"({original.reason_code.value}) -> {policy_set.version}: "
             f"{replayed.outcome.value} ({replayed.reason_code.value})"
         )
+        if budget_decided:
+            summary += "; budget not re-evaluated (replay re-runs policy only)"
         self.traces.append(
             trace_id,
             EventType.REPLAY_PERFORMED,
@@ -659,6 +1020,7 @@ class TrustPlane:
                 "original_policy_set_version": original.policy_set_version,
                 "replayed_policy_set_version": policy_set.version,
                 "outcome_changed": changed,
+                "budget_reevaluated": False,
                 "summary": summary,
                 "replayed_decision": replayed.model_dump(mode="json"),
                 "execution": "not permitted on replay",
@@ -671,6 +1033,7 @@ class TrustPlane:
             original_policy_set_version=original.policy_set_version,
             replayed_policy_set_version=policy_set.version,
             outcome_changed=changed,
+            budget_reevaluated=False,
             summary=summary,
         )
 
@@ -714,6 +1077,10 @@ class TrustPlane:
         )
 
     def list_traces(self, limit: int = 50) -> list[TraceSummary]:
+        # Lazy housekeeping: reservations whose grant expired unused stop
+        # counting against their budget (consumed ones are held until an outcome).
+        with self._lock, self.transaction():
+            self.reservations.release_expired(self.clock())
         return self.traces.list_traces(limit)
 
     # ----------------------------------------------------------- delegations
@@ -735,6 +1102,61 @@ class TrustPlane:
 
     def resolve_delegation(self, grant_id: str) -> ResolvedChain:
         return self.delegations.resolve(grant_id, now=self.clock())
+
+
+def _deny(
+    decision: Decision,
+    code: ReasonCode,
+    message: str,
+    constraint: ConstraintEvaluation | None = None,
+) -> Decision:
+    evaluation = PolicyEvaluation(
+        policy=BUDGET_POLICY,
+        outcome=DecisionOutcome.DENY,
+        reason_code=code,
+        message=message,
+        constraints=(constraint,) if constraint else (),
+    )
+    return decision.model_copy(
+        update={
+            "outcome": DecisionOutcome.DENY,
+            "reason_code": code,
+            "explanation": message,
+            "matched_policy": BUDGET_POLICY,
+            "evaluations": (*decision.evaluations, evaluation),
+            "approval": None,
+        }
+    )
+
+
+def _budget_constraint(usage: BudgetUsage, *, satisfied: bool) -> ConstraintEvaluation:
+    line = usage.line
+    return ConstraintEvaluation(
+        name="budget",
+        requested=format(usage.requested.amount, "f"),
+        limit=format(line.limit.amount, "f"),
+        satisfied=satisfied,
+        detail=(
+            f"limit={line.limit.amount:f} spent={usage.spent:f} reserved={usage.reserved:f} "
+            f"requested={usage.requested.amount:f} {line.limit.currency} per {line.period} "
+            f"from {line.period_start.date().isoformat()} UTC, grant {line.grant_id}"
+        ),
+    )
+
+
+def _budget_denial(decision: Decision, result: ReservationResult) -> Decision:
+    usage = result.binding
+    assert usage is not None
+    line = usage.line
+    return _deny(
+        decision,
+        ReasonCode.PAYMENT_EXCEEDS_BUDGET,
+        f"requested {usage.requested} exceeds the {line.period} budget set on grant "
+        f"{line.grant_id}: limit {line.limit.amount:f}, spent {usage.spent:f}, reserved "
+        f"{usage.reserved:f}, {max(usage.remaining, Decimal('0')):f} {line.limit.currency} "
+        "left this period",
+        _budget_constraint(usage, satisfied=False),
+    )
 
 
 def _chain_summary(chain: ResolvedChain) -> list[dict[str, Any]]:

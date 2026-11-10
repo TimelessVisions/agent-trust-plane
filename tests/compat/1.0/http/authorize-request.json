@@ -1,0 +1,29 @@
+{
+  "action": "write_note",
+  "agent": {
+    "id": "notes-agent",
+    "kind": "agent"
+  },
+  "arguments": {
+    "id": "todo",
+    "text": "buy milk"
+  },
+  "capability": "notes:write",
+  "delegation_grant_id": "grt_892a486ad5604aa583d6543d05f68f2f",
+  "envelope_id": "env_37d9599af21248b3855f009fcfbd2409",
+  "issued_at": "2026-11-01T12:00:00.007000Z",
+  "principal": {
+    "id": "local-user",
+    "kind": "human"
+  },
+  "provenance": {
+    "agent_rationale": null,
+    "content_sources": [],
+    "model": null,
+    "task_description": "mcp tools/call via atp-proxy",
+    "task_id": null
+  },
+  "resource": "id:todo",
+  "tool": "mcp.notes",
+  "trace_id": "6c45ef7775b7"
+}

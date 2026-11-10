@@ -10,19 +10,27 @@ grant tokens or keys: none of those are in traces to begin with.
 Anyone holding a bundle can re-verify the event hash chain offline with
 ``verify_bundle``; that proves internal consistency, not that the bundle
 came from a particular gateway (see docs/security/trace-integrity.md).
+
+Versions:
+
+* ``1`` (0.3.x): the fields above.
+* ``2`` (1.0): adds ``trace_format``, the format of the trace the bundle was
+  cut from (``atp-trace/1``). Nothing else changed. ``verify_bundle``
+  accepts both and rejects any other version.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from atp_audit import TraceEvent, verify_events
 from atp_core import canonical_hash, utcnow
-from atp_gateway.service import TraceView
+from atp_gateway.service import TRACE_FORMAT, TraceView
 
-BUNDLE_VERSION = 1
+BUNDLE_VERSION = 2
+SUPPORTED_BUNDLE_VERSIONS = frozenset({1, 2})
 
 
 class EvidenceBundle(BaseModel):
@@ -38,7 +46,8 @@ class EvidenceBundle(BaseModel):
     replays: list[dict[str, Any]]
     events: list[dict[str, Any]]
     integrity: dict[str, Any]
-    redactions: list[str] = Field(default_factory=list)
+    redactions: list[str]  # always written, since 0.3.x
+    trace_format: Literal["atp-trace/1"] | None = None  # v2+
     bundle_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -92,6 +101,7 @@ def build_bundle(view: TraceView, *, include_excerpts: bool = False) -> Evidence
         "events": events,
         "integrity": view.integrity.model_dump(mode="json"),
         "redactions": redactions,
+        "trace_format": TRACE_FORMAT,
     }
     return EvidenceBundle(**body, bundle_hash=canonical_hash(body))
 
@@ -99,11 +109,22 @@ def build_bundle(view: TraceView, *, include_excerpts: bool = False) -> Evidence
 def verify_bundle(data: dict[str, Any]) -> tuple[bool, str]:
     """Offline check: the bundle hash matches, and the event chain inside it
     verifies. Returns (ok, detail)."""
+    version = data.get("bundle_version") if isinstance(data, dict) else None
+    if type(version) is not int or version not in SUPPORTED_BUNDLE_VERSIONS:
+        supported = ", ".join(str(v) for v in sorted(SUPPORTED_BUNDLE_VERSIONS))
+        return False, f"unsupported bundle_version {version!r}; this build reads {supported}"
+    if "redactions" not in data:
+        return False, "malformed bundle: every bundle version carries redactions"
+    if version == 1 and "trace_format" in data:
+        return False, "malformed bundle: trace_format is not a version 1 field"
+    if version >= 2 and data.get("trace_format") is None:
+        return False, "malformed bundle: version 2 bundles carry trace_format"
     try:
         bundle = EvidenceBundle.model_validate(data)
     except ValueError as exc:
         return False, f"malformed bundle: {exc}"
-    body = bundle.model_dump(mode="json", exclude={"bundle_hash"})
+    # Hash the fields as written: a v1 bundle has no trace_format key at all.
+    body = bundle.model_dump(mode="json", exclude={"bundle_hash"}, exclude_unset=True)
     if canonical_hash(body) != bundle.bundle_hash:
         return False, "bundle_hash does not match the bundle contents"
     events = [TraceEvent.model_validate(e) for e in bundle.events]

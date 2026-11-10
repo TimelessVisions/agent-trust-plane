@@ -27,6 +27,11 @@ class DelegationStore(Protocol):
 
     def all(self) -> Iterable[DelegationGrant]: ...
 
+    def sign_unsigned_root(self, grant_id: str, signature: str, signer_kid: str) -> bool:
+        """Migration only: attach a signature to a root stored without one
+        (0.3.x). Never replaces an existing signature. True when it changed."""
+        ...
+
 
 class InMemoryDelegationStore:
     def __init__(self) -> None:
@@ -50,6 +55,15 @@ class InMemoryDelegationStore:
 
     def all(self) -> Iterable[DelegationGrant]:
         return list(self._grants.values())
+
+    def sign_unsigned_root(self, grant_id: str, signature: str, signer_kid: str) -> bool:
+        grant = self._grants.get(grant_id)
+        if grant is None or not grant.is_root or grant.signature is not None:
+            return False
+        self._grants[grant_id] = grant.model_copy(
+            update={"signature": signature, "signer_kid": signer_kid}
+        )
+        return True
 
 
 class SqliteDelegationStore:
@@ -113,6 +127,24 @@ class SqliteDelegationStore:
             if cur.rowcount == 0:
                 return self.get(grant_id)
         return self.get(grant_id)
+
+    def sign_unsigned_root(self, grant_id: str, signature: str, signer_kid: str) -> bool:
+        with self._lock:
+            grant = self.get(grant_id)
+            if grant is None or not grant.is_root or grant.signature is not None:
+                return False
+            # The body keeps its own revoked_at (the column is authoritative on read).
+            row = self._conn.execute(
+                "SELECT body FROM delegation_grants WHERE grant_id = ?", (grant_id,)
+            ).fetchone()
+            stored = DelegationGrant.model_validate_json(row[0])
+            signed = stored.model_copy(update={"signature": signature, "signer_kid": signer_kid})
+            self._conn.execute(
+                "UPDATE delegation_grants SET body = ? WHERE grant_id = ?",
+                (signed.model_dump_json(), grant_id),
+            )
+            commit_if_implicit(self._conn)
+            return True
 
     def all(self) -> Iterable[DelegationGrant]:
         with self._lock:

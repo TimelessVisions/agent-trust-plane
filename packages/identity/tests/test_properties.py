@@ -18,10 +18,15 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from atp_core import AuthorityConstraints, DelegationError, Money, PrincipalKind, PrincipalRef
-from atp_identity import DelegationRequest, DelegationService, InMemoryDelegationStore
+from atp_identity import (
+    DelegationRequest,
+    DelegationService,
+    EphemeralPrincipalKeys,
+    InMemoryDelegationStore,
+)
 from atp_identity.scope import covers, matches, scope_covers, validate_pattern
 
-from identity_fixtures import NOW
+from identity_fixtures import NOW, signed
 
 CAPS = ["a:read", "a:write", "b:read", "b:write", "c:admin"]
 TYPES = ["path", "vendor"]
@@ -80,22 +85,26 @@ def link_request(draw: st.DrawFn) -> dict[str, object]:
 @settings(max_examples=200, deadline=None)
 @given(links=st.lists(link_request(), min_size=1, max_size=5))
 def test_accepted_chains_never_widen(links: list[dict[str, object]]) -> None:
-    service = DelegationService(InMemoryDelegationStore())
+    keys = EphemeralPrincipalKeys()
+    service = DelegationService(InMemoryDelegationStore(), principal_keys=keys)
     first = links[0]
     root = service.issue(
-        DelegationRequest(
-            label="root",
-            grantor=HUMAN,
-            grantee=HUMAN,
-            capabilities=first["caps"],  # type: ignore[arg-type]
-            resource_scope=first["scope"],  # type: ignore[arg-type]
-            constraints=AuthorityConstraints(
-                max_amount=Money(amount=first["amount"], currency="USD")  # type: ignore[arg-type]
-                if first["amount"] is not None
-                else None,
-                currencies=first["currencies"],  # type: ignore[arg-type]
+        signed(
+            DelegationRequest(
+                label="root",
+                grantor=HUMAN,
+                grantee=HUMAN,
+                capabilities=first["caps"],  # type: ignore[arg-type]
+                resource_scope=first["scope"],  # type: ignore[arg-type]
+                constraints=AuthorityConstraints(
+                    max_amount=Money(amount=first["amount"], currency="USD")  # type: ignore[arg-type]
+                    if first["amount"] is not None
+                    else None,
+                    currencies=first["currencies"],  # type: ignore[arg-type]
+                ),
+                expires_at=NOW + timedelta(days=first["days"]),  # type: ignore[arg-type]
             ),
-            expires_at=NOW + timedelta(days=first["days"]),  # type: ignore[arg-type]
+            keys,
         ),
         now=NOW,
     )

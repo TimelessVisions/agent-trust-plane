@@ -21,7 +21,6 @@ import yaml
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import get_default_environment, stdio_client
 
-from atp_adapter_http import TrustPlaneClient
 from atp_gateway.local import LocalGateway
 
 pytestmark = pytest.mark.skipif(
@@ -40,7 +39,7 @@ def gateway() -> Iterator[LocalGateway]:
 
 
 def test_reference_filesystem_server_behind_proxy(gateway: LocalGateway, tmp_path: Path) -> None:
-    operator = TrustPlaneClient(gateway.url, operator_key=gateway.operator_key)
+    operator = gateway.operator_client()
     token = operator.issue_credential(AGENT, label="fs")["token"]
     now = datetime.now(UTC)
     root = operator.issue_delegation(
@@ -69,6 +68,7 @@ def test_reference_filesystem_server_behind_proxy(gateway: LocalGateway, tmp_pat
     sandbox.mkdir()
     npx = "npx.cmd" if os.name == "nt" else "npx"
     cfg: dict[str, Any] = {
+        "version": 1,
         "gateway": gateway.url,
         "server_name": "filesystem",
         "principal": HUMAN,

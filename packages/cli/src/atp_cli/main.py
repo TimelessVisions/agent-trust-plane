@@ -10,6 +10,9 @@ The loop:
   atp policy impact --from A --to B         what a policy change does to recorded actions
   atp mutate TRACE                          probe the policy around a recorded action, offline
   atp evidence export TRACE                 portable, hash-checked bundle for review
+  atp approve TRACE --as ID                 approve a REQUIRE_APPROVAL decision; retry runs once
+  atp migrate FILE...                       add `version: 1` to older atp-mcp.yaml,
+                                            policies.yaml and regression suites
 
 Exit codes: 0 ok · 1 a regression/impact check failed · 2 usage or input error.
 """
@@ -497,6 +500,84 @@ def _cmd_evidence_verify(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _approver(raw: str) -> dict[str, str]:
+    kind, _, ident = raw.rpartition(":")
+    return {"id": ident, "kind": kind or "human"}
+
+
+def _cmd_approve(args: argparse.Namespace) -> int:
+    """Approve (or --deny) a REQUIRE_APPROVAL trace in the local home, or on a
+    gateway with --gateway (operator key)."""
+    from pydantic import ValidationError
+
+    from atp_core import ATPError, PrincipalRef
+
+    decision = "deny" if args.deny else "approve"
+    try:
+        approver = PrincipalRef.model_validate(_approver(args.approver))
+    except ValidationError as exc:
+        raise UsageError(f"invalid --as {args.approver!r}") from exc
+    if args.gateway:
+        from atp_adapter_http import GatewayError, TrustPlaneClient
+
+        key = args.operator_key or os.environ.get("ATP_OPERATOR_KEY")
+        if not key:
+            raise UsageError(
+                "--gateway needs the operator key (--operator-key or $ATP_OPERATOR_KEY)"
+            )
+        try:
+            with TrustPlaneClient(args.gateway, operator_key=key) as client:
+                body = client.approve(
+                    args.trace,
+                    approver.model_dump(mode="json"),
+                    decision=decision,
+                    expires_in=args.expires,
+                )
+        except GatewayError as exc:
+            raise UsageError(f"{exc.reason_code}: {exc.message}") from exc
+        expires_at = body["expires_at"]
+        approval_id = body["approval_id"]
+        role = body["approver_role"]
+    else:
+        from atp_gateway.approvals import parse_duration
+
+        try:
+            ttl = parse_duration(args.expires)
+        except ValueError as exc:
+            raise UsageError(str(exc)) from exc
+        runtime = _open_home(args.home)
+        try:
+            record = runtime.trust_plane.approve(args.trace, approver, decision, expires_in=ttl)
+        except ATPError as exc:
+            raise UsageError(f"{exc.reason_code.value}: {exc.message}") from exc
+        finally:
+            runtime.close()
+        expires_at = record.claims.expires_at.isoformat()
+        approval_id = record.claims.approval_id
+        role = record.claims.approver_role
+    if decision == "deny":
+        print(f"denied trace {args.trace} as {approver} ({role}); approval {approval_id}")
+    else:
+        print(
+            f"approved trace {args.trace} as {approver} ({role}); approval {approval_id} "
+            f"is good for one retry of the identical action until {expires_at}"
+        )
+    return 0
+
+
+def _cmd_migrate(args: argparse.Namespace) -> int:
+    from atp_cli.migrate import run_migrate
+
+    return run_migrate(args.paths)
+
+
+def _add_migrate_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "paths", nargs="+", metavar="PATH", help="atp-mcp.yaml, policies.yaml or suite file"
+    )
+    p.set_defaults(func=_cmd_migrate)
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     import logging
 
@@ -517,7 +598,56 @@ def _cmd_serve(args: argparse.Namespace) -> int:
 def _cmd_keygen(args: argparse.Namespace) -> int:
     from atp_gateway.__main__ import keygen
 
-    keygen(["--write", args.write] if args.write else [])
+    if args.rotate and not args.env:
+        # Rotate the ATP home's grant key (`atp mcp wrap` and offline commands use it).
+        from atp_cli.home import AtpHome
+
+        home = AtpHome(args.home)
+        if not home.keys_path.exists():
+            raise UsageError(f"no ATP home keys at {home.keys_path}; nothing to rotate")
+        try:
+            old, new = home.rotate_grant_key()
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise UsageError(f"cannot rotate: {exc}") from exc
+        print(
+            f"rotated grant signing key {old} -> {new} in {home.keys_path}; restart "
+            f"`atp mcp wrap`. Grants signed by {old} verify for one grant TTL more."
+        )
+        return 0
+    argv: list[str] = []
+    if args.write:
+        argv += ["--write", args.write]
+    if args.keys_dir:
+        argv += ["--keys-dir", args.keys_dir]
+    if args.rotate:
+        argv += ["--rotate", "--env", args.env]
+    keygen(argv)
+    return 0
+
+
+def _cmd_principal_keygen(args: argparse.Namespace) -> int:
+    """Create a human principal's Ed25519 key pair. Root delegations for that
+    human must be signed with it; the gateway trusts the ``.pub``."""
+    from atp_identity import FilePrincipalKeys
+
+    if args.dir:
+        directory = Path(args.dir)
+    else:
+        from atp_cli.home import AtpHome
+
+        directory = AtpHome(args.home).principals_dir
+    keys = FilePrincipalKeys(directory)
+    try:
+        kid = keys.generate(args.human_id)
+    except FileExistsError as exc:
+        raise UsageError(f"{exc}; refusing to overwrite a principal key") from exc
+    except ValueError as exc:
+        raise UsageError(f"invalid principal id {args.human_id!r}") from exc
+    print(
+        f"wrote {keys.private_path(args.human_id)} (private, mode 600) and "
+        f"{keys.public_path(args.human_id)}; kid {kid}. Give the gateway the .pub "
+        "(ATP_PRINCIPAL_KEYS_DIR); keep the .key with the human, who signs root delegations."
+    )
     return 0
 
 
@@ -642,6 +772,11 @@ def build_parser() -> argparse.ArgumentParser:
     ra.add_argument("--name")
     _home_arg(ra)
     ra.set_defaults(func=_cmd_regression_add)
+    _add_migrate_args(
+        rsub.add_parser(
+            "migrate", help="alias of `atp migrate` (bring files to the current format)"
+        )
+    )
 
     t = sub.add_parser("test", help="run a security regression suite (exit 1 on any change)")
     t.add_argument("suite")
@@ -660,6 +795,25 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--name")
     r.add_argument("--operator-key")
     r.set_defaults(func=_cmd_record)
+
+    ap = sub.add_parser(
+        "approve", help="approve or deny a REQUIRE_APPROVAL decision (one grant on retry)"
+    )
+    ap.add_argument("trace")
+    ap.add_argument(
+        "--as",
+        dest="approver",
+        required=True,
+        metavar="APPROVER_ID",
+        help="who approves: an id (human) or kind:id; must hold the approver role "
+        "($ATP_APPROVER_ROLES)",
+    )
+    ap.add_argument("--deny", action="store_true", help="record a final denial instead")
+    ap.add_argument("--expires", default="15m", help="approval lifetime (default 15m, max 24h)")
+    ap.add_argument("--gateway", metavar="URL", help="approve on a remote gateway instead")
+    ap.add_argument("--operator-key", help="for --gateway (default: $ATP_OPERATOR_KEY)")
+    _home_arg(ap)
+    ap.set_defaults(func=_cmd_approve)
 
     # policy
     po = sub.add_parser("policy", help="explain, diff, impact and coverage")
@@ -726,13 +880,45 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=8000)
     s.set_defaults(func=_cmd_serve)
 
-    k = sub.add_parser("keygen", help="generate gateway keys for `atp serve`")
-    k.add_argument("--write", metavar="PATH")
+    _add_migrate_args(
+        sub.add_parser(
+            "migrate",
+            help="add `version:` to atp-mcp.yaml, policies.yaml and regression suites "
+            "(idempotent; kind detected from content)",
+        )
+    )
+
+    k = sub.add_parser(
+        "keygen", help="generate gateway keys for `atp serve`, or rotate the grant key"
+    )
+    k.add_argument("--write", metavar="PATH", help="write the env lines to PATH (never overwrites)")
+    k.add_argument("--keys-dir", metavar="DIR", help="where the Ed25519 grant key files go")
+    k.add_argument(
+        "--rotate",
+        action="store_true",
+        help="new active grant key; old public keys verify for one grant TTL. Rotates the "
+        "ATP home (--home, $ATP_HOME or ./.atp) unless --env names a serve .env",
+    )
+    k.add_argument("--home", help="ATP home to rotate (default: $ATP_HOME or ./.atp)")
+    k.add_argument("--env", metavar="PATH", help="serve .env to rotate instead of the home")
     k.set_defaults(func=_cmd_keygen)
+
+    pr = sub.add_parser("principal", help="human principal keys (root delegations are signed)")
+    pr_sub = pr.add_subparsers(dest="principal_command", required=True)
+    pk = pr_sub.add_parser(
+        "keygen", help="create HUMAN_ID's Ed25519 key pair (<id>.key mode 600, <id>.pub)"
+    )
+    pk.add_argument("human_id", metavar="HUMAN_ID")
+    pk.add_argument("--home", help="ATP home (default: $ATP_HOME or ./.atp); keys in principals/")
+    pk.add_argument("--dir", metavar="DIR", help="write the key pair to DIR instead of a home")
+    pk.set_defaults(func=_cmd_principal_keygen)
     return p
 
 
 def main(argv: list[str] | None = None) -> None:
+    from atp_core import show_unversioned_file_warnings
+
+    show_unversioned_file_warnings()
     raw = list(sys.argv[1:] if argv is None else argv)
     head, command = _split_command(raw)
     args = build_parser().parse_args(head)

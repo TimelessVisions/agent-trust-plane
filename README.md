@@ -10,7 +10,15 @@ uv run atp mcp init -- <your mcp server>    # then: atp mcp wrap   (Streamable H
 uv run atp regression add <trace> && uv run atp test atp-regression.yaml
 ```
 
-> **Status: experimental, v0.3.2, no users yet, not independently audited.** Every claim below is backed by a test in this repository or says otherwise. What it does *not* protect is in [docs/security/threat-model.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/threat-model.md).
+> **v0.4.0** — signed delegation roots, Ed25519 execution grants with key rotation, tool-definition pinning, cumulative spend budgets, a working human-approval flow, and versioned file formats. See the [changelog](https://github.com/TimelessVisions/agent-trust-plane/blob/main/CHANGELOG.md) (this release has breaking changes; `atp migrate` upgrades your files). Experimental and not independently audited; **not ready for production financial actions**. [Security boundaries](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/threat-model.md) · [what is and is not measured](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/release-v1/RELEASE_GATES.md).
+
+## Install
+
+```bash
+uvx agent-trust-plane demo wrap     # no clone needed; or: pip install agent-trust-plane
+```
+
+Verified in CI on Linux and Windows, Python 3.12 and 3.13. 733 tests in the root suite, plus a model-free benchmark harness that replays 97 AgentDojo tasks and their prompt-injection attacks through authorization layers (`bench/`; the public harm/utility rates are not published yet).
 
 ## Why this exists
 
@@ -37,7 +45,7 @@ Then, offline: `atp trace list` · `atp policy explain TRACE` · `atp regression
 Prerequisites: Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/). No API keys, no Docker, no database setup, no secrets to copy.
 
 ```bash
-git clone <this repository> && cd agent-trust-plane
+git clone https://github.com/TimelessVisions/agent-trust-plane.git && cd agent-trust-plane
 uv run atp demo wrap          # syncs the workspace on first run; 37 s cold on the maintainer machine
 ```
 
@@ -97,7 +105,7 @@ Guarantees, assumptions, deployment requirements, non-guarantees and known gaps 
 - The hash chain catches edits by non-writers; a DB writer can recompute it: [docs/security/trace-integrity.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/security/trace-integrity.md).
 - Declared policies are limit/equality rules; use OPA/Cedar for more ([why-not-just-opa.md](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/policies/why-not-just-opa.md)). Prompt injection is bounded, not detected.
 
-Evidence for what *is* handled: 439 tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
+Evidence for what *is* handled: 733 tests including property-based tests (delegation monotonicity, scope-algebra soundness, a stateful grant lifecycle with tampering and revocation interleaved), an exhaustive check of the grant state machine ([spec](https://github.com/TimelessVisions/agent-trust-plane/blob/main/docs/formal/grant-lifecycle.md)), eight adversarial evals, and real-protocol MCP end-to-end tests.
 
 ## Contributing
 

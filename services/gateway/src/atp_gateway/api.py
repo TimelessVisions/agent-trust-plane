@@ -8,15 +8,16 @@ Who may call what:
 | POST /authorize                  | required         | for policy-set override |
 | POST /execute                    | required         |              |
 | POST /traces/{id}/events         | required         |              |
-| POST /executions/{grant}/outcome | grant audience   |              |
+| POST /executions/{grant}/outcome | grant audience   | or operator (frees budget) |
 | POST /traces/{id}/shadow-outcome | trace owner      |              |
-| POST /delegations                | grantor (agent)  | grantor (human) |
+| POST /delegations                | grantor (agent)  | grantor (human); root: + human signature |
 | POST /delegations/{id}/revoke    | grantor (agent)  | or operator  |
 | GET  /delegations                |                  | required     |
 | POST /agents/{id}/credentials    |                  | required     |
 | GET  /agents/{id}/credentials    |                  | required     |
 | POST /credentials/{id}/revoke    |                  | required     |
 | POST /evals/run                  |                  | required     |
+| POST /approvals/{trace_id}       |                  | required     |
 | GET  /traces*, /ledger/payments,        |                  |              |
 |      /delegations/{id}[/chain], /vendors,|                  |              |
 |      /evals/results; POST /replay        |                  | required     |
@@ -31,8 +32,11 @@ from fastapi import APIRouter, Query, Request
 
 from atp_audit import TraceSummary
 from atp_core import ActionEnvelope, ATPError, PrincipalKind, ReasonCode
+from atp_gateway.approvals import parse_duration
 from atp_gateway.auth import Agent, IsOperator, MaybeAgent, Operator
 from atp_gateway.schemas import (
+    ApprovalRequest,
+    ApprovalView,
     CredentialIssued,
     CredentialIssueRequest,
     CredentialView,
@@ -122,12 +126,18 @@ def report_shadow_outcome(
 
 @router.post("/executions/{grant_id}/outcome", tags=["control"])
 def report_outcome(
-    grant_id: str, body: ExecutionOutcomeRequest, request: Request, caller: Agent
+    grant_id: str,
+    body: ExecutionOutcomeRequest,
+    request: Request,
+    caller: MaybeAgent,
+    operator: IsOperator,
 ) -> dict[str, Any]:
     """External executors (e.g. the MCP proxy) report the result of a released
-    execution. Bound to the consumed grant's audience; accepted once."""
+    execution. Bound to the consumed grant's audience; accepted once. A
+    failure reported by the agent keeps the budget reservation counted; the
+    operator (``X-ATP-Operator-Key``) can confirm a failure, which releases it."""
     event = _tp(request).report_outcome(
-        grant_id, caller, succeeded=body.succeeded, summary=body.summary
+        grant_id, caller, succeeded=body.succeeded, summary=body.summary, operator=operator
     )
     return event.model_dump(mode="json")
 
@@ -165,14 +175,51 @@ def replay(
     return _tp(request).replay(trace_id, policy_set_version=version)
 
 
+# ------------------------------------------------------------------ approvals
+@router.post(
+    "/approvals/{trace_id}", response_model=ApprovalView, status_code=201, tags=["control"]
+)
+def approve(trace_id: str, body: ApprovalRequest, request: Request, _: Operator) -> ApprovalView:
+    """Approve or deny a REQUIRE_APPROVAL decision. Operator key required; the
+    approver must hold the decision's ``approver_role``. The approval is bound
+    to the trace's ``action_hash``, signed with the active grant key, and good
+    for one grant: the agent re-submits the identical envelope to get it."""
+    try:
+        ttl = parse_duration(body.expires_in)
+    except ValueError as exc:
+        # The message must not echo the submitted value.
+        raise ATPError(
+            ReasonCode.APPROVAL_INVALID,
+            "expires_in must be a duration such as 15m, 900s or 1h, between 1s and 24h",
+        ) from exc
+    record = _tp(request).approve(trace_id, body.approver, body.decision, expires_in=ttl)
+    c = record.claims
+    return ApprovalView(
+        approval_id=c.approval_id,
+        trace_id=c.trace_id,
+        action_hash=c.action_hash,
+        approver=c.approver,
+        approver_role=c.approver_role,
+        decision=c.decision,
+        status=record.status.value,
+        issued_at=c.issued_at,
+        expires_at=c.expires_at,
+        kid=c.kid,
+        signature=record.signature,
+    )
+
+
 # ----------------------------------------------------------------- delegation
 @router.post("/delegations", response_model=DelegationGrant, status_code=201, tags=["identity"])
 def issue_delegation(
     body: DelegationRequest, request: Request, caller: MaybeAgent, operator: IsOperator
 ) -> DelegationGrant:
-    """Issue a grant. A human grantor is represented by the operator key (the
-    MVP's trust anchor for human authority); an agent grantor must present its
-    own credential. Nobody can delegate on another principal's behalf."""
+    """Issue a grant. A human grantor is represented by the operator key; an
+    agent grantor must present its own credential. Nobody can delegate on
+    another principal's behalf. A root grant (no parent) must also carry the
+    human's own Ed25519 signature (``signature``, ``signer_kid``, with the
+    signed ``grant_id`` and ``issued_at``): the operator key alone cannot
+    create one (DELEGATION_ROOT_UNSIGNED / DELEGATION_ROOT_SIGNATURE_INVALID)."""
     if body.grantor.kind is PrincipalKind.HUMAN:
         if not operator:
             raise ATPError(
