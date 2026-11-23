@@ -1,6 +1,6 @@
 # annotation-qa-kit
 
-A small, rigorous toolkit for **pairwise-preference annotation of LLM responses**: the kind of human-feedback data used to train and evaluate AI assistants (RLHF / RLAIF, reward models, model evals).
+A small, rigorous toolkit for **annotating LLM outputs**: pairwise preference between two responses, and code evaluation verified by execution. This is the kind of human-feedback data used to train and evaluate AI assistants (RLHF / RLAIF, reward models, model evals).
 
 It covers the whole quality loop:
 
@@ -47,11 +47,39 @@ Errors exclude a label from agreement statistics. Warnings are kept: a warning c
 - Undefined statistics (for example, everyone gave the same label) are reported as **undefined**, never as 0 or 1.
 - Readings follow Krippendorff (≥ 0.800 reliable, 0.667–0.800 tentative) for alpha, and Landis & Koch (1977) for kappa. They are guides, not proof of quality: the report always lists the actual disagreements.
 
+## Task 2: code evaluation, verified by execution
+
+The second task type grades **one AI-written solution per programming task**, the way coding-annotation projects do. See [`guidelines/code-evaluation-v1.md`](guidelines/code-evaluation-v1.md).
+
+- **Evidence is required.** An annotator gives a verdict (`correct` / `incorrect`) and six 1–5 scores: correctness, edge cases, efficiency, security, readability and explanation accuracy. They also list each issue with a category and severity. An `incorrect` verdict must come with a **failing input**.
+- **Verdicts are checked against reality.** `annoqa code-check` runs each solution against hidden tests in a separate Python process, with a timeout and CPU/memory limits. It then runs every failing input an annotator supplies against a trusted reference implementation:
+
+| Code | Meaning |
+|---|---|
+| V301 | said *correct*, but the hidden tests fail (a missed bug) |
+| V302 | said *incorrect*, but the tests pass and no failing input confirms a bug (a false alarm) |
+| V303 | the failing input does not actually fail |
+| V304 | failing input **confirmed**: the candidate and the reference disagree on it |
+| V305 | *incorrect* with no failing input |
+| V306 | said *correct*, but another annotator's confirmed failing input exposes a bug |
+
+- **Annotators can find what the tests miss.** In `code-008`, the solution passes all its hidden tests, but `chunk([1, 2], -1)` returns `[]` instead of raising. An annotator who finds that input gets credit for a **test gap**, and the item's ground truth becomes *incorrect*.
+- **The data.** Ten original tasks have planted problems: a missing dedup, punctuation ignored by a palindrome check, unsorted merge intervals, an off-by-one binary search, ties broken in the wrong order, path traversal, a negative-size test gap, O(n²) on a stated 100k input, and a dropped last window. Two candidates are genuinely correct. `tests/test_code_eval.py` proves exactly which candidates fail which tests.
+
+```bash
+uv run annoqa code-check --items data/code/items.jsonl data/code/labels/reference.jsonl \
+    examples/synthetic/code-annotator-b.jsonl --gold ref --out reports/code-demo-report.md
+```
+
+See [`reports/code-demo-report.md`](reports/code-demo-report.md).
+
+The sandbox isolates *known sample code* for checking correctness. It is **not** a security boundary for running untrusted code.
+
 ## About the demo data
 
 - `data/items.jsonl`: original prompts and responses written for this project. Some responses are deliberately flawed so that the guidelines have something to catch.
 - `data/labels/reference.jsonl`: the reference labels (`annotator: "ref"`), labelled under guidelines v1.
-- `examples/synthetic/annotator-b.jsonl`: **synthetic** second-annotator labels, not human judgments. `scripts/make_synthetic.py` makes them from the reference labels with seeded, documented perturbations: score noise, a missed flag, one preference flip, one inconsistent label and one too-short rationale. They exist only so the demo report has realistic disagreements to show.
+- `examples/synthetic/annotator-b.jsonl` and `code-annotator-b.jsonl`: **synthetic** second-annotator labels, not human judgments. `scripts/make_synthetic.py` makes them from the reference labels with seeded, documented perturbations: score noise, a missed flag, one preference flip, one inconsistent label and one too-short rationale. They exist only so the demo report has realistic disagreements to show.
 
 To measure real agreement, have a second person label `data/items.jsonl` under the guidelines and run `annoqa report` on both files.
 

@@ -29,7 +29,15 @@ def main(argv: list[str] | None = None) -> int:
     p_rep.add_argument("--gold", help="annotator id whose labels are the reference")
     p_rep.add_argument("--out", type=Path, help="write the report here instead of stdout")
 
+    p_code = sub.add_parser("code-check", help="check code-evaluation labels against hidden tests and write a report")
+    p_code.add_argument("--items", type=Path, required=True)
+    p_code.add_argument("labels", type=Path, nargs="+")
+    p_code.add_argument("--gold", help="annotator id whose scores are the reference")
+    p_code.add_argument("--out", type=Path, help="write the report here instead of stdout")
+
     args = parser.parse_args(argv)
+    if args.command == "code-check":
+        return _code_check(args)
     try:
         items = load_items(args.items)
         labels: list[Label] = []
@@ -55,6 +63,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(report)
     return 0
+
+
+def _code_check(args: argparse.Namespace) -> int:
+    from annoqa.codeeval import build_code_report, check, load_code_items, load_code_labels
+
+    try:
+        items = load_code_items(args.items)
+        labels = [lb for path in args.labels for lb in load_code_labels(path)]
+    except (OSError, LoadError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    findings = check(labels, items)
+    for f in findings:
+        print(f"{f.kind}: {f.where}: {f.code} [{f.annotator} / {f.item_id}] {f.message}")
+    report = build_code_report(labels, items, gold=args.gold)
+    if args.out:
+        args.out.write_text(report, encoding="utf-8")
+        print(f"wrote {args.out}")
+    n_err = sum(f.kind == "error" for f in findings)
+    print(f"{len(labels)} label(s): {n_err} error(s), {sum(f.kind == 'mismatch' for f in findings)} mismatch(es)")
+    return 1 if n_err else 0
 
 
 if __name__ == "__main__":
