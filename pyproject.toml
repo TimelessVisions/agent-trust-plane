@@ -38,3 +38,4 @@ files = ["src"]
 [tool.ruff.lint.per-file-ignores]
 # These files are data (prompts, responses, rationales), not logic.
 "scripts/build_*.py" = ["E501"]
+"tests/*.py" = ["E501"]

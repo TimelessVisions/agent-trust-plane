@@ -41,7 +41,20 @@ def main(argv: list[str] | None = None) -> int:
     p_fact.add_argument("--gold", help="annotator id whose claims are the reference")
     p_fact.add_argument("--out", type=Path, help="write the report here")
 
+    p_ts = sub.add_parser("traj-show", help="render trajectories with replayed observations for annotators")
+    p_ts.add_argument("--items", type=Path, required=True)
+    p_ts.add_argument("--out", type=Path, help="write the packet here instead of stdout")
+
+    p_tc = sub.add_parser("traj-check", help="check trajectory labels against replay and the policy engine")
+    p_tc.add_argument("--items", type=Path, required=True)
+    p_tc.add_argument("--hidden", type=Path, help="hidden ground truth (final-answer faithfulness)")
+    p_tc.add_argument("labels", type=Path, nargs="+")
+    p_tc.add_argument("--gold", help="annotator id treated as reference")
+    p_tc.add_argument("--out", type=Path, help="write the report here")
+
     args = parser.parse_args(argv)
+    if args.command in ("traj-show", "traj-check"):
+        return _traj(args)
     if args.command == "code-check":
         return _code_check(args)
     if args.command == "fact-check":
@@ -111,6 +124,42 @@ def _fact_check(args: argparse.Namespace) -> int:
         print(f"wrote {args.out}")
     n_err = sum(f.kind == "error" for f in findings)
     print(f"{len(labels)} label(s): {n_err} error(s), {len(findings) - n_err} warning(s)")
+    return 1 if n_err else 0
+
+
+def _traj(args: argparse.Namespace) -> int:
+    from annoqa.trajeval import (
+        build_traj_report,
+        check,
+        load_hidden,
+        load_traj_labels,
+        load_trajectories,
+        render_packet,
+    )
+
+    try:
+        trajs = load_trajectories(args.items)
+        if args.command == "traj-show":
+            packet = render_packet(trajs)
+            if args.out:
+                args.out.write_text(packet, encoding="utf-8")
+                print(f"wrote {args.out}")
+            else:
+                print(packet)
+            return 0
+        hidden = load_hidden(args.hidden)
+        labels = [lb for path in args.labels for lb in load_traj_labels(path)]
+    except (OSError, LoadError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    findings = check(labels, trajs, hidden)
+    for f in findings:
+        print(f"{f.kind}: {f.where}: {f.code} [{f.annotator} / {f.trajectory_id}] {f.message}")
+    if args.out:
+        args.out.write_text(build_traj_report(labels, trajs, hidden, gold=args.gold), encoding="utf-8")
+        print(f"wrote {args.out}")
+    n_err = sum(f.kind == "error" for f in findings)
+    print(f"{len(labels)} label(s): {n_err} error(s), {sum(f.kind == 'mismatch' for f in findings)} mismatch(es)")
     return 1 if n_err else 0
 
 
