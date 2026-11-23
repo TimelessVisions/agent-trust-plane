@@ -35,9 +35,17 @@ def main(argv: list[str] | None = None) -> int:
     p_code.add_argument("--gold", help="annotator id whose scores are the reference")
     p_code.add_argument("--out", type=Path, help="write the report here instead of stdout")
 
+    p_fact = sub.add_parser("fact-check", help="check claim-level factuality labels against the sources and report")
+    p_fact.add_argument("--items", type=Path, required=True)
+    p_fact.add_argument("labels", type=Path, nargs="+")
+    p_fact.add_argument("--gold", help="annotator id whose claims are the reference")
+    p_fact.add_argument("--out", type=Path, help="write the report here")
+
     args = parser.parse_args(argv)
     if args.command == "code-check":
         return _code_check(args)
+    if args.command == "fact-check":
+        return _fact_check(args)
     try:
         items = load_items(args.items)
         labels: list[Label] = []
@@ -83,6 +91,26 @@ def _code_check(args: argparse.Namespace) -> int:
         print(f"wrote {args.out}")
     n_err = sum(f.kind == "error" for f in findings)
     print(f"{len(labels)} label(s): {n_err} error(s), {sum(f.kind == 'mismatch' for f in findings)} mismatch(es)")
+    return 1 if n_err else 0
+
+
+def _fact_check(args: argparse.Namespace) -> int:
+    from annoqa.factuality import build_fact_report, check, load_fact_items, load_fact_labels
+
+    try:
+        items = load_fact_items(args.items)
+        labels = [lb for path in args.labels for lb in load_fact_labels(path)]
+    except (OSError, LoadError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    findings = check(labels, items)
+    for f in findings:
+        print(f"{f.kind}: {f.where}: {f.code} [{f.annotator} / {f.item_id}] {f.message}")
+    if args.out:
+        args.out.write_text(build_fact_report(labels, items, gold=args.gold), encoding="utf-8")
+        print(f"wrote {args.out}")
+    n_err = sum(f.kind == "error" for f in findings)
+    print(f"{len(labels)} label(s): {n_err} error(s), {len(findings) - n_err} warning(s)")
     return 1 if n_err else 0
 
 

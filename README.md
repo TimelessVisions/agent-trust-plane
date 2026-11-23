@@ -1,6 +1,6 @@
 # annotation-qa-kit
 
-A small, rigorous toolkit for **annotating LLM outputs**: pairwise preference between two responses, and code evaluation verified by execution. This is the kind of human-feedback data used to train and evaluate AI assistants (RLHF / RLAIF, reward models, model evals).
+A small, rigorous toolkit for **annotating LLM outputs** in three task types: pairwise preference between two responses, code evaluation verified by execution, and claim-level factuality checked against sources. This is the kind of human-feedback data used to train and evaluate AI assistants (RLHF / RLAIF, reward models, model evals).
 
 It covers the whole quality loop:
 
@@ -75,11 +75,37 @@ See [`reports/code-demo-report.md`](reports/code-demo-report.md).
 
 The sandbox isolates *known sample code* for checking correctness. It is **not** a security boundary for running untrusted code.
 
+## Task 3: factuality and source checking
+
+Grounding / faithfulness annotation, as used for retrieval-augmented (RAG) systems and summarisation. See [`guidelines/factuality-v1.md`](guidelines/factuality-v1.md).
+
+- **Claim by claim.** An annotator splits the response into atomic claims. Each claim gets a verdict (`supported`, `contradicted`, `not_in_sources` or `opinion`) and, for supported or contradicted claims, a verbatim evidence quote. Every contradicted claim also needs a correction.
+- **Mechanical checks** with `annoqa fact-check`:
+
+| Code | Check |
+|---|---|
+| E303 | the claim is not a verbatim span of the response (an invented claim) |
+| E307 | the evidence quote does not occur verbatim in the cited source (a paraphrased or invented quote) |
+| E305 / E308 | missing evidence, or a contradiction with no correction |
+| W311 | the claims cover less than 80% of the response's sentences (skipped content) |
+| W312 | a number in a supported claim is missing from its evidence |
+| W313 / W314 | duplicate claims, or evidence attached to an opinion or `not_in_sources` claim |
+
+- **Agreement and gold accuracy.** Claims are aligned across annotators by span overlap, so annotators may split sentences differently. The report shows verdict kappa, factual precision per response, how many gold claims each annotator found, and how many contradictions they caught.
+- **The data.** Six items with fictional sources, so every claim is checkable offline. They include a digit swap ($4.2m vs $2.4m), a wrong committee, an outdated source contradicted by a newer one, an unsupported clinical claim the source explicitly rules out, a city swap, a version number error, and a conclusion that inverts its own numbers ("46%, beating its 50% target"). Two decoys look wrong but are right: an attribution that reads reversed and a fair paraphrase.
+
+```bash
+uv run annoqa fact-check --items data/facts/items.jsonl data/facts/labels/reference.jsonl \
+    examples/synthetic/fact-annotator-b.jsonl --gold ref --out reports/fact-demo-report.md
+```
+
+See [`reports/fact-demo-report.md`](reports/fact-demo-report.md).
+
 ## About the demo data
 
-- `data/items.jsonl`: original prompts and responses written for this project. Some responses are deliberately flawed so that the guidelines have something to catch.
+- `data/items.jsonl`, `data/code/` and `data/facts/`: original tasks written for this project; all organisations and figures in the factuality sources are fictional. Some responses are deliberately flawed so that the guidelines have something to catch.
 - `data/labels/reference.jsonl`: the reference labels (`annotator: "ref"`), labelled under guidelines v1.
-- `examples/synthetic/annotator-b.jsonl` and `code-annotator-b.jsonl`: **synthetic** second-annotator labels, not human judgments. `scripts/make_synthetic.py` makes them from the reference labels with seeded, documented perturbations: score noise, a missed flag, one preference flip, one inconsistent label and one too-short rationale. They exist only so the demo report has realistic disagreements to show.
+- `examples/synthetic/*.jsonl`: **synthetic** second-annotator labels, not human judgments. `scripts/make_synthetic.py` makes them from the reference labels with seeded, documented perturbations: score noise, a missed flag, one preference flip, one inconsistent label and one too-short rationale. They exist only so the demo report has realistic disagreements to show.
 
 To measure real agreement, have a second person label `data/items.jsonl` under the guidelines and run `annoqa report` on both files.
 
