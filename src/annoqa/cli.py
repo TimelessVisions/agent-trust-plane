@@ -6,6 +6,8 @@ Exit codes: 0 = clean, 1 = validation errors found, 2 = usage or input error.
 from __future__ import annotations
 
 import argparse
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -68,7 +70,18 @@ def main(argv: list[str] | None = None) -> int:
     p_sc.add_argument("labels", type=Path, nargs="+")
     p_sc.add_argument("--out", type=Path)
 
+    p_ja = sub.add_parser("judge-audit", help="audit LLM judges against human gold with bias probes")
+    p_ja.add_argument("--items", type=Path, required=True)
+    p_ja.add_argument("--gold", type=Path, required=True, help="label file holding the human preferences")
+    p_ja.add_argument("--gold-annotator", default="ref")
+    p_ja.add_argument("--judge", action="append", default=[], help="reference judge name or cmd:<command>")
+    p_ja.add_argument("--run", type=Path, action="append", default=[], help="recorded judge run (JSONL) to include")
+    p_ja.add_argument("--record", type=Path, help="directory to save each judge's verdicts for reproducibility")
+    p_ja.add_argument("--out", type=Path)
+
     args = parser.parse_args(argv)
+    if args.command == "judge-audit":
+        return _judge(args)
     if args.command in ("step-show", "step-check"):
         return _steps(args)
     if args.command == "rubric-eval":
@@ -238,6 +251,63 @@ def _steps(args: argparse.Namespace) -> int:
     n_err = sum(f.kind == "error" for f in findings)
     print(f"{len(labels)} label(s): {n_err} error(s), {sum(f.kind == 'mismatch' for f in findings)} mismatch(es)")
     return 1 if n_err else 0
+
+
+def _judge(args: argparse.Namespace) -> int:
+    from annoqa.judgeaudit import (
+        audit,
+        build_judge_report,
+        command_judge,
+        gold_from_labels,
+        load_run,
+        make_probes,
+        reference_judges,
+        run_judge,
+        save_run,
+    )
+
+    try:
+        items = load_items(args.items)
+        gold = gold_from_labels(load_labels(args.gold), args.gold_annotator)
+    except (OSError, LoadError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if not gold:
+        print(f"error: no labels from annotator {args.gold_annotator!r}", file=sys.stderr)
+        return 2
+    refs = reference_judges(gold)
+    probes = make_probes(items, gold)
+    results = []
+    for spec in args.judge:
+        if spec.startswith("cmd:"):
+            judge, name = command_judge(spec[4:]), spec[4:]
+        elif spec in refs:
+            judge, name = refs[spec], spec
+        else:
+            print(
+                f"error: unknown judge {spec!r} (reference judges: {', '.join(refs)}; or cmd:<command>)",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            raw = run_judge(judge, probes)
+        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
+            print(f"error: judge {name!r} failed: {exc}", file=sys.stderr)
+            return 2
+        if args.record:
+            args.record.mkdir(parents=True, exist_ok=True)
+            save_run(args.record / (re.sub(r"[^A-Za-z0-9_.-]+", "_", name) + ".jsonl"), name, raw)
+        results.append(audit(name, raw, gold))
+    for path in args.run:
+        name, raw = load_run(path)
+        results.append(audit(name, raw, gold))
+    report = build_judge_report(results, items, gold)
+    if args.out:
+        args.out.write_text(report, encoding="utf-8")
+        print(f"wrote {args.out}")
+    else:
+        print(report)
+    return 0
 
 
 if __name__ == "__main__":

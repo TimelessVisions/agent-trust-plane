@@ -10,6 +10,7 @@ Human-data work for frontier AI, built so that **every label is checked by somet
 | 4 | Agent trajectories | outcome, first error, policy violations, final-answer faithfulness | **deterministic replay** of the agent's tool calls + **policy-as-code** | [v1](guidelines/agent-trajectory-v1.md) | [report](reports/trajectory-demo-report.md) · [packet](reports/trajectory-packet.md) |
 | 5 | Rubric authoring for RL rewards | writes weighted, atomic rubrics with penalties and machine checks | lint, Kendall tau vs known ranking, **reward-hack gap**, grader kappa | [v1](guidelines/rubric-authoring-v1.md) | [report](reports/rubric-demo-report.md) |
 | 6 | Process rewards (step-level reasoning) | labels each step good/neutral/bad to the **first error**, with an error type | **exact fraction re-evaluation** of every calculation + hidden first-error truth | [v1](guidelines/process-reward-v1.md) | [report](reports/process-demo-report.md) · [packet](reports/process-packet.md) |
+| 7 | LLM-judge audit | owns the gold, designs probes, adjudicates judge/human disagreements | **swapped-order, padding and authority probes**, validated by reference judges with planted biases | [v1](guidelines/judge-audit-v1.md) | [report](reports/judge-audit-demo.md) |
 
 Roadmap and research: [`PORTFOLIO_PLAN.md`](PORTFOLIO_PLAN.md). Every planted defect in the data is proven caught by the test suite (`uv run pytest`).
 
@@ -163,6 +164,28 @@ uv run annoqa step-show --items data/process/items.jsonl --out reports/process-p
 uv run annoqa step-check --items data/process/items.jsonl --hidden data/process/hidden.jsonl \
     data/process/labels/reference.jsonl examples/synthetic/process-annotator-b.jsonl --out reports/process-demo-report.md
 ```
+
+## Task 7: LLM-judge audit
+
+Can an LLM judge stand in for human raters? `annoqa judge-audit` takes the task-1 items with human gold and builds four probes per item: original order, **swapped positions**, the worse response **padded** with content-free filler, and the worse response given a **confident-expert preamble**. It reports accuracy and kappa against the humans, position consistency, the share of verdicts picking slot 1, and the verbosity and authority flip rates, each with a pass/fail threshold. It also produces a human-review queue of judge/human disagreements.
+
+**The audit is validated against judges whose biases are known**, so its sensitivity is part of CI:
+
+| Reference judge | Accuracy | Position consistency | Picks slot 1 | Verbosity flip | Authority flip | Verdict |
+|---|---|---|---|---|---|---|
+| oracle (returns the human label) | 100% | 100% | 46% | 0% | 0% | PASS |
+| first-position | 64% | 0% | 100% | 0% | 0% | FAIL: accuracy, position |
+| longer | 82% | 100% | 50% | 100% | 56% | FAIL: verbosity, authority |
+| authority-swayed | 100% | 100% | 46% | 0% | 100% | FAIL: authority |
+
+Plug in any real model that reads a prompt on stdin and prints `[[1]]`, `[[2]]` or `[[tie]]`:
+
+```bash
+uv run annoqa judge-audit --items data/items.jsonl --gold data/labels/reference.jsonl \
+    --judge "cmd:claude -p" --record runs/ --out reports/judge-audit-claude.md
+```
+
+A real-model run is **NOT_MEASURED** in this repo: it uses your own model subscription. Record the model, version, date and prompt with any result you publish.
 
 ## About the demo data
 
