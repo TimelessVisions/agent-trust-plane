@@ -1,0 +1,24 @@
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v1", "response_id": "a", "marks": {"r1": true, "r2": true, "r3": true, "r4": false}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v1", "response_id": "b", "marks": {"r1": true, "r2": false, "r3": true, "r4": true}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v1", "response_id": "c", "marks": {"r1": true, "r2": false, "r3": true, "r4": true}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v1", "response_id": "d", "marks": {"r1": true, "r2": false, "r3": true, "r4": true}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v2", "response_id": "a", "marks": {"r1": true, "r2": true, "r4": true, "r8": true, "r5": false}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v2", "response_id": "b", "marks": {"r1": true, "r2": true, "r4": true, "r8": true, "r5": true}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v2", "response_id": "c", "marks": {"r1": true, "r2": false, "r4": true, "r8": false, "r5": false}}
+{"grader": "synthetic-b", "task_id": "rb-refund", "version": "v2", "response_id": "d", "marks": {"r1": true, "r2": false, "r4": false, "r8": false, "r5": true}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v1", "response_id": "a", "marks": {"d1": true, "d2": true, "d3": true}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v1", "response_id": "b", "marks": {"d1": true, "d2": true, "d3": true}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v1", "response_id": "c", "marks": {"d1": true, "d2": false, "d3": false}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v1", "response_id": "d", "marks": {"d1": true, "d2": false, "d3": true}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v2", "response_id": "a", "marks": {"d1": true, "d2": true, "d3": true, "d4": true, "d5": true, "d6": false}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v2", "response_id": "b", "marks": {"d1": true, "d2": true, "d3": false, "d4": false, "d5": false, "d6": false}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v2", "response_id": "c", "marks": {"d1": true, "d2": false, "d3": true, "d4": false, "d5": false, "d6": false}}
+{"grader": "synthetic-b", "task_id": "rb-dedupe", "version": "v2", "response_id": "d", "marks": {"d1": true, "d2": false, "d3": true, "d4": false, "d5": false, "d6": true}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v1", "response_id": "a", "marks": {"f1": true, "f2": true, "f3": false}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v1", "response_id": "b", "marks": {"f1": true, "f2": true, "f3": true}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v1", "response_id": "c", "marks": {"f1": false, "f2": false, "f3": true}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v1", "response_id": "d", "marks": {"f1": false, "f2": true, "f3": true}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v2", "response_id": "a", "marks": {"f1": true, "f2": true, "f3": true, "f8": true, "f4": true, "f5": true, "f6": true}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v2", "response_id": "b", "marks": {"f1": true, "f2": false, "f3": true, "f8": true, "f4": false, "f5": false, "f6": false}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v2", "response_id": "c", "marks": {"f1": false, "f2": false, "f3": false, "f8": false, "f4": false, "f5": false, "f6": false}}
+{"grader": "synthetic-b", "task_id": "rb-2fa", "version": "v2", "response_id": "d", "marks": {"f1": false, "f2": true, "f3": false, "f8": false, "f4": false, "f5": false, "f6": false}}

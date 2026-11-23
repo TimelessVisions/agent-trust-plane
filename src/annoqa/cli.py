@@ -52,7 +52,16 @@ def main(argv: list[str] | None = None) -> int:
     p_tc.add_argument("--gold", help="annotator id treated as reference")
     p_tc.add_argument("--out", type=Path, help="write the report here")
 
+    p_rb = sub.add_parser("rubric-eval", help="lint rubrics and measure validity, hack resistance and reliability")
+    p_rb.add_argument("--tasks", type=Path, required=True)
+    p_rb.add_argument("--rubrics", type=Path, required=True)
+    p_rb.add_argument("grades", type=Path, nargs="*")
+    p_rb.add_argument("--reference", default="ref", help="grader whose marks produce the scores")
+    p_rb.add_argument("--out", type=Path, help="write the report here")
+
     args = parser.parse_args(argv)
+    if args.command == "rubric-eval":
+        return _rubric(args)
     if args.command in ("traj-show", "traj-check"):
         return _traj(args)
     if args.command == "code-check":
@@ -160,6 +169,27 @@ def _traj(args: argparse.Namespace) -> int:
         print(f"wrote {args.out}")
     n_err = sum(f.kind == "error" for f in findings)
     print(f"{len(labels)} label(s): {n_err} error(s), {sum(f.kind == 'mismatch' for f in findings)} mismatch(es)")
+    return 1 if n_err else 0
+
+
+def _rubric(args: argparse.Namespace) -> int:
+    from annoqa.rubrics import build_rubric_report, lint, load_grades, load_rubric_tasks, load_rubrics
+
+    try:
+        tasks = load_rubric_tasks(args.tasks)
+        rubrics = load_rubrics(args.rubrics)
+        grades = [g for path in args.grades for g in load_grades(path)]
+    except (OSError, LoadError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    findings = [f for rb in rubrics for f in lint(rb)]
+    for f in findings:
+        print(f"{f.kind}: {f.task_id} {f.version} {f.criterion}: {f.code} {f.message}")
+    if args.out:
+        args.out.write_text(build_rubric_report(tasks, rubrics, grades, reference=args.reference), encoding="utf-8")
+        print(f"wrote {args.out}")
+    n_err = sum(f.kind == "error" for f in findings)
+    print(f"{len(rubrics)} rubric(s): {n_err} lint error(s), {len(findings) - n_err} warning(s)")
     return 1 if n_err else 0
 
 

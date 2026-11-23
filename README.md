@@ -1,6 +1,20 @@
 # annotation-qa-kit
 
-A small, rigorous toolkit for **annotating LLM outputs** in three task types: pairwise preference between two responses, code evaluation verified by execution, and claim-level factuality checked against sources. This is the kind of human-feedback data used to train and evaluate AI assistants (RLHF / RLAIF, reward models, model evals).
+Human-data work for frontier AI, built so that **every label is checked by something other than the labeller's opinion**: execution, replay, verbatim source matching, a policy engine, or a second annotator.
+
+| # | Task type | What the annotator does | What checks them | Guidelines | Demo report |
+|---|---|---|---|---|---|
+| 1 | Pairwise preference (RLHF) | scores two responses on 4 dimensions, flags problems, picks one | 13 consistency rules, alpha/kappa, adjudication queue | [v1](guidelines/pairwise-preference-v1.md) | [report](reports/demo-report.md) |
+| 2 | Code evaluation | verdict, 6 scores, issues, **smallest failing input** | hidden tests + the reference implementation run on the annotator's input | [v1](guidelines/code-evaluation-v1.md) | [report](reports/code-demo-report.md) |
+| 3 | Factuality / grounding | splits a response into claims, judges each against sources | **verbatim** quote matching, number checks, coverage | [v1](guidelines/factuality-v1.md) | [report](reports/fact-demo-report.md) |
+| 4 | Agent trajectories | outcome, first error, policy violations, final-answer faithfulness | **deterministic replay** of the agent's tool calls + **policy-as-code** | [v1](guidelines/agent-trajectory-v1.md) | [report](reports/trajectory-demo-report.md) · [packet](reports/trajectory-packet.md) |
+| 5 | Rubric authoring for RL rewards | writes weighted, atomic rubrics with penalties and machine checks | lint, Kendall tau vs known ranking, **reward-hack gap**, grader kappa | [v1](guidelines/rubric-authoring-v1.md) | [report](reports/rubric-demo-report.md) |
+
+Roadmap and research: [`PORTFOLIO_PLAN.md`](PORTFOLIO_PLAN.md). Every planted defect in the data is proven caught by the test suite (`uv run pytest`).
+
+## Task 1: pairwise preference
+
+A toolkit for **pairwise-preference annotation of LLM responses**, the human-feedback data used to train and evaluate AI assistants (RLHF / RLAIF, reward models, model evals).
 
 It covers the whole quality loop:
 
@@ -100,6 +114,40 @@ uv run annoqa fact-check --items data/facts/items.jsonl data/facts/labels/refere
 ```
 
 See [`reports/fact-demo-report.md`](reports/fact-demo-report.md).
+
+## Task 4: agent trajectories, verified by replay
+
+An agent run is stored as **calls only**. `annoqa traj-show` replays them in a deterministic office-assistant environment (email, bank, calendar; all fictional) to produce the observations annotators see, so a trajectory can never misreport a tool result. `annoqa traj-check` then scores labels against:
+- the **replayed final state**: was the user's goal met? The outcome is `success`, `unsafe_success` (goal met but a policy was broken) or `failure`;
+- a **policy engine** (P1 confirmation above $500, P2 no account numbers to outside addresses, P3 no acting on instructions from untrusted emails, i.e. prompt injection, P4 no double-booking), which reports missed and invented violations step by step;
+- hidden ground truth for **final-answer faithfulness**, e.g. an agent that sent "$1,750" but reports "$1,250".
+
+The 9 trajectories include a prompt-injection attack, a transposed amount, a skipped confirmation that still "succeeds", and a calendar clash.
+
+```bash
+uv run annoqa traj-show --items data/trajectories/items.jsonl --out reports/trajectory-packet.md
+uv run annoqa traj-check --items data/trajectories/items.jsonl --hidden data/trajectories/hidden.jsonl \
+    data/trajectories/labels/reference.jsonl examples/synthetic/traj-annotator-b.jsonl --gold ref \
+    --out reports/trajectory-demo-report.md
+```
+
+## Task 5: rubric authoring for rubric-based rewards
+
+In RL with rubric rewards, the rubric *is* the reward function. Each of the 3 tasks ships a deliberately weak **v1** rubric and a revised **v2**, scored on 4 responses of known quality. One of the 4 is a **reward hack**: long, keyword-stuffed and confidently wrong.
+
+| Rubric | Kendall tau vs known order | Hack gap | Hack wins? |
+|---|---|---|---|
+| v1 (all 3 tasks) | 0.18–0.24 | 0.00 | yes |
+| v2 (all 3 tasks) | 1.00 | +1.10 to +1.40 | no |
+
+The linter explains why: v1 uses vague terms, compound criteria, equal weights and no penalties. v2 is atomic, weighted, has `PENALTY:` criteria for known failure modes, and uses machine checks (`includes_any`, `max_words`, `regex`) where possible.
+
+```bash
+uv run annoqa rubric-eval --tasks data/rubrics/tasks.jsonl --rubrics data/rubrics/rubrics.jsonl \
+    data/rubrics/grades/reference.jsonl examples/synthetic/rubric-grader-b.jsonl --out reports/rubric-demo-report.md
+```
+
+The second grader's disagreements are **synthetic** (documented in `scripts/build_rubrics.py`): they illustrate how vague wording splits graders, but they are not a measured result. Measure that with a real second grader.
 
 ## About the demo data
 
