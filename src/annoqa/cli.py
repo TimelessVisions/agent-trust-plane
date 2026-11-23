@@ -59,7 +59,18 @@ def main(argv: list[str] | None = None) -> int:
     p_rb.add_argument("--reference", default="ref", help="grader whose marks produce the scores")
     p_rb.add_argument("--out", type=Path, help="write the report here")
 
+    p_ss = sub.add_parser("step-show", help="render worked solutions for step-level annotation")
+    p_ss.add_argument("--items", type=Path, required=True)
+    p_ss.add_argument("--out", type=Path)
+    p_sc = sub.add_parser("step-check", help="check step-level (process-reward) labels")
+    p_sc.add_argument("--items", type=Path, required=True)
+    p_sc.add_argument("--hidden", type=Path)
+    p_sc.add_argument("labels", type=Path, nargs="+")
+    p_sc.add_argument("--out", type=Path)
+
     args = parser.parse_args(argv)
+    if args.command in ("step-show", "step-check"):
+        return _steps(args)
     if args.command == "rubric-eval":
         return _rubric(args)
     if args.command in ("traj-show", "traj-check"):
@@ -190,6 +201,42 @@ def _rubric(args: argparse.Namespace) -> int:
         print(f"wrote {args.out}")
     n_err = sum(f.kind == "error" for f in findings)
     print(f"{len(rubrics)} rubric(s): {n_err} lint error(s), {len(findings) - n_err} warning(s)")
+    return 1 if n_err else 0
+
+
+def _steps(args: argparse.Namespace) -> int:
+    from annoqa.process import (
+        build_step_report,
+        check,
+        load_solutions,
+        load_step_hidden,
+        load_step_labels,
+        render_solutions,
+    )
+
+    try:
+        sols = load_solutions(args.items)
+        if args.command == "step-show":
+            text = render_solutions(sols)
+            if args.out:
+                args.out.write_text(text, encoding="utf-8")
+                print(f"wrote {args.out}")
+            else:
+                print(text)
+            return 0
+        hidden = load_step_hidden(args.hidden)
+        labels = [lb for path in args.labels for lb in load_step_labels(path)]
+    except (OSError, LoadError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    findings = check(labels, sols, hidden)
+    for f in findings:
+        print(f"{f.kind}: {f.where}: {f.code} [{f.annotator} / {f.solution_id}] {f.message}")
+    if args.out:
+        args.out.write_text(build_step_report(labels, sols, hidden), encoding="utf-8")
+        print(f"wrote {args.out}")
+    n_err = sum(f.kind == "error" for f in findings)
+    print(f"{len(labels)} label(s): {n_err} error(s), {sum(f.kind == 'mismatch' for f in findings)} mismatch(es)")
     return 1 if n_err else 0
 
 

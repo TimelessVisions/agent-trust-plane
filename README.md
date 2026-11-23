@@ -9,6 +9,7 @@ Human-data work for frontier AI, built so that **every label is checked by somet
 | 3 | Factuality / grounding | splits a response into claims, judges each against sources | **verbatim** quote matching, number checks, coverage | [v1](guidelines/factuality-v1.md) | [report](reports/fact-demo-report.md) |
 | 4 | Agent trajectories | outcome, first error, policy violations, final-answer faithfulness | **deterministic replay** of the agent's tool calls + **policy-as-code** | [v1](guidelines/agent-trajectory-v1.md) | [report](reports/trajectory-demo-report.md) · [packet](reports/trajectory-packet.md) |
 | 5 | Rubric authoring for RL rewards | writes weighted, atomic rubrics with penalties and machine checks | lint, Kendall tau vs known ranking, **reward-hack gap**, grader kappa | [v1](guidelines/rubric-authoring-v1.md) | [report](reports/rubric-demo-report.md) |
+| 6 | Process rewards (step-level reasoning) | labels each step good/neutral/bad to the **first error**, with an error type | **exact fraction re-evaluation** of every calculation + hidden first-error truth | [v1](guidelines/process-reward-v1.md) | [report](reports/process-demo-report.md) · [packet](reports/process-packet.md) |
 
 Roadmap and research: [`PORTFOLIO_PLAN.md`](PORTFOLIO_PLAN.md). Every planted defect in the data is proven caught by the test suite (`uv run pytest`).
 
@@ -148,6 +149,20 @@ uv run annoqa rubric-eval --tasks data/rubrics/tasks.jsonl --rubrics data/rubric
 ```
 
 The second grader's disagreements are **synthetic** (documented in `scripts/build_rubrics.py`): they illustrate how vague wording splits graders, but they are not a measured result. Measure that with a real second grader.
+
+## Task 6: process rewards, step by step
+
+Labels for **process reward models**: each step of a worked solution is labelled good / neutral / bad up to and including the first error (the PRM800K-style first-error convention), and the first error gets a type: arithmetic, misread, setup or logic.
+
+- **Arithmetic is re-checked exactly.** Every calculation step carries `calc` and `claims`, which a safe AST evaluator recomputes with fractions (`0.1 + 0.2 == 0.3`). An annotator who passes "3 x 1.75 = 5.75" is caught (V611).
+- **Errors arithmetic cannot see** are scored against hidden ground truth (V614/V615): a delay *subtracted* from travel time, "length + width = perimeter", "25% off + 10% tax = 15% off". Each is computed correctly on a wrong premise.
+- **The lucky solution.** `ps-03` makes two arithmetic errors that cancel, so the final answer is right. An outcome reward pays for it; a process label must not. The report marks it "right answer, wrong process", and the demo shows an outcome-biased annotator falling for it.
+
+```bash
+uv run annoqa step-show --items data/process/items.jsonl --out reports/process-packet.md
+uv run annoqa step-check --items data/process/items.jsonl --hidden data/process/hidden.jsonl \
+    data/process/labels/reference.jsonl examples/synthetic/process-annotator-b.jsonl --out reports/process-demo-report.md
+```
 
 ## About the demo data
 

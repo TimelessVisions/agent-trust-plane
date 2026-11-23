@@ -32,7 +32,7 @@ Some cited preprints are very recent. Verify each before quoting it in an applic
 | 3 | Factuality / grounding (task 3) | claim decomposition, evidence | verbatim quote matching | **built** |
 | 4 | **Agent trajectory evaluation** (task 4) | step labels, first error, policy violations, harmful actions, prompt injection | deterministic **environment replay** + **policy-as-code** | **built (this round)** |
 | 5 | **Rubric authoring for RL rewards** (task 5) | writing atomic, weighted, checkable criteria | a rubric **linter**, per-criterion inter-rater reliability, and **discrimination** (does the rubric separate good from bad responses?) | **built (this round)** |
-| 6 | Process-reward (step-level reasoning) labels | first-error step, error propagation | arithmetic re-check of each step | next |
+| 6 | **Process-reward (step-level reasoning) labels** (task 6) | first-error step, error type, the right-answer/wrong-process trap | exact fraction re-check of every calculation + hidden first-error truth | **built** |
 | 7 | LLM-judge audit | judge vs human gold, position and verbosity bias | swapped-order and padded-response probes | next |
 | 8 | Red-team set with harm taxonomy | attack design, severity, refusal boundaries | ATP's red-team harness (ledger proof) | later |
 | 9 | Case study: pre-registered benchmark annotations (ATP) | annotation methodology at scale: pre-registration, change log, frozen tag | git history | later |
@@ -61,7 +61,7 @@ The tooling and reference labels were built with AI assistance. What proves *you
 | When | Milestone |
 |---|---|
 | Week 1 | Projects 4–5 built (done); you label tasks 1–3 blind and write RESULTS.md |
-| Week 2 | You label tasks 4–5; build project 6 (process rewards) |
+| Week 2 | You label tasks 4–6; project 6 (process rewards) built |
 | Week 3 | Build project 7 (judge audit); recruit a second annotator for one task |
 | Week 4 | Case study (9), portfolio landing page, posts; start applying |
 | Ongoing | Project 8 (red team) once ATP 1.0 ships |
