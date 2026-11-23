@@ -105,7 +105,7 @@ See [`reports/fact-demo-report.md`](reports/fact-demo-report.md).
 
 - `data/items.jsonl`, `data/code/` and `data/facts/`: original tasks written for this project; all organisations and figures in the factuality sources are fictional. Some responses are deliberately flawed so that the guidelines have something to catch.
 - `data/labels/reference.jsonl`: the reference labels (`annotator: "ref"`), labelled under guidelines v1.
-- `examples/synthetic/*.jsonl`: **synthetic** second-annotator labels, not human judgments. `scripts/make_synthetic.py` makes them from the reference labels with seeded, documented perturbations: score noise, a missed flag, one preference flip, one inconsistent label and one too-short rationale. They exist only so the demo report has realistic disagreements to show.
+- `examples/synthetic/*.jsonl`: **synthetic** second-annotator labels, not human judgments. `scripts/make_synthetic.py`, `build_code_reference.py` and `build_fact_items.py` derive them from the reference labels with documented perturbations, for example a missed flag, a missed bug, a paraphrased quote, an outdated source trusted, or an unextracted claim. They exist only so the demo report has realistic disagreements to show.
 
 To measure real agreement, have a second person label `data/items.jsonl` under the guidelines and run `annoqa report` on both files.
 
